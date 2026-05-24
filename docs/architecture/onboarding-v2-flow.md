@@ -8,6 +8,19 @@
 > `/api/v1/v2/tenant/onboarding/*` was intentionally **not** renamed so that
 > existing tenant frontend clients keep working without redeploy.
 
+> **Companion docs in this directory:**
+> - [request-flows.md](./request-flows.md) — request-by-request trace for
+>   the six load-bearing onboarding flows (start, save, complete, resume,
+>   phone, submit) plus the rest of the platform.
+> - [onboarding-state-model.md](./onboarding-state-model.md) — FE↔BE
+>   responsibility split, what the state token represents, URL `stepSlug`
+>   vs. backend `stepKey`, localStorage usage, risk register.
+> - [onboarding-step-panel-split-plan.md](./onboarding-step-panel-split-plan.md)
+>   — analysis-only plan for splitting `TenantOnboardingStepPanel.tsx`
+>   (~1500 LOC) into per-step panels.
+> - [debugging-onboarding.md](./debugging-onboarding.md) — symptom-first
+>   runbook ("why didn't my step save?", "why is this token a 403?").
+
 ## High-level overview
 
 Onboarding v2 is stateless from the tenant's point of view: the URL carries an
@@ -392,17 +405,9 @@ step *progress*, not the application status. Status transitions
   revision-note fetch). Once they switch to the state-token equivalents,
   the `@deprecated` helpers and the matching `me/*` controller routes
   can be removed.
-- `TenantOnboardingStepPanel.tsx` is ~1450 LOC and renders every workflow
-  step inline. Proposed split (deferred to a focused frontend slice — not
-  this one — because the file's local state is shared across panels):
-    - `panels/PhoneVerificationPanel.tsx`
-    - `panels/BusinessIntroPanel.tsx`
-    - `panels/LocationPanel.tsx`
-    - `panels/BusinessDetailsPanel.tsx`
-    - `panels/BankDetailsPanel.tsx`
-    - `panels/PlanSelectionPanel.tsx`
-    - `panels/ReviewPanel.tsx`
-    - `panels/VerificationPanel.tsx`
-    - `panels/WaitingPanel.tsx`
-  Each takes the same `{ workspace, saveDraft, completeStep, ... }` props
-  the parent currently passes inline.
+- `TenantOnboardingStepPanel.tsx` is ~1500 LOC and renders every workflow
+  step inline. A dedicated analysis-only plan for splitting it lives at
+  [onboarding-step-panel-split-plan.md](./onboarding-step-panel-split-plan.md)
+  — phase 0 prep, target file tree (9 panels under `panels/`), risk list,
+  and acceptance criteria. The split itself is deferred to a focused
+  frontend slice because the file's local state needs careful lift-ups.

@@ -182,62 +182,442 @@ Failure paths:
 ## 4. Tenant onboarding v2 flow
 
 > Goal: a stateless, state-token-bearing journey from landing to admin
-> approval. Full sequence diagrams live in
-> [onboarding-v2-flow.md](./onboarding-v2-flow.md); this section gives the
-> request chain for a single step save so the picture stays consistent
-> across docs.
+> approval. The state-token flow is **canonical**; the session/`me` variants
+> still exist for already-authenticated tenants but are marked
+> `@deprecated` in the frontend client. See
+> [onboarding-v2-flow.md](./onboarding-v2-flow.md) for the architectural
+> overview, [onboarding-state-model.md](./onboarding-state-model.md) for
+> the FE↔BE responsibility split, and
+> [debugging-onboarding.md](./debugging-onboarding.md) for the runbook.
+
+The six sub-flows below cover every load-bearing request a tenant makes
+during onboarding. Each one ends with a real example payload so the
+shape is unambiguous when wiring or debugging.
+
+---
+
+### 4.1. Landing form submit → `start`
+
+Public endpoint. No prior session, no state token yet. Either creates a
+new `TenantAccount` + `TenantOnboardingApplication` or resumes an
+existing one if the email already exists in a resumable state
+(`passwordHash === ''` AND status ∈ {`draft`, `revision_required`}).
 
 ```
-Tenant lands:
-  apps/tenant/src/app/page.tsx
-  → apps/tenant/src/lib/tenant-onboarding-client.ts → startTenantOnboarding
-       POST /api/v1/v2/tenant/onboarding/start
+UI                       apps/tenant/src/app/page.tsx
+                         └─ <TenantSignupLanding> form
 
-Step page:
-  apps/tenant/src/app/onboarding/[stateToken]/[stepSlug]/page.tsx
-  → TenantOnboardingWorkspace → TenantOnboardingStepPanel
-  → useTenantOnboardingWorkspace hook
-       PATCH /api/v1/v2/tenant/onboarding/:stateToken/steps/:stepKey
-       POST  /api/v1/v2/tenant/onboarding/:stateToken/steps/:stepKey/complete
+Client helper            apps/tenant/src/lib/tenant-onboarding-client.ts
+                         └─ startTenantOnboarding(input)
+                                  │ fetch (NO session header, credentials: 'include')
+                                  ▼
+HTTP                     POST /api/v1/v2/tenant/onboarding/start
+                         body: StartTenantOnboardingDto
 
-Backend chain:
-  apps/api/src/modules/tenant-onboarding/tenant-onboarding.controller.ts
-    @Controller('v2/tenant/onboarding')
-  → apps/api/src/modules/tenant-onboarding/tenant-onboarding.service.ts
-    ├─ CryptoUtil.decryptStateToken             (common/utility/crypto-util.ts)
-    ├─ class-validator DTO validation
-    └─ TenantOnboardingStore.upsert*Detail()
-  → tables: TenantOnboardingApplication, TenantBusinessDetail,
-            TenantLegalDetail, TenantOwnerContact, TenantOperationsProfile,
-            TenantOnboardingStepProgress
+Controller               apps/api/src/modules/tenant-onboarding/tenant-onboarding.controller.ts
+@Public()                └─ start(@Body dto)
+                                  │
+Service                  apps/api/src/modules/tenant-onboarding/tenant-onboarding.service.ts
+                         └─ start(dto)
+                              ├─ tenantAccountsStore.findByEmail(email)
+                              │     ├─ exists + resumable → reuse + skip seeding
+                              │     └─ exists + NOT resumable → 409 ConflictException
+                              ├─ tenantAccountsStore.create({ ...passwordHash: '' })
+                              ├─ getOrCreateApplication(tenant.id)
+                              │     └─ store.createApplication(tenantAccountId, 'draft')
+                              │     └─ auditLogService.log('onboarding_application_created')
+                              ├─ seedApplicationFromStart(application.id, dto)
+                              │     ├─ store.upsertBusinessDetail / upsertLegalDetail /
+                              │     │  upsertOwnerContact / upsertOperationsProfile
+                              │     └─ 4× store.upsertStepProgress(stepKey, 'in_progress')
+                              └─ getWorkspace(tenant.id)
+                                    └─ buildStateToken(application, currentStep)
+                                          └─ CryptoUtil.encryptStateToken(...)
 
-Submission:
-  POST /api/v1/v2/tenant/onboarding/:stateToken/submit
-  → TenantOnboardingService.submitForReviewByStateToken
-       → submit() (first-time)  OR  resubmit() (after revision)
-       → INSERT TenantApplicationReview, AuditLog
-       → status: draft → submitted (or revision_required → submitted)
+Tables written           TenantAccount, TenantOnboardingApplication,
+                         TenantBusinessDetail, TenantLegalDetail,
+                         TenantOwnerContact, TenantOperationsProfile,
+                         TenantOnboardingStepProgress (×4), AuditLog
 
-Admin review (same store, see flow 6):
-  POST /api/v1/admin/tenant-applications/:id/approve  → approveApplication
-  POST /api/v1/admin/tenant-applications/:id/request-revision → requestRevision
-  POST /api/v1/admin/tenant-applications/:id/reject → rejectApplication
-  POST /api/v1/admin/tenants/:id/activate  → activateTenant
-  POST /api/v1/admin/tenants/:id/suspend   → suspendTenant
-  POST /api/v1/admin/tenants/:id/reopen-review → reopenReview
+Response                 { stateToken, status, currentStepKey, nextStepKey }
 
-Waiting:
-  apps/tenant/src/app/onboarding/[stateToken]/waiting/page.tsx polls
-  GET /api/v1/v2/tenant/onboarding/:stateToken/workspace
-  and renders status copy (submitted / under_review / rejected / suspended).
-
-Approval handoff:
-  approveApplication + activateTenant mirror TenantAccount.onboardingStatus
-  to 'approved' / 'active'. getTenantOnboardingResumeUrl (frontend) sees
-  approved/active and routes the tenant to /dashboard.
-  TenantSetPasswordCard prompts for a password
-    → POST /api/v1/tenants/me/password   (TenantsController)
+Frontend post-process    apps/tenant/src/app/page.tsx
+                         └─ writeOnboardingStateToken(stateToken)     (localStorage)
+                         └─ router.push('/onboarding/{stateToken}/welcome')
 ```
+
+Example request body (`StartTenantOnboardingDto`):
+
+```json
+{
+  "firstName": "Ayşe",
+  "lastName": "Demir",
+  "phoneNumber": "+90 555 000 11 22",
+  "email": "ayse@orneklokanta.com",
+  "companyName": "Örnek Lokanta",
+  "companyAddress": "Atatürk Cad. No:1, Beşiktaş, İstanbul",
+  "tenantType": "food_service",
+  "deliveryModel": "platform_fleet"
+}
+```
+
+Example response (`StartTenantOnboardingResult`):
+
+```json
+{
+  "stateToken": "eyJ2IjoxLCJpdiI6Imdf...rest-of-AES-256-GCM-token...",
+  "status": "draft",
+  "currentStepKey": "business_info",
+  "nextStepKey": "legal_tax_info"
+}
+```
+
+Legacy path: none — the landing form has always used `start`. There is
+no `me/start`.
+
+---
+
+### 4.2. Step save → `PATCH /:stateToken/steps/:stepKey`
+
+Every keystroke-batched **Continue** click on a fillable step fires this
+request. It only saves *draft* data and bumps the step's progress to
+`in_progress`; it does NOT mark the step complete (see 4.3 for that).
+
+The response carries a **refreshed stateToken** because the application's
+`currentStep` may have advanced. The frontend writes the new token to
+the URL + localStorage so the next request uses it.
+
+```
+UI                       apps/tenant/src/components/tenant/onboarding/TenantOnboardingStepPanel.tsx
+                         └─ <form onSubmit> → onSaveDraft(stepKey, payload)
+
+Hook                     apps/tenant/src/components/tenant/onboarding/useTenantOnboardingWorkspace.ts
+                         └─ saveDraft(step, payload)
+                              ├─ branch picked at call site:
+                              │    stateToken ?
+                              │      patchTenantOnboardingStepByStateToken(...)   ← canonical
+                              │    :
+                              │      patchTenantOnboardingStep(session, ...)      ← @deprecated
+                              ├─ rememberStateToken(result.stateToken)
+                              │    → writeOnboardingStateToken(localStorage)
+                              ├─ getTenantOnboardingWorkspaceByStateToken(result.stateToken)
+                              └─ setWorkspace(nextWorkspace)
+
+Client helper            apps/tenant/src/lib/tenant-onboarding-client.ts
+                         └─ patchTenantOnboardingStepByStateToken(stateToken, step, input)
+
+HTTP                     PATCH /api/v1/v2/tenant/onboarding/:stateToken/steps/:stepKey
+                         body: Patch<Step>Dto   (one of business_info / legal_tax_info /
+                                                  owner_contact_info / operations_info)
+
+Controller               tenant-onboarding.controller.ts
+@Public()                └─ patchStepByStateToken(stateToken, stepKey, dto)
+
+Service                  tenant-onboarding.service.ts
+                         └─ saveStepDraftByStateToken(stateToken, step, input)
+                              ├─ resolveApplicationFromStateToken(stateToken)
+                              │     ├─ CryptoUtil.decryptStateToken
+                              │     ├─ validateStateTokenPayload (tenant-onboarding.tokens.ts)
+                              │     └─ store.findApplicationById + tokenSalt match check
+                              │           └─ all mismatches → 403 ForbiddenException
+                              └─ saveStepDraft(application.tenantAccountId, step, input)
+                                    ├─ assertEditableStepKey  (rejects 'final_review', 'documents')
+                                    ├─ ensureEditableApplication  (rejects terminal statuses)
+                                    ├─ validateDto(<Step>Dto, input)   (class-validator)
+                                    ├─ store.upsert<Step>Detail(...)
+                                    ├─ store.upsertStepProgress(stepKey, 'in_progress')
+                                    └─ buildStateToken(freshApplication, currentStep)
+                                          → fresh stateToken in response
+
+Tables written           Tenant<Step>Detail (one of 4),
+                         TenantOnboardingStepProgress
+
+Response                 { stepKey, status: 'in_progress', nextStepKey, stateToken, data }
+```
+
+Example request body (PATCH `business_info`):
+
+```json
+{
+  "businessName": "Örnek Lokanta",
+  "businessType": "food_service",
+  "addressLine1": "Atatürk Cad. No:1",
+  "city": "İstanbul",
+  "postalCode": "34357",
+  "country": "TR"
+}
+```
+
+Example response:
+
+```json
+{
+  "stepKey": "business_info",
+  "status": "in_progress",
+  "nextStepKey": "legal_tax_info",
+  "stateToken": "eyJ2IjoxLCJpdiI6...new-token-after-currentStep-bumped...",
+  "data": { "id": "...", "businessName": "Örnek Lokanta", "...": "..." }
+}
+```
+
+Legacy path: `PATCH /api/v1/v2/tenant/onboarding/me/:step` →
+`patchStep` → same `saveStepDraft`. Auth: tenant bearer +
+`AccessTokenGuard` (NOT `@Public()`).
+
+---
+
+### 4.3. Step complete → `POST /:stateToken/steps/:stepKey/complete`
+
+Distinct from save: this is the **explicit gate** the user crosses when
+all required fields for a step are filled. The server re-validates the
+required-field set before marking the step `completed` (this is what
+the doc calls `assertStepReadyForCompletion`).
+
+```
+UI                       TenantOnboardingStepPanel.tsx
+                         └─ "Tamamla" button → onComplete(stepKey)
+
+Hook                     useTenantOnboardingWorkspace.ts
+                         └─ completeStep(step)
+                              ├─ stateToken ?
+                              │     completeTenantOnboardingStepByStateToken
+                              │   : completeTenantOnboardingStep  (@deprecated)
+                              ├─ getTenantOnboardingWorkspaceByStateToken(result.stateToken)
+                              └─ rememberStateToken(result.stateToken)
+
+HTTP                     POST /api/v1/v2/tenant/onboarding/:stateToken/steps/:stepKey/complete
+                         (no body)
+
+Controller @Public()     completeStepByStateToken(stateToken, stepKey)
+
+Service                  completeStepByStateToken(stateToken, step)
+                         ├─ resolveApplicationFromStateToken(stateToken)
+                         └─ completeStep(tenantAccountId, step)
+                               ├─ assertStepKey
+                               ├─ ensureEditableApplication
+                               ├─ assertStepReadyForCompletion(applicationId, stepKey)
+                               │     → 400 BadRequestException with `errors[]` if not ready
+                               └─ store.upsertStepProgress(stepKey, 'completed')
+
+Response                 { stepKey, status: 'completed', nextStepKey, stateToken }
+```
+
+Tables written: `TenantOnboardingStepProgress` (the row for `stepKey`).
+No detail tables are touched here — the data was already persisted by
+the prior save call (4.2).
+
+Failure modes worth knowing:
+
+| Status | Reason | Where it's thrown |
+|---|---|---|
+| 403 | stateToken decrypt failure, salt mismatch, wrong tenantAccountId | `resolveApplicationFromStateToken` |
+| 400 | step not editable (e.g. application is `submitted`) | `ensureEditableApplication` |
+| 400 | required fields missing | `assertStepReadyForCompletion` |
+
+Legacy path: `POST /api/v1/v2/tenant/onboarding/me/:step/complete` →
+`completeStep` → same internal `completeStep`.
+
+---
+
+### 4.4. Resume (URL → workspace load)
+
+The user revisits a half-finished application by opening
+`/onboarding/<stateToken>/<stepSlug>` (either from a bookmark, the
+"continue" email, or the localStorage-rehydrated home redirect). The
+frontend has zero tenant identity until it decodes the workspace
+response.
+
+```
+URL                      /onboarding/[stateToken]/[stepSlug]
+                         apps/tenant/src/app/onboarding/[stateToken]/layout.tsx
+
+Workspace component      apps/tenant/src/components/tenant/onboarding/TenantOnboardingWorkspace.tsx
+                         └─ useTenantOnboardingWorkspace(stateToken)
+                              └─ loadWorkspace()
+                                   ├─ cache hit?  → render workspaceCache entry,
+                                   │                refetch in background
+                                   └─ cache miss? → setLoading(true)
+                                                   getTenantOnboardingWorkspaceByStateToken(stateToken)
+
+HTTP                     GET /api/v1/v2/tenant/onboarding/:stateToken/workspace
+
+Controller @Public()     getWorkspaceByStateToken(stateToken)
+
+Service                  resolveStateToken(stateToken)
+                         ├─ resolveApplicationFromStateToken(stateToken)
+                         │     ├─ CryptoUtil.decryptStateToken
+                         │     ├─ validateStateTokenPayload
+                         │     ├─ store.findApplicationById
+                         │     └─ tokenSalt + tenantAccountId match check
+                         └─ getWorkspace(application.tenantAccountId)
+                               ├─ store.findApplicationByTenantId
+                               ├─ store.getBusinessDetail / getLegalDetail /
+                               │  getOwnerContact / getOperationsProfile
+                               ├─ store.listDocuments (filter isCurrent)
+                               ├─ store.listStepProgress
+                               ├─ phoneVerification snapshot from
+                               │  `verifiedPhoneApplications` Map (in-memory)
+                               └─ buildStateToken(application, currentStep)
+                                     → fresh stateToken returned in payload
+
+Response                 TenantOnboardingWorkspace { application, stateToken,
+                                                    phoneVerification, steps[],
+                                                    editable, canSubmitForReview,
+                                                    submitAction, … }
+
+Frontend post-process    rememberStateToken(workspace.stateToken)
+                         workspaceCache.set(key, workspace)
+                         then onboarding-routing.ts.getTenantOnboardingResumeUrl
+                         picks where to land (welcome / step / waiting / dashboard).
+```
+
+Resume routing decisions (`onboarding-routing.ts → getTenantOnboardingResumeUrl`):
+
+| Application status                          | Resume URL                                   |
+| ------------------------------------------- | -------------------------------------------- |
+| `approved`, `active`                        | `/dashboard`                                 |
+| `submitted`, `under_review`, `rejected`, `suspended` | `/onboarding/{stateToken}/waiting`  |
+| `draft`, `revision_required`                | first locked-safe step (`/onboarding/{stateToken}/{stepSlug}`) |
+
+---
+
+### 4.5. Phone verification
+
+Two-leg challenge. The first leg generates a 6-digit code, stores it in
+an in-memory `Map<applicationId, PhoneVerificationChallenge>` (NOT the
+database — see Open items in `onboarding-v2-flow.md`), and dispatches an
+email via `EmailService` (currently log-only). The second leg confirms
+the code and stores the phone number in a second in-memory
+`Map<applicationId, phoneNumber>` (`verifiedPhoneApplications`) that the
+workspace serializer reads to set `phoneVerification.verified`.
+
+```
+Leg 1 — send
+  UI            TenantOnboardingStepPanel.tsx (phone-verification step)
+                └─ "Kodu gönder" button
+
+  Client        sendTenantOnboardingPhoneVerification(stateToken, phoneNumber)
+
+  HTTP          POST /api/v1/v2/tenant/onboarding/phone-verification/send
+                body: { stateToken, phoneNumber }                     ← body-token variant
+                  OR
+                POST /api/v1/v2/tenant/onboarding/:stateToken/phone-verification/send
+                body: { phoneNumber }                                  ← URL-token variant
+
+  Controller    sendPhoneVerificationCodeFromBody / sendPhoneVerificationCode   @Public()
+  Service       sendPhoneVerificationCodeByStateToken(stateToken, phoneNumber)
+                ├─ resolveApplicationFromStateToken
+                ├─ tenantAccountsStore.findById  (404 if missing)
+                ├─ normalizePhoneNumber
+                ├─ challenge = { code: 6-digit, expiresAt: now + 10min, attempts: 0 }
+                ├─ phoneVerificationChallenges.set(application.id, challenge)
+                └─ emailService.send({ to: tenant.email, subject, text })
+                     (NotificationModule → log-only transport today)
+
+  Response      { maskedPhoneNumber, expiresAt, delivery: 'email_fallback',
+                  debugCode?: '123456' }              ← debugCode only in non-prod
+
+Leg 2 — verify
+  UI            User types code → "Doğrula" button
+
+  Client        verifyTenantOnboardingPhone(stateToken, code)
+
+  HTTP          POST /api/v1/v2/tenant/onboarding/phone-verification/verify
+                body: { stateToken, code }
+                  OR  POST /:stateToken/phone-verification/verify
+
+  Controller    verifyPhoneVerificationCodeFromBody / verifyPhoneVerificationCode   @Public()
+  Service       verifyPhoneByStateToken(stateToken, code)
+                ├─ resolveApplicationFromStateToken
+                ├─ challenge expired / missing → 400 'Phone verification code expired.'
+                ├─ challenge.attempts >= 5      → 400 'Phone verification attempts exceeded.'
+                ├─ challenge.code !== code      → 400 'Invalid phone verification code.'
+                │                                  (challenge.attempts++)
+                ├─ phoneVerificationChallenges.delete(application.id)
+                ├─ verifiedPhoneApplications.set(application.id, phoneNumber)
+                └─ return { verified: true, workspace: getWorkspace(...) }
+
+  Response      { verified: true, workspace: TenantOnboardingWorkspace }
+```
+
+> **Important caveat:** both `Map`s are process-local. A server restart
+> wipes the in-flight challenges and all "verified" phone markers. For
+> single-instance deployments this is fine; horizontal scaling requires
+> moving these into a row in `TenantOnboardingApplication` (tracked in
+> Open items).
+
+---
+
+### 4.6. Submit for review
+
+The last action a tenant takes before the application becomes the
+admin's problem. The same endpoint covers both first-time `submit`
+(from `draft`) and `resubmit` (from `revision_required`) — the service
+inspects the current status and dispatches accordingly.
+
+```
+UI                       TenantOnboardingStepPanel.tsx (review step)
+                         └─ "Başvuruyu gönder" button → onSubmit()
+
+Hook                     useTenantOnboardingWorkspace.ts → submitForReview()
+
+Client                   submitTenantOnboardingByStateToken(stateToken)
+
+HTTP                     POST /api/v1/v2/tenant/onboarding/:stateToken/submit
+                         (no body)
+
+Controller @Public()     submitForReviewByStateToken(stateToken)
+
+Service                  submitForReviewByStateToken(stateToken)
+                         ├─ resolveApplicationFromStateToken
+                         └─ submitForReview(application.tenantAccountId)
+                               ├─ getOrCreateApplication
+                               ├─ application.status === 'revision_required'
+                               │     ? resubmit(tenantAccountId)
+                               │     : submit(tenantAccountId)
+                               │
+                               │   submit():
+                               │     ├─ ensureEditableApplication
+                               │     ├─ assertTransition(status, 'submitted')   ← state.ts
+                               │     ├─ assertReadyForSubmission(applicationId)
+                               │     │     → 400 with errors[] if any required
+                               │     │       step is not completed or required
+                               │     │       documents are missing
+                               │     ├─ store.updateApplicationStatus(
+                               │     │       status='submitted',
+                               │     │       submittedAt = first-time only,
+                               │     │       lastSubmittedAt = now,
+                               │     │       reviewStartedAt = null)
+                               │     ├─ store.upsertStepProgress('final_review', 'completed')
+                               │     ├─ tenantAccountsStore.updateComplianceStatus(
+                               │     │       onboardingStatus='submitted',
+                               │     │       verificationStatus='pending')
+                               │     └─ auditLogService.log('onboarding_submitted')
+                               │
+                               │   resubmit(): same shape, but
+                               │     - status transition revision_required → submitted
+                               │     - currentRevisionNumber++ inside store.updateApplicationStatus
+                               │
+                               └─ return { application, workspace: getWorkspace(...) }
+
+Tables written           TenantOnboardingApplication (status, timestamps,
+                                                     currentRevisionNumber++),
+                         TenantOnboardingStepProgress ('final_review'),
+                         TenantAccount (onboardingStatus, verificationStatus),
+                         AuditLog
+
+Response                 { application: <updated>, workspace: <fresh> }
+
+Frontend post-process    setWorkspace(result.workspace)
+                         router.push('/onboarding/{stateToken}/waiting')
+```
+
+After this point the tenant's workspace polls show `submitted` /
+`under_review` / `revision_required` / `approved` / etc. Admin writes
+flow through the same `TenantOnboardingService` (see flow 6) so the
+waiting screen reflects an admin decision on its next poll.
+
+Legacy path: `POST /api/v1/v2/tenant/onboarding/me/submit` → `submitForReview`.
 
 ---
 
