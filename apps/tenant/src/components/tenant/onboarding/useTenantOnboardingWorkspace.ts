@@ -25,7 +25,20 @@ import {
   getNextTenantOnboardingStepKey,
   getWorkflowStepForBackendStep,
 } from './onboarding-routing';
-import { writeOnboardingStateToken } from '@/lib/storage/tenant-session';
+import {
+  clearOnboardingStateToken,
+  writeOnboardingStateToken,
+} from '@/lib/storage/tenant-session';
+
+// Statuses where the application no longer accepts state-token writes;
+// keeping the stale token in localStorage causes a 403 ping on the next
+// landing visit. See onboarding-state-model.md → Risks (R5).
+const TERMINAL_APPLICATION_STATUSES = new Set([
+  'approved',
+  'active',
+  'suspended',
+  'rejected',
+]);
 
 const workspaceCache = new Map<string, TenantOnboardingWorkspace>();
 
@@ -78,11 +91,36 @@ export function useTenantOnboardingWorkspace(stateToken?: string) {
         workspaceCache.set(cacheKey, nextWorkspace);
       }
 
-      rememberStateToken(nextWorkspace.stateToken);
+      if (TERMINAL_APPLICATION_STATUSES.has(nextWorkspace.application.status)) {
+        // Stale state token cannot do useful work after a terminal status —
+        // drop it so the next landing visit goes through a fresh start/resume
+        // instead of pinging the API with a 403-bound token.
+        clearOnboardingStateToken();
+      } else {
+        rememberStateToken(nextWorkspace.stateToken);
+      }
       setWorkspace(nextWorkspace);
       setLastCheckedAt(new Date());
     },
     [rememberStateToken],
+  );
+
+  // Fire-and-forget workspace re-read. Callers (saveDraft / completeStep)
+  // resolve immediately on the primary write response so navigation +
+  // URL update can happen on the next React commit; the workspace
+  // re-renders ~one roundtrip later when this lands.
+  const refreshWorkspaceInBackground = useCallback(
+    (token: string) => {
+      void (async () => {
+        try {
+          const nextWorkspace = await getTenantOnboardingWorkspaceByStateToken(token);
+          replaceWorkspace(nextWorkspace);
+        } catch {
+          // best-effort — the primary action already succeeded
+        }
+      })();
+    },
+    [replaceWorkspace],
   );
 
   const loadWorkspace = useCallback(async () => {
@@ -104,10 +142,7 @@ export function useTenantOnboardingWorkspace(stateToken?: string) {
       const nextWorkspace = currentStateToken
         ? await getTenantOnboardingWorkspaceByStateToken(currentStateToken)
         : await getTenantOnboardingWorkspace(session!);
-      const nextCacheKey = getWorkspaceCacheKey(nextWorkspace.stateToken, nextWorkspace.application.tenantAccountId);
-      workspaceCache.set(nextCacheKey, nextWorkspace);
-      setWorkspace(nextWorkspace);
-      setLastCheckedAt(new Date());
+      replaceWorkspace(nextWorkspace);
     } catch (loadError) {
       setError(
         loadError instanceof Error
@@ -117,7 +152,7 @@ export function useTenantOnboardingWorkspace(stateToken?: string) {
     } finally {
       setLoading(false);
     }
-  }, [currentStateToken, session]);
+  }, [currentStateToken, replaceWorkspace, session]);
 
   // Initial load + SSE-driven refresh: `onboardingStatus` changes when the API
   // pushes a transition, so the workspace re-fetches without polling.
@@ -153,13 +188,11 @@ export function useTenantOnboardingWorkspace(stateToken?: string) {
             )
           : await patchTenantOnboardingStep(ensureSession(), step, payload);
         rememberStateToken(result.stateToken);
-        const nextWorkspace = await getTenantOnboardingWorkspaceByStateToken(result.stateToken);
-        workspaceCache.set(
-          getWorkspaceCacheKey(result.stateToken, nextWorkspace.application.tenantAccountId)!,
-          nextWorkspace,
-        );
-        setWorkspace(nextWorkspace);
-        return nextWorkspace;
+        // URL-sync optimization: refresh workspace in the background so the
+        // caller (saveStepAndAdvance → completeStep) can proceed without
+        // waiting on a second GET roundtrip.
+        refreshWorkspaceInBackground(result.stateToken);
+        return result;
       } catch (saveError) {
         const message =
           saveError instanceof Error ? saveError.message : 'Onboarding step could not be saved.';
@@ -169,7 +202,7 @@ export function useTenantOnboardingWorkspace(stateToken?: string) {
         setSavingStep(null);
       }
     },
-    [ensureSession, rememberStateToken, stateToken],
+    [ensureSession, refreshWorkspaceInBackground, rememberStateToken, stateToken],
   );
 
   const completeStep = useCallback(
@@ -183,35 +216,25 @@ export function useTenantOnboardingWorkspace(stateToken?: string) {
             currentStateTokenRef.current ?? stateToken,
             step,
           );
-          const nextWorkspace = await getTenantOnboardingWorkspaceByStateToken(result.stateToken);
           rememberStateToken(result.stateToken);
-          workspaceCache.set(
-            getWorkspaceCacheKey(result.stateToken, nextWorkspace.application.tenantAccountId)!,
-            nextWorkspace,
-          );
-          setWorkspace(nextWorkspace);
+          // URL-sync optimization: refresh workspace in the background so
+          // the caller can navigate immediately on the next React commit.
+          refreshWorkspaceInBackground(result.stateToken);
           return {
             ...result,
             nextStepKey: getWorkflowStepForBackendStep(result.nextStepKey),
-            workspace: nextWorkspace,
           };
         }
 
         const result = await completeTenantOnboardingStep(ensureSession(), step);
-        const nextWorkspace = result.workspace;
-        workspaceCache.set(
-          getWorkspaceCacheKey(nextWorkspace.stateToken, nextWorkspace.application.tenantAccountId)!,
-          nextWorkspace,
-        );
-        setWorkspace(nextWorkspace);
+        replaceWorkspace(result.workspace);
         return {
           stepKey: result.stepKey,
           status: result.status,
           nextStepKey: getNextTenantOnboardingStepKey(
             getWorkflowStepForBackendStep(result.stepKey),
           ),
-          stateToken: nextWorkspace.stateToken,
-          workspace: nextWorkspace,
+          stateToken: result.workspace.stateToken,
         };
       } catch (saveError) {
         const message =
@@ -222,7 +245,7 @@ export function useTenantOnboardingWorkspace(stateToken?: string) {
         setSavingStep(null);
       }
     },
-    [ensureSession, rememberStateToken, stateToken],
+    [ensureSession, refreshWorkspaceInBackground, rememberStateToken, replaceWorkspace, stateToken],
   );
 
   const uploadDocument = useCallback(
@@ -238,11 +261,7 @@ export function useTenantOnboardingWorkspace(stateToken?: string) {
               payload,
             )
           : await uploadTenantOnboardingDocument(ensureSession(), file, payload);
-        workspaceCache.set(
-          getWorkspaceCacheKey(result.workspace.stateToken, result.workspace.application.tenantAccountId)!,
-          result.workspace,
-        );
-        setWorkspace(result.workspace);
+        replaceWorkspace(result.workspace);
         return result.workspace;
       } catch (saveError) {
         const message =
@@ -253,7 +272,7 @@ export function useTenantOnboardingWorkspace(stateToken?: string) {
         setSavingStep(null);
       }
     },
-    [ensureSession, stateToken],
+    [ensureSession, replaceWorkspace, stateToken],
   );
 
   const submitForReview = useCallback(async () => {
@@ -264,11 +283,7 @@ export function useTenantOnboardingWorkspace(stateToken?: string) {
       const result = stateToken
         ? await submitTenantOnboardingByStateToken(currentStateTokenRef.current ?? stateToken)
         : await submitTenantOnboarding(ensureSession());
-      workspaceCache.set(
-        getWorkspaceCacheKey(result.workspace.stateToken, result.workspace.application.tenantAccountId)!,
-        result.workspace,
-      );
-      setWorkspace(result.workspace);
+      replaceWorkspace(result.workspace);
       return result.workspace;
     } catch (submitError) {
       const message =
@@ -278,7 +293,7 @@ export function useTenantOnboardingWorkspace(stateToken?: string) {
     } finally {
       setSavingStep(null);
     }
-  }, [ensureSession, stateToken]);
+  }, [ensureSession, replaceWorkspace, stateToken]);
 
   return {
     error,
