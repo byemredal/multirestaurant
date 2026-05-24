@@ -14,12 +14,14 @@ import {
   uploadTenantOnboardingDocumentByStateToken,
   type TenantBusinessInfoInput,
   type TenantLegalTaxInfoInput,
+  type TenantOnboardingResolvedSession,
   type TenantOnboardingStepKey,
   type TenantOnboardingWorkspace,
   type TenantOperationsInfoInput,
   type TenantOwnerContactInfoInput,
   type UploadTenantOnboardingDocumentInput,
   getTenantOnboardingWorkspaceByStateToken,
+  resolveTenantOnboardingSession,
 } from '@/lib/tenant-onboarding-client';
 import {
   getNextTenantOnboardingStepKey,
@@ -57,13 +59,16 @@ function getWorkspaceCacheKey(stateToken?: string, tenantId?: string) {
  * whenever the backend pushes a status change over SSE (e.g. an admin requests
  * a revision), which replaces the old 12s polling loop.
  */
-export function useTenantOnboardingWorkspace(stateToken?: string) {
+export function useTenantOnboardingWorkspace(stateToken?: string, requestedStep?: string) {
   const { session, onboardingStatus } = useTenantAuth();
   const initialCacheKey = getWorkspaceCacheKey(stateToken, session?.tenant.id);
   const initialWorkspace = initialCacheKey ? workspaceCache.get(initialCacheKey) ?? null : null;
   const [currentStateToken, setCurrentStateToken] = useState(stateToken);
   const currentStateTokenRef = useRef(stateToken);
+  const workspaceRequestSeqRef = useRef(0);
+  const latestAppliedWorkspaceSeqRef = useRef(0);
   const [workspace, setWorkspace] = useState<TenantOnboardingWorkspace | null>(initialWorkspace);
+  const [resolvedSession, setResolvedSession] = useState<TenantOnboardingResolvedSession | null>(null);
   const [loading, setLoading] = useState(!initialWorkspace);
   const [error, setError] = useState<string | null>(null);
   const [savingStep, setSavingStep] = useState<TenantOnboardingStepKey | null>(null);
@@ -81,7 +86,14 @@ export function useTenantOnboardingWorkspace(stateToken?: string) {
   }, []);
 
   const replaceWorkspace = useCallback(
-    (nextWorkspace: TenantOnboardingWorkspace) => {
+    (nextWorkspace: TenantOnboardingWorkspace, requestSeq?: number) => {
+      const nextSeq = requestSeq ?? workspaceRequestSeqRef.current + 1;
+      if (nextSeq < latestAppliedWorkspaceSeqRef.current) {
+        return;
+      }
+      workspaceRequestSeqRef.current = Math.max(workspaceRequestSeqRef.current, nextSeq);
+      latestAppliedWorkspaceSeqRef.current = nextSeq;
+
       const cacheKey = getWorkspaceCacheKey(
         nextWorkspace.stateToken,
         nextWorkspace.application.tenantAccountId,
@@ -111,10 +123,12 @@ export function useTenantOnboardingWorkspace(stateToken?: string) {
   // re-renders ~one roundtrip later when this lands.
   const refreshWorkspaceInBackground = useCallback(
     (token: string) => {
+      const requestSeq = workspaceRequestSeqRef.current + 1;
+      workspaceRequestSeqRef.current = requestSeq;
       void (async () => {
         try {
           const nextWorkspace = await getTenantOnboardingWorkspaceByStateToken(token);
-          replaceWorkspace(nextWorkspace);
+          replaceWorkspace(nextWorkspace, requestSeq);
         } catch {
           // best-effort — the primary action already succeeded
         }
@@ -132,17 +146,26 @@ export function useTenantOnboardingWorkspace(stateToken?: string) {
       const cacheKey = getWorkspaceCacheKey(currentStateToken, session?.tenant.id);
       const cachedWorkspace = cacheKey ? workspaceCache.get(cacheKey) : null;
 
-      if (cachedWorkspace) {
+      if (cachedWorkspace && !requestedStep) {
         setWorkspace(cachedWorkspace);
         setLoading(false);
       } else {
         setLoading(true);
       }
 
-      const nextWorkspace = currentStateToken
-        ? await getTenantOnboardingWorkspaceByStateToken(currentStateToken)
-        : await getTenantOnboardingWorkspace(session!);
-      replaceWorkspace(nextWorkspace);
+      const requestSeq = workspaceRequestSeqRef.current + 1;
+      workspaceRequestSeqRef.current = requestSeq;
+      if (currentStateToken && requestedStep) {
+        const nextSession = await resolveTenantOnboardingSession(currentStateToken, requestedStep);
+        setResolvedSession(nextSession);
+        replaceWorkspace(nextSession.workspace, requestSeq);
+      } else {
+        const nextWorkspace = currentStateToken
+          ? await getTenantOnboardingWorkspaceByStateToken(currentStateToken)
+          : await getTenantOnboardingWorkspace(session!);
+        setResolvedSession(null);
+        replaceWorkspace(nextWorkspace, requestSeq);
+      }
     } catch (loadError) {
       setError(
         loadError instanceof Error
@@ -152,7 +175,7 @@ export function useTenantOnboardingWorkspace(stateToken?: string) {
     } finally {
       setLoading(false);
     }
-  }, [currentStateToken, replaceWorkspace, session]);
+  }, [currentStateToken, replaceWorkspace, requestedStep, session]);
 
   // Initial load + SSE-driven refresh: `onboardingStatus` changes when the API
   // pushes a transition, so the workspace re-fetches without polling.
@@ -217,9 +240,11 @@ export function useTenantOnboardingWorkspace(stateToken?: string) {
             step,
           );
           rememberStateToken(result.stateToken);
-          // URL-sync optimization: refresh workspace in the background so
-          // the caller can navigate immediately on the next React commit.
-          refreshWorkspaceInBackground(result.stateToken);
+          if (result.workspace) {
+            replaceWorkspace(result.workspace);
+          } else {
+            refreshWorkspaceInBackground(result.stateToken);
+          }
           return {
             ...result,
             nextStepKey: getWorkflowStepForBackendStep(result.nextStepKey),
@@ -299,6 +324,7 @@ export function useTenantOnboardingWorkspace(stateToken?: string) {
     error,
     lastCheckedAt,
     loading,
+    resolvedSession,
     savingStep,
     session,
     workspace,

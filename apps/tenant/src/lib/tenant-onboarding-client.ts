@@ -162,6 +162,41 @@ export type TenantOnboardingWorkspace = {
   }>;
 };
 
+export type TenantOnboardingSessionStepKey =
+  | 'phone-verification'
+  | 'otp'
+  | 'welcome'
+  | 'location'
+  | 'address'
+  | 'business-details'
+  | 'authorized-person'
+  | 'bank-details'
+  | 'billing-address'
+  | 'plan-selection'
+  | 'verification'
+  | 'review'
+  | 'submitted';
+
+export type TenantOnboardingCountryPack = {
+  country: string;
+  language: string;
+  currency: string;
+};
+
+export type TenantOnboardingResolvedSession = {
+  stateToken: string;
+  applicationId: string;
+  status: TenantOnboardingApplicationStatus;
+  requestedStep: TenantOnboardingSessionStepKey | string | null;
+  currentStep: TenantOnboardingSessionStepKey;
+  redirectStep: TenantOnboardingSessionStepKey | null;
+  allowedSteps: TenantOnboardingSessionStepKey[];
+  completedSteps: TenantOnboardingSessionStepKey[];
+  countryPack: TenantOnboardingCountryPack;
+  stepData: unknown;
+  workspace: TenantOnboardingWorkspace;
+};
+
 export type TenantBusinessInfoInput = {
   businessName?: string;
   businessType?: string;
@@ -237,6 +272,27 @@ export async function getTenantOnboardingWorkspaceByStateToken(stateToken: strin
   }
 
   return (await response.json()) as TenantOnboardingWorkspace;
+}
+
+export async function resolveTenantOnboardingSession(
+  stateToken: string,
+  requestedStep?: string,
+) {
+  const params = new URLSearchParams();
+  if (requestedStep?.trim()) {
+    params.set('step', requestedStep.trim());
+  }
+  const query = params.toString();
+  const response = await fetch(
+    `${apiBaseUrl}/v2/tenant/onboarding/${encodeURIComponent(stateToken)}/session${query ? `?${query}` : ''}`,
+    { credentials: 'include' },
+  );
+
+  if (!response.ok) {
+    throw new Error(`tenant_onboarding_session_failed_${response.status}`);
+  }
+
+  return (await response.json()) as TenantOnboardingResolvedSession;
 }
 
 export type TenantPhoneVerificationChallenge = {
@@ -414,7 +470,9 @@ export async function completeTenantOnboardingStepByStateToken(
     throw new Error(`tenant_onboarding_step_complete_failed_${response.status}`);
   }
 
-  return (await response.json()) as Omit<TenantOnboardingStepDraftResponse, 'data'>;
+  return (await response.json()) as Omit<TenantOnboardingStepDraftResponse, 'data'> & {
+    workspace?: TenantOnboardingWorkspace;
+  };
 }
 
 /** @deprecated Use `uploadTenantOnboardingDocumentByStateToken` instead. */

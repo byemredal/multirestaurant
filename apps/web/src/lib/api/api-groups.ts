@@ -8,6 +8,19 @@ export type ApiGroup = {
 
 export const apiGroups: ApiGroup[] = [
   {
+    id: 'tenantOnboarding',
+    label: 'Public - Tenant Onboarding',
+    actions: [
+      {
+        id: 'resolveTenantOnboardingSession',
+        method: 'GET',
+        path: '/v2/tenant/onboarding/:stateToken/session',
+        pathParams: [{ key: 'stateToken', label: 'State token' }],
+        queryParams: [{ key: 'step', label: 'requested step slug' }],
+      },
+    ],
+  },
+  {
     id: 'systemTaxonomy',
     label: 'Public — System Taxonomy (currency / language / payment / service)',
     actions: [

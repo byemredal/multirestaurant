@@ -15,16 +15,29 @@ import {
   getPreviousTenantOnboardingStepKey,
   getTenantOnboardingResumeUrl,
   getTenantOnboardingStepUrl,
+  normalizeTenantOnboardingStepSlug,
   tenantOnboardingProgressStepOrder,
   tenantOnboardingWorkflowSteps,
   type TenantOnboardingWorkflowStepKey,
 } from './onboarding-routing';
 
+function getLegacyRenderableStep(
+  step: TenantOnboardingWorkflowStepKey,
+): TenantOnboardingWorkflowStepKey {
+  if (step === 'otp') return 'phone-verification';
+  if (step === 'address') return 'location';
+  if (step === 'billing-address') return 'bank-details';
+  if (step === 'submitted') return 'waiting';
+  return step;
+}
+
 export default function TenantOnboardingWorkspace({
   initialStep,
+  requestedStep,
   stateToken,
 }: {
   initialStep?: TenantOnboardingWorkflowStepKey;
+  requestedStep?: string;
   stateToken?: string;
 }) {
   const router = useRouter();
@@ -44,9 +57,22 @@ export default function TenantOnboardingWorkspace({
     submitForReview,
     uploadDocument,
     workspace,
-  } = useTenantOnboardingWorkspace(stateToken);
+    resolvedSession,
+  } = useTenantOnboardingWorkspace(stateToken, requestedStep ?? initialStep);
 
-  const activeStep = initialStep ?? 'welcome';
+  const requestedWorkflowStep =
+    normalizeTenantOnboardingStepSlug(String(resolvedSession?.requestedStep ?? requestedStep ?? initialStep ?? '')) ??
+    initialStep ??
+    'phone-verification';
+  const activeStep = getLegacyRenderableStep(requestedWorkflowStep);
+
+  useEffect(() => {
+    if (!workspace || !resolvedSession?.redirectStep) {
+      return;
+    }
+
+    router.replace(getTenantOnboardingStepUrl(workspace.stateToken, resolvedSession.redirectStep));
+  }, [resolvedSession?.redirectStep, router, workspace]);
 
   useEffect(() => {
     if (!workspace) {
@@ -60,7 +86,11 @@ export default function TenantOnboardingWorkspace({
   }, [router, workspace]);
 
   useEffect(() => {
-    if (!workspace || canAccessTenantOnboardingStep(workspace, activeStep)) {
+    if (
+      !workspace ||
+      resolvedSession ||
+      canAccessTenantOnboardingStep(workspace, activeStep)
+    ) {
       return;
     }
 
@@ -70,7 +100,7 @@ export default function TenantOnboardingWorkspace({
         getFirstLockedSafeTenantOnboardingStep(workspace),
       ),
     );
-  }, [activeStep, router, workspace]);
+  }, [activeStep, resolvedSession, router, workspace]);
 
   const selectStep = (nextStep: TenantOnboardingWorkflowStepKey) => {
     const nextToken = workspace?.stateToken ?? stateToken;
@@ -84,16 +114,16 @@ export default function TenantOnboardingWorkspace({
   };
 
   const moveToNextStep = () => {
-    selectStep(getNextTenantOnboardingStepKey(activeStep));
+    selectStep(getNextTenantOnboardingStepKey(requestedWorkflowStep));
   };
 
   const moveToPreviousStep = () => {
-    selectStep(getPreviousTenantOnboardingStepKey(activeStep));
+    selectStep(getPreviousTenantOnboardingStepKey(requestedWorkflowStep));
   };
 
   const completeStepAndNavigate = async (step: TenantOnboardingStepKey) => {
     const result = await completeStep(step);
-    const nextStep = result.nextStepKey;
+    const nextStep = step === 'owner_contact_info' ? 'bank-details' : result.nextStepKey;
     if (nextStep) {
       router.replace(getTenantOnboardingStepUrl(result.stateToken, nextStep));
     }
@@ -123,7 +153,7 @@ export default function TenantOnboardingWorkspace({
     {
       title: 'Isletme detaylari',
       description: 'Konum, isletme, banka ve paket bilgileri.',
-      steps: ['location', 'business-details', 'bank-details', 'plan-selection'],
+      steps: ['location', 'business-details', 'authorized-person', 'bank-details', 'plan-selection'],
     },
     {
       title: 'Isletme dogrulama',
@@ -150,7 +180,7 @@ export default function TenantOnboardingWorkspace({
     return { completed, total: steps.length };
   };
 
-  if (loading) {
+  if (loading || resolvedSession?.redirectStep || activeStep === 'waiting') {
     return (
       <div className="flex min-h-screen items-center justify-center bg-primary-50">
         <span className="h-8 w-8 animate-spin rounded-full border-2 border-primary border-t-transparent" />

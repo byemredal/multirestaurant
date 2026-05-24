@@ -3,15 +3,23 @@ import type {
   TenantOnboardingWorkspace,
 } from '@/lib/tenant-onboarding-client';
 
-export type TenantOnboardingWorkflowStepKey =
-  | 'welcome'
+export type TenantOnboardingCanonicalStepKey =
   | 'phone-verification'
-  | 'business-intro'
+  | 'otp'
+  | 'welcome'
   | 'location'
+  | 'address'
   | 'business-details'
+  | 'authorized-person'
   | 'bank-details'
+  | 'billing-address'
   | 'plan-selection'
   | 'review'
+  | 'submitted';
+
+export type TenantOnboardingWorkflowStepKey =
+  | TenantOnboardingCanonicalStepKey
+  | 'business-intro'
   | 'verification'
   | 'waiting';
 
@@ -22,94 +30,131 @@ export type TenantOnboardingWorkflowStep = {
   backendStep?: TenantOnboardingStepKey;
   informational?: boolean;
   terminal?: boolean;
+  /**
+   * Future V2 custom pages can be routable before they are useful in the
+   * current legacy panel/sidebar shell.
+   */
+  hideInLegacyNav?: boolean;
 };
 
-export const tenantOnboardingWorkflowSteps = [
+export const tenantOnboardingCanonicalSteps = [
+  'phone-verification',
+  'otp',
+  'welcome',
+  'location',
+  'address',
+  'business-details',
+  'authorized-person',
+  'bank-details',
+  'billing-address',
+  'plan-selection',
+  'review',
+  'submitted',
+] as const satisfies readonly TenantOnboardingCanonicalStepKey[];
+
+export const tenantOnboardingWorkflowSteps: readonly TenantOnboardingWorkflowStep[] = [
+  {
+    key: 'phone-verification',
+    title: 'Telefon dogrulama',
+    description: 'Iletisim numaranizi dogrulayin.',
+  },
+  {
+    key: 'otp',
+    title: 'OTP',
+    description: 'Gelen kodu onaylayin.',
+    hideInLegacyNav: true,
+  },
   {
     key: 'welcome',
     informational: true,
-    title: 'Hoş geldiniz',
-    description: 'Başvurunun akışını başlatın.',
-  },
-  {
-    key: 'phone-verification',
-    title: 'Telefon doğrulama',
-    description: 'İletişim numaranızı doğrulayın.',
+    title: 'Hos geldiniz',
+    description: 'Basvurunun akisina baslayin.',
   },
   {
     key: 'business-intro',
     informational: true,
-    title: 'Hazırlık',
-    description: 'Sizden isteyeceğimiz bilgileri görün.',
+    title: 'Hazirlik',
+    description: 'Sizden isteyecegimiz bilgileri gorun.',
   },
   {
     key: 'location',
     title: 'Konum',
-    description: 'Önce işletmenizi arayın, ardından adresi netleştirin.',
+    description: 'Once isletmenizi arayin, ardindan adresi netlestirin.',
     backendStep: 'business_info',
   },
   {
+    key: 'address',
+    title: 'Adres',
+    description: 'Isletme adresini netlestirin.',
+    backendStep: 'business_info',
+    hideInLegacyNav: true,
+  },
+  {
     key: 'business-details',
-    title: 'İşletme detayları',
-    description: 'Vergi bilgileri ve yetkili kişi detayları.',
+    title: 'Isletme detaylari',
+    description: 'Vergi ve ticari kayit bilgileri.',
     backendStep: 'legal_tax_info',
+  },
+  {
+    key: 'authorized-person',
+    title: 'Yetkili kisi',
+    description: 'Basvurudan sorumlu kisi ve sahiplik bilgileri.',
+    backendStep: 'owner_contact_info',
   },
   {
     key: 'bank-details',
     title: 'Banka bilgileri',
-    description: 'IBAN, banka ve fatura adresi hazırlığı.',
+    description: 'IBAN, banka ve odeme hazirligi.',
+  },
+  {
+    key: 'billing-address',
+    title: 'Fatura adresi',
+    description: 'Faturalama adresini netlestirin.',
+    hideInLegacyNav: true,
   },
   {
     key: 'plan-selection',
-    title: 'Paket seçimi',
-    description: 'Başlangıç paketini seçin.',
+    title: 'Paket secimi',
+    description: 'Baslangic paketini secin.',
     backendStep: 'operations_info',
   },
   {
-    key: 'review',
-    title: 'Kontrol',
-    description: 'Tüm blokları kontrol edip başvuruyu gönderin.',
-    backendStep: 'final_review',
-  },
-  {
     key: 'verification',
-    title: 'Doğrulama',
+    title: 'Dogrulama',
     description: 'Belge gereksinimlerini inceleyin.',
     backendStep: 'documents',
   },
   {
+    key: 'review',
+    title: 'Kontrol',
+    description: 'Tum bloklari kontrol edip basvuruyu gonderin.',
+    backendStep: 'final_review',
+  },
+  {
+    key: 'submitted',
+    title: 'Gonderildi',
+    description: 'Basvuru durumunu takip edin.',
+    terminal: true,
+    hideInLegacyNav: true,
+  },
+  {
     key: 'waiting',
     title: 'Bekleme',
-    description: 'Başvuru durumunu takip edin.',
+    description: 'Basvuru durumunu takip edin.',
     terminal: true,
+    hideInLegacyNav: true,
   },
-] as const satisfies readonly TenantOnboardingWorkflowStep[];
-
-const tenantOnboardingWorkflowStepBaseOrder = tenantOnboardingWorkflowSteps
-  .filter((step) => !('terminal' in step && step.terminal))
-  .map((step) => step.key as TenantOnboardingWorkflowStepKey)
-  .filter((step) => step !== 'review' && step !== 'verification');
-
-export const tenantOnboardingWorkflowStepOrder: TenantOnboardingWorkflowStepKey[] = [
-  ...tenantOnboardingWorkflowStepBaseOrder,
-  'verification',
-  'review',
 ];
 
-const tenantOnboardingProgressStepBaseOrder = tenantOnboardingWorkflowSteps
-  .filter(
-    (step) =>
-      !('terminal' in step && step.terminal) &&
-      !('informational' in step && step.informational),
-  )
-  .map((step) => step.key as TenantOnboardingWorkflowStepKey)
-  .filter((step) => step !== 'review' && step !== 'verification');
+export const tenantOnboardingWorkflowStepOrder: TenantOnboardingWorkflowStepKey[] =
+  tenantOnboardingWorkflowSteps
+    .filter((step) => !step.terminal && step.key !== 'business-intro')
+    .map((step) => step.key);
 
-export const tenantOnboardingProgressStepOrder: TenantOnboardingWorkflowStepKey[] = [
-  ...tenantOnboardingProgressStepBaseOrder,
-  'verification',
-  'review',
-];
+export const tenantOnboardingProgressStepOrder: TenantOnboardingWorkflowStepKey[] =
+  tenantOnboardingWorkflowSteps
+    .filter((step) => !step.terminal && !step.informational && !step.hideInLegacyNav)
+    .map((step) => step.key);
 
 function isBackendStepCompleted(workspace: TenantOnboardingWorkspace, stepKey: TenantOnboardingStepKey) {
   return workspace.steps.some((step) => step.stepKey === stepKey && step.status === 'completed');
@@ -119,7 +164,7 @@ function isWorkflowStepSatisfied(
   workspace: TenantOnboardingWorkspace,
   step: TenantOnboardingWorkflowStep,
 ) {
-  if (step.key === 'phone-verification') {
+  if (step.key === 'phone-verification' || step.key === 'otp') {
     return Boolean(workspace.phoneVerification?.verified);
   }
 
@@ -148,7 +193,7 @@ export function canAccessTenantOnboardingStep(
   workspace: TenantOnboardingWorkspace,
   stepKey: TenantOnboardingWorkflowStepKey,
 ) {
-  if (stepKey === 'waiting') {
+  if (stepKey === 'waiting' || stepKey === 'submitted') {
     return true;
   }
 
@@ -163,7 +208,7 @@ export function getFirstLockedSafeTenantOnboardingStep(workspace: TenantOnboardi
 
   return accessibleSteps.includes(preferredStep)
     ? preferredStep
-    : accessibleSteps[accessibleSteps.length - 1] ?? 'welcome';
+    : accessibleSteps[accessibleSteps.length - 1] ?? 'phone-verification';
 }
 
 const workflowStepByBackendStep: Partial<
@@ -171,7 +216,7 @@ const workflowStepByBackendStep: Partial<
 > = {
   business_info: 'location',
   legal_tax_info: 'business-details',
-  owner_contact_info: 'business-details',
+  owner_contact_info: 'authorized-person',
   operations_info: 'plan-selection',
   documents: 'verification',
   final_review: 'review',
@@ -183,21 +228,36 @@ export const tenantOnboardingWorkflowStepBySlug: Record<
 > = {
   welcome: 'welcome',
   'phone-verification': 'phone-verification',
+  otp: 'otp',
   'business-intro': 'business-intro',
   location: 'location',
+  address: 'address',
   'business-details': 'business-details',
+  'authorized-person': 'authorized-person',
   'bank-details': 'bank-details',
+  'billing-address': 'billing-address',
   'plan-selection': 'plan-selection',
   review: 'review',
-  verification: 'verification',
+  submitted: 'submitted',
   waiting: 'waiting',
+  verification: 'verification',
   'business-info': 'location',
   'legal-tax-info': 'business-details',
-  'owner-contact-info': 'business-details',
+  'owner-contact-info': 'authorized-person',
   'operations-info': 'plan-selection',
   documents: 'verification',
   'final-review': 'review',
 };
+
+export function normalizeTenantOnboardingStepSlug(
+  stepSlug: string | null | undefined,
+): TenantOnboardingWorkflowStepKey | null {
+  if (!stepSlug) {
+    return 'phone-verification';
+  }
+
+  return tenantOnboardingWorkflowStepBySlug[stepSlug] ?? null;
+}
 
 export function getWorkflowStep(
   stepKey: TenantOnboardingWorkflowStepKey,
@@ -218,9 +278,13 @@ export function getBackendStepForWorkflowStep(stepKey: TenantOnboardingWorkflowS
 
 export function getTenantOnboardingStepUrl(
   stateToken: string,
-  stepKey: TenantOnboardingWorkflowStepKey,
+  stepKey: TenantOnboardingWorkflowStepKey | string,
 ) {
-  return `/onboarding/${encodeURIComponent(stateToken)}/${stepKey}`;
+  // `submitted` is the V2 canonical terminal step. The legacy route that
+  // renders the waiting/status page is still `/waiting`; keep the URL bridge
+  // here until the custom submitted page lands.
+  const urlStep = stepKey === 'submitted' ? 'waiting' : stepKey;
+  return `/onboarding/${encodeURIComponent(stateToken)}/${urlStep}`;
 }
 
 export function getNextTenantOnboardingStepKey(stepKey: TenantOnboardingWorkflowStepKey) {

@@ -53,6 +53,67 @@ type PhoneVerificationChallenge = {
   attempts: number;
 };
 
+type OnboardingSessionStepKey =
+  | 'phone-verification'
+  | 'otp'
+  | 'welcome'
+  | 'location'
+  | 'address'
+  | 'business-details'
+  | 'authorized-person'
+  | 'bank-details'
+  | 'billing-address'
+  | 'plan-selection'
+  | 'verification'
+  | 'review'
+  | 'submitted';
+
+const ONBOARDING_SESSION_STEP_ORDER: OnboardingSessionStepKey[] = [
+  'phone-verification',
+  'otp',
+  'welcome',
+  'location',
+  'address',
+  'business-details',
+  'authorized-person',
+  'bank-details',
+  'billing-address',
+  'plan-selection',
+  'verification',
+  'review',
+  'submitted',
+];
+
+const ONBOARDING_SESSION_STEP_ALIASES: Record<string, OnboardingSessionStepKey> = {
+  'phone-verification': 'phone-verification',
+  otp: 'otp',
+  welcome: 'welcome',
+  location: 'location',
+  address: 'address',
+  'business-details': 'business-details',
+  'authorized-person': 'authorized-person',
+  'bank-details': 'bank-details',
+  'billing-address': 'billing-address',
+  'plan-selection': 'plan-selection',
+  verification: 'verification',
+  review: 'review',
+  submitted: 'submitted',
+  waiting: 'submitted',
+  'business-info': 'location',
+  'legal-tax-info': 'business-details',
+  'owner-contact-info': 'authorized-person',
+  'operations-info': 'plan-selection',
+  documents: 'verification',
+  'final-review': 'review',
+};
+
+const TERMINAL_WAITING_STATUSES = new Set<TenantOnboardingApplicationStatus>([
+  'submitted',
+  'under_review',
+  'rejected',
+  'suspended',
+]);
+
 @Injectable()
 export class TenantOnboardingService {
   private readonly phoneVerificationChallenges = new Map<string, PhoneVerificationChallenge>();
@@ -208,6 +269,35 @@ export class TenantOnboardingService {
     return this.getWorkspace(application.tenantAccountId);
   }
 
+  async resolveSessionByStateToken(stateToken: string, requestedStep?: string) {
+    const application = await this.resolveApplicationFromStateToken(stateToken);
+    const workspace = await this.getWorkspace(application.tenantAccountId);
+    const normalizedRequestedStep = this.normalizeSessionStep(requestedStep);
+    const currentStep = this.getCurrentSessionStep(workspace);
+    const allowedSteps = this.getAllowedSessionSteps(workspace);
+    const completedSteps = this.getCompletedSessionSteps(workspace);
+    const requestedIsAllowed =
+      Boolean(normalizedRequestedStep) &&
+      allowedSteps.includes(normalizedRequestedStep as OnboardingSessionStepKey);
+    const redirectStep = requestedIsAllowed
+      ? null
+      : currentStep;
+
+    return {
+      stateToken: workspace.stateToken,
+      applicationId: workspace.application.id,
+      status: workspace.application.status,
+      requestedStep: normalizedRequestedStep ?? requestedStep ?? null,
+      currentStep,
+      redirectStep,
+      allowedSteps,
+      completedSteps,
+      countryPack: this.getCountryPackSnapshot(workspace),
+      stepData: this.getSessionStepData(workspace, normalizedRequestedStep ?? currentStep),
+      workspace,
+    };
+  }
+
   async sendPhoneVerificationCodeByStateToken(stateToken: string, phoneNumber: string) {
     const application = await this.resolveApplicationFromStateToken(stateToken);
     const tenant = await this.tenantAccountsStore.findById(application.tenantAccountId);
@@ -315,6 +405,7 @@ export class TenantOnboardingService {
       status: result.status,
       nextStepKey: nextStepAfter(result.stepKey),
       stateToken: nextStateToken,
+      workspace: result.workspace,
     };
   }
 
@@ -337,6 +428,181 @@ export class TenantOnboardingService {
     }
 
     return application;
+  }
+
+  private normalizeSessionStep(step?: string | null): OnboardingSessionStepKey | null {
+    if (!step?.trim()) {
+      return 'phone-verification';
+    }
+
+    return ONBOARDING_SESSION_STEP_ALIASES[step.trim()] ?? null;
+  }
+
+  private getCurrentSessionStep(
+    workspace: Awaited<ReturnType<TenantOnboardingService['getWorkspace']>>,
+  ): OnboardingSessionStepKey {
+    if (TERMINAL_WAITING_STATUSES.has(workspace.application.status)) {
+      return 'submitted';
+    }
+
+    if (!workspace.phoneVerification?.verified) {
+      return 'phone-verification';
+    }
+
+    if (!this.isWorkspaceStepCompleted(workspace, 'business_info')) {
+      return 'location';
+    }
+
+    if (!this.isWorkspaceStepCompleted(workspace, 'legal_tax_info')) {
+      return 'business-details';
+    }
+
+    if (!this.isWorkspaceStepCompleted(workspace, 'owner_contact_info')) {
+      return 'authorized-person';
+    }
+
+    if (!this.isWorkspaceStepCompleted(workspace, 'operations_info')) {
+      return 'plan-selection';
+    }
+
+    if (!this.isWorkspaceStepCompleted(workspace, 'documents')) {
+      return 'verification';
+    }
+
+    return 'review';
+  }
+
+  private getAllowedSessionSteps(
+    workspace: Awaited<ReturnType<TenantOnboardingService['getWorkspace']>>,
+  ): OnboardingSessionStepKey[] {
+    if (TERMINAL_WAITING_STATUSES.has(workspace.application.status)) {
+      return ['submitted'];
+    }
+
+    const allowed = new Set<OnboardingSessionStepKey>(['phone-verification']);
+
+    if (!workspace.phoneVerification?.verified) {
+      // The OTP page is a canonical V2 route, but the legacy UI still renders
+      // phone send + code verification together.
+      allowed.add('otp');
+      return ONBOARDING_SESSION_STEP_ORDER.filter((step) => allowed.has(step));
+    }
+
+    allowed.add('otp');
+    allowed.add('welcome');
+
+    allowed.add('location');
+    if (this.isWorkspaceStepCompleted(workspace, 'business_info')) {
+      allowed.add('address');
+      allowed.add('business-details');
+    }
+
+    if (this.isWorkspaceStepCompleted(workspace, 'legal_tax_info')) {
+      allowed.add('authorized-person');
+    }
+
+    if (this.isWorkspaceStepCompleted(workspace, 'owner_contact_info')) {
+      allowed.add('bank-details');
+      allowed.add('billing-address');
+      allowed.add('plan-selection');
+    }
+
+    if (this.isWorkspaceStepCompleted(workspace, 'operations_info')) {
+      allowed.add('verification');
+    }
+
+    if (this.isWorkspaceStepCompleted(workspace, 'documents')) {
+      allowed.add('review');
+    }
+
+    return ONBOARDING_SESSION_STEP_ORDER.filter((step) => allowed.has(step));
+  }
+
+  private getCompletedSessionSteps(
+    workspace: Awaited<ReturnType<TenantOnboardingService['getWorkspace']>>,
+  ): OnboardingSessionStepKey[] {
+    const completed = new Set<OnboardingSessionStepKey>();
+
+    if (workspace.phoneVerification?.verified) {
+      completed.add('phone-verification');
+      completed.add('otp');
+      completed.add('welcome');
+    }
+
+    if (this.isWorkspaceStepCompleted(workspace, 'business_info')) {
+      completed.add('location');
+      completed.add('address');
+    }
+
+    if (this.isWorkspaceStepCompleted(workspace, 'legal_tax_info')) {
+      completed.add('business-details');
+    }
+
+    if (this.isWorkspaceStepCompleted(workspace, 'owner_contact_info')) {
+      completed.add('authorized-person');
+    }
+
+    if (this.isWorkspaceStepCompleted(workspace, 'operations_info')) {
+      completed.add('bank-details');
+      completed.add('billing-address');
+      completed.add('plan-selection');
+    }
+
+    if (this.isWorkspaceStepCompleted(workspace, 'documents')) {
+      completed.add('verification');
+    }
+
+    if (this.isWorkspaceStepCompleted(workspace, 'final_review')) {
+      completed.add('review');
+    }
+
+    return ONBOARDING_SESSION_STEP_ORDER.filter((step) => completed.has(step));
+  }
+
+  private isWorkspaceStepCompleted(
+    workspace: Awaited<ReturnType<TenantOnboardingService['getWorkspace']>>,
+    stepKey: TenantOnboardingStepKey,
+  ) {
+    return workspace.steps.some((step) => step.stepKey === stepKey && step.status === 'completed');
+  }
+
+  private getCountryPackSnapshot(
+    workspace: Awaited<ReturnType<TenantOnboardingService['getWorkspace']>>,
+  ) {
+    const businessInfo = workspace.steps.find((step) => step.stepKey === 'business_info')?.data as
+      | { country?: string | null }
+      | null
+      | undefined;
+    const countryCandidate = businessInfo?.country?.trim().toUpperCase();
+    const country = countryCandidate && /^[A-Z]{2}$/.test(countryCandidate)
+      ? countryCandidate
+      : 'CH';
+
+    return {
+      country,
+      language: country === 'CH' ? 'de-CH' : 'de-CH',
+      currency: country === 'CH' ? 'CHF' : 'CHF',
+    };
+  }
+
+  private getSessionStepData(
+    workspace: Awaited<ReturnType<TenantOnboardingService['getWorkspace']>>,
+    step: OnboardingSessionStepKey,
+  ) {
+    const backendStepBySessionStep: Partial<Record<OnboardingSessionStepKey, TenantOnboardingStepKey>> = {
+      location: 'business_info',
+      address: 'business_info',
+      'business-details': 'legal_tax_info',
+      'authorized-person': 'owner_contact_info',
+      'plan-selection': 'operations_info',
+      verification: 'documents',
+      review: 'final_review',
+    };
+    const backendStep = backendStepBySessionStep[step];
+
+    return backendStep
+      ? workspace.steps.find((entry) => entry.stepKey === backendStep)?.data ?? null
+      : null;
   }
 
   private maskPhoneNumber(phoneNumber: string) {

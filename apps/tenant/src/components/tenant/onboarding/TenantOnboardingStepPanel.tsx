@@ -36,6 +36,7 @@ import { useFieldErrors } from './hooks/useFieldErrors';
 import { useHydratedBusinessForm } from './hooks/useHydratedBusinessForm';
 import { useHydratedLegalForm } from './hooks/useHydratedLegalForm';
 import { useHydratedOperationsForm } from './hooks/useHydratedOperationsForm';
+import { useHydratedOwnerForm } from './hooks/useHydratedOwnerForm';
 
 const APP_STATUS_LABELS: Record<string, string> = {
   draft: 'Taslak',
@@ -185,6 +186,14 @@ function validateLegal(form: TenantLegalTaxInfoInput): Record<string, string> {
   return errors;
 }
 
+function validateOwner(form: TenantOwnerContactInfoInput): Record<string, string> {
+  const errors: Record<string, string> = {};
+  if (!form.fullName?.trim()) errors.fullName = 'Yetkili ad soyad zorunludur.';
+  if (!form.email?.trim()) errors.email = 'Yetkili e-posta zorunludur.';
+  if (!form.phoneNumber?.trim()) errors.phoneNumber = 'Yetkili telefon zorunludur.';
+  return errors;
+}
+
 function validateOps(form: TenantOperationsInfoInput): Record<string, string> {
   const errors: Record<string, string> = {};
   if (!form.primaryCity?.trim()) errors.primaryCity = 'Birincil şehir zorunludur.';
@@ -216,10 +225,9 @@ export function TenantOnboardingStepPanel({
   );
 
   // Form state is hydrated from the workspace by small per-shape hooks.
-  // Owner contact info has no live editor today (start() seeds it from the
-  // landing form); its hook exists for the future BusinessDetailsPanel split.
   const [businessForm, setBusinessForm] = useHydratedBusinessForm(workspace);
   const [legalForm, setLegalForm] = useHydratedLegalForm(workspace);
+  const [ownerForm, setOwnerForm] = useHydratedOwnerForm(workspace);
   const [operationsForm, setOperationsForm] = useHydratedOperationsForm(workspace);
 
   const [documentForm, setDocumentForm] = useState<UploadTenantOnboardingDocumentInput>({
@@ -878,6 +886,92 @@ export function TenantOnboardingStepPanel({
               ...merged,
               taxId: sanitizeOptional(merged.taxId),
               vatId: sanitizeOptional(merged.vatId),
+            });
+          }}
+          saving={saving}
+        />
+      </Card>
+    );
+  }
+
+  // Minimal V2 bridge: owner_contact_info is now its own canonical step.
+  if (activeStep === 'authorized-person') {
+    const err = fieldErrors;
+    return (
+      <Card className={panelClass}>
+        <StepHeader
+          stepIndex={stepIndex}
+          totalSteps={totalSteps}
+          status={activeEntry.status}
+          updatedAt={activeEntry.updatedAt}
+          title="Yetkili kisi bilgileri"
+          description="Basvurudan sorumlu yetkili kisi ve sahiplik bilgilerini tamamlayin."
+        />
+        {activeEntry.status === 'needs_revision' && <RevisionAlert />}
+        <ValidationBanner errors={err} />
+        <fieldset
+          disabled={locked}
+          className="m-0 grid min-w-0 gap-4 border-0 p-0 md:grid-cols-2"
+        >
+          <div>
+            <Input
+              className={err.fullName ? 'border-[#fda29b]' : ''}
+              placeholder="Yetkili ad soyad"
+              value={ownerForm.fullName ?? ''}
+              onChange={(e) => setOwnerForm((c) => ({ ...c, fullName: e.target.value }))}
+            />
+            <FieldError errors={err} name="fullName" />
+          </div>
+          <div>
+            <Input
+              className={err.email ? 'border-[#fda29b]' : ''}
+              placeholder="Yetkili e-posta"
+              type="email"
+              value={ownerForm.email ?? ''}
+              onChange={(e) => setOwnerForm((c) => ({ ...c, email: e.target.value }))}
+            />
+            <FieldError errors={err} name="email" />
+          </div>
+          <div>
+            <Input
+              className={err.phoneNumber ? 'border-[#fda29b]' : ''}
+              inputMode="tel"
+              placeholder="Yetkili telefon"
+              value={ownerForm.phoneNumber ?? ''}
+              onChange={(e) => setOwnerForm((c) => ({ ...c, phoneNumber: e.target.value }))}
+            />
+            <FieldError errors={err} name="phoneNumber" />
+          </div>
+          <Input
+            placeholder="Unvan / rol (istege bagli)"
+            value={ownerForm.roleTitle ?? ''}
+            onChange={(e) => setOwnerForm((c) => ({ ...c, roleTitle: e.target.value }))}
+          />
+          <Input
+            placeholder="Sahiplik orani % (istege bagli)"
+            type="number"
+            min={0}
+            max={100}
+            value={ownerForm.ownershipPercentage ?? ''}
+            onChange={(e) =>
+              setOwnerForm((c) => ({
+                ...c,
+                ownershipPercentage: e.target.value === '' ? null : Number(e.target.value),
+              }))
+            }
+          />
+        </fieldset>
+        <StepFooter
+          disableSave={locked}
+          showBack={!isFirstStep}
+          onBack={onBack}
+          onSave={() => {
+            const errors = validateOwner(ownerForm);
+            if (Object.keys(errors).length > 0) { setFieldErrors(errors); return; }
+            setFieldErrors({});
+            void saveStepAndAdvance('owner_contact_info', {
+              ...ownerForm,
+              roleTitle: sanitizeOptional(ownerForm.roleTitle),
             });
           }}
           saving={saving}

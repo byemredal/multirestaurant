@@ -7,6 +7,7 @@ import {
   Patch,
   Post,
   Put,
+  Query,
   Req,
   UploadedFile,
   UseInterceptors,
@@ -72,6 +73,16 @@ export class TenantOnboardingController {
   @ApiOperation({ summary: 'Get the tenant onboarding workspace by state token.' })
   getWorkspaceByStateToken(@Param('stateToken') stateToken: string) {
     return this.onboardingService.resolveStateToken(stateToken);
+  }
+
+  @Public()
+  @Get(':stateToken/session')
+  @ApiOperation({ summary: 'Resolve a tenant onboarding session and requested step by state token.' })
+  getSessionByStateToken(
+    @Param('stateToken') stateToken: string,
+    @Query('step') requestedStep?: string,
+  ) {
+    return this.onboardingService.resolveSessionByStateToken(stateToken, requestedStep);
   }
 
   @Public()
