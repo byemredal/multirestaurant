@@ -1,10 +1,11 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import Image from 'next/image';
-import { useRouter } from 'next/navigation';
+import { usePathname, useRouter } from 'next/navigation';
 import logoUrl from '@lieferzonen/assets/logo.svg';
 import { AddressStep } from '@/components/tenant/onboarding/AddressStep';
+import { BusinessDetailsStep } from '@/components/tenant/onboarding/BusinessDetailsStep';
 import { LocationSearchStep } from '@/components/tenant/onboarding/LocationSearchStep';
 import { OtpVerificationStep } from '@/components/tenant/onboarding/OtpVerificationStep';
 import { PhoneVerificationStep } from '@/components/tenant/onboarding/PhoneVerificationStep';
@@ -44,6 +45,8 @@ export default function TenantOnboardingWorkspace({
   stateToken?: string;
 }) {
   const router = useRouter();
+  const pathname = usePathname();
+  const lastRedirectTargetRef = useRef<string | null>(null);
   const [mounted, setMounted] = useState(false);
 
   useEffect(() => {
@@ -63,19 +66,31 @@ export default function TenantOnboardingWorkspace({
     resolvedSession,
   } = useTenantOnboardingWorkspace(stateToken, requestedStep ?? initialStep);
 
-  const requestedWorkflowStep =
-    normalizeTenantOnboardingStepSlug(String(resolvedSession?.requestedStep ?? requestedStep ?? initialStep ?? '')) ??
-    initialStep ??
-    'phone-verification';
-  const activeStep = getLegacyRenderableStep(requestedWorkflowStep);
+  const requestedWorkflowStep = useMemo(
+    () =>
+      normalizeTenantOnboardingStepSlug(String(resolvedSession?.requestedStep ?? requestedStep ?? initialStep ?? '')) ??
+      initialStep ??
+      'phone-verification',
+    [initialStep, requestedStep, resolvedSession?.requestedStep],
+  );
+  const activeStep = useMemo(() => getLegacyRenderableStep(requestedWorkflowStep), [requestedWorkflowStep]);
+
+  const replaceRoute = (url: string) => {
+    if (pathname === url || lastRedirectTargetRef.current === url) {
+      return;
+    }
+    lastRedirectTargetRef.current = url;
+    router.replace(url);
+  };
 
   useEffect(() => {
     if (!workspace || !resolvedSession?.redirectStep) {
       return;
     }
 
-    router.replace(getTenantOnboardingStepUrl(workspace.stateToken, resolvedSession.redirectStep));
-  }, [resolvedSession?.redirectStep, router, workspace]);
+    const target = getTenantOnboardingStepUrl(stateToken ?? workspace.stateToken, resolvedSession.redirectStep);
+    replaceRoute(target);
+  }, [pathname, resolvedSession?.redirectStep, router, stateToken, workspace]);
 
   useEffect(() => {
     if (!workspace) {
@@ -84,9 +99,9 @@ export default function TenantOnboardingWorkspace({
 
     const resumeUrl = getTenantOnboardingResumeUrl(workspace);
     if (resumeUrl === '/dashboard' || resumeUrl.endsWith('/waiting')) {
-      router.replace(resumeUrl);
+      replaceRoute(resumeUrl);
     }
-  }, [router, workspace]);
+  }, [pathname, router, workspace]);
 
   useEffect(() => {
     if (
@@ -97,22 +112,22 @@ export default function TenantOnboardingWorkspace({
       return;
     }
 
-    router.replace(
+    replaceRoute(
       getTenantOnboardingStepUrl(
-        workspace.stateToken,
+        stateToken ?? workspace.stateToken,
         getFirstLockedSafeTenantOnboardingStep(workspace),
       ),
     );
-  }, [activeStep, resolvedSession, router, workspace]);
+  }, [activeStep, pathname, resolvedSession, router, stateToken, workspace]);
 
   const selectStep = (nextStep: TenantOnboardingWorkflowStepKey) => {
-    const nextToken = workspace?.stateToken ?? stateToken;
+    const nextToken = stateToken ?? workspace?.stateToken;
     if (workspace && !canAccessTenantOnboardingStep(workspace, nextStep)) {
       return;
     }
 
     if (nextToken) {
-      router.replace(getTenantOnboardingStepUrl(nextToken, nextStep));
+      replaceRoute(getTenantOnboardingStepUrl(nextToken, nextStep));
     }
   };
 
@@ -128,13 +143,13 @@ export default function TenantOnboardingWorkspace({
     const result = await completeStep(step);
     const nextStep = step === 'owner_contact_info' ? 'bank-details' : result.nextStepKey;
     if (nextStep) {
-      router.replace(getTenantOnboardingStepUrl(result.stateToken, nextStep));
+      replaceRoute(getTenantOnboardingStepUrl(result.stateToken, nextStep));
     }
     return result;
   };
 
   const navigateToUrl = (url: string) => {
-    router.replace(url);
+    replaceRoute(url);
   };
 
   const progressIndex = tenantOnboardingProgressStepOrder.indexOf(activeStep);
@@ -487,6 +502,13 @@ export default function TenantOnboardingWorkspace({
                   />
                 ) : requestedWorkflowStep === 'address' ? (
                   <AddressStep
+                    resolvedSession={resolvedSession}
+                    workspace={workspace}
+                    onNavigate={navigateToUrl}
+                    onWorkspaceResolved={replaceWorkspace}
+                  />
+                ) : requestedWorkflowStep === 'business-details' ? (
+                  <BusinessDetailsStep
                     resolvedSession={resolvedSession}
                     workspace={workspace}
                     onNavigate={navigateToUrl}

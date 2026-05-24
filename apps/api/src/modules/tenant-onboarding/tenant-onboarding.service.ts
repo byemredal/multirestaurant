@@ -507,6 +507,85 @@ export class TenantOnboardingService {
     };
   }
 
+  async verifyBusinessRegistrationByStateToken(
+    stateToken: string,
+    input: Dto.VerifyTenantOnboardingBusinessRegistrationDto,
+  ) {
+    const application = await this.resolveApplicationFromStateToken(stateToken);
+    const workspace = await this.getWorkspace(application.tenantAccountId);
+    if (!workspace.phoneVerification?.verified) {
+      throw new ForbiddenException('Phone verification must be completed before business details.');
+    }
+    if (!this.isWorkspaceStepCompleted(workspace, 'business_info')) {
+      return {
+        accepted: false,
+        redirectStep: this.hasLocationSelection(workspace) ? 'address' : 'location',
+        session: await this.resolveSessionByStateToken(workspace.stateToken, 'business-details'),
+        workspace,
+      };
+    }
+
+    const dto = this.validateDto(Dto.VerifyTenantOnboardingBusinessRegistrationDto, input);
+    const registrationNumber = dto.registrationNumber.trim();
+    if (!/[A-Za-z0-9]/.test(registrationNumber)) {
+      throw new BadRequestException('Registration number must include letters or numbers.');
+    }
+
+    return {
+      accepted: true,
+      registrationNumber,
+      country: dto.country?.trim().toUpperCase() || this.getCountryPackSnapshot(workspace).country,
+      verificationMode: 'mock',
+      message: 'Registration number accepted for onboarding draft review.',
+      session: await this.resolveSessionByStateToken(workspace.stateToken, 'business-details'),
+      workspace,
+    };
+  }
+
+  async saveBusinessDetailsByStateToken(
+    stateToken: string,
+    input: Dto.SaveTenantOnboardingBusinessDetailsDto,
+  ) {
+    const application = await this.resolveApplicationFromStateToken(stateToken);
+    this.assertPhoneVerificationEditable(application.status);
+    const workspaceBefore = await this.getWorkspace(application.tenantAccountId);
+    if (!workspaceBefore.phoneVerification?.verified) {
+      throw new ForbiddenException('Phone verification must be completed before saving business details.');
+    }
+    if (!this.isWorkspaceStepCompleted(workspaceBefore, 'business_info')) {
+      return {
+        stateToken: workspaceBefore.stateToken,
+        nextStep: this.hasLocationSelection(workspaceBefore) ? 'address' : 'location',
+        redirectStep: this.hasLocationSelection(workspaceBefore) ? 'address' : 'location',
+        session: await this.resolveSessionByStateToken(workspaceBefore.stateToken, 'business-details'),
+        workspace: workspaceBefore,
+      };
+    }
+
+    const dto = this.validateDto(Dto.SaveTenantOnboardingBusinessDetailsDto, input);
+    const taxId = (dto.taxNumber?.trim() || dto.registrationNumber.trim());
+    const vatId = dto.vatRegistered ? dto.vatNumber?.trim() || null : null;
+    await this.store.upsertLegalDetail(application.id, {
+      legalEntityName: dto.registeredBusinessName.trim(),
+      taxId,
+      vatId,
+      registrationCountry: dto.registrationCountry.trim().toUpperCase(),
+      registeredAddress: dto.registeredAddress.trim(),
+    });
+
+    await this.assertStepReadyForCompletion(application.id, 'legal_tax_info');
+    await this.store.upsertStepProgress(application.id, 'legal_tax_info', 'completed');
+
+    const workspace = await this.getWorkspace(application.tenantAccountId);
+    return {
+      stateToken: workspace.stateToken,
+      nextStep: 'authorized-person',
+      redirectStep: null,
+      session: await this.resolveSessionByStateToken(workspace.stateToken, 'authorized-person'),
+      workspace,
+    };
+  }
+
   async sendContinueLinkByStateToken(stateToken: string) {
     const workspace = await this.resolveStateToken(stateToken);
     const tenant = await this.tenantAccountsStore.findById(workspace.application.tenantAccountId);

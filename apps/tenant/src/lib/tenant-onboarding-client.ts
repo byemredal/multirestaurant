@@ -282,6 +282,23 @@ export type TenantAddressInput = {
   addressNote?: string | null;
 };
 
+export type TenantBusinessDetailsRegistrationInput = {
+  registrationNumber: string;
+  country?: string;
+};
+
+export type TenantBusinessDetailsInput = {
+  registrationNumber: string;
+  registeredBusinessName: string;
+  legalForm?: string | null;
+  taxNumber?: string | null;
+  vatRegistered?: boolean;
+  vatNumber?: string | null;
+  registrationCountry: string;
+  registeredAddress: string;
+  authorityName?: string | null;
+};
+
 /* -----------------------------------------------------------------------
  * LEGACY: authenticated-session ("me") onboarding helpers.
  *
@@ -416,6 +433,89 @@ export async function saveTenantOnboardingAddress(
 
   if (!response.ok) {
     let message = `tenant_onboarding_address_failed_${response.status}`;
+    try {
+      const payload = await response.json();
+      if (Array.isArray(payload?.errors) && payload.errors.length > 0) {
+        message = payload.errors.join(', ');
+      } else if (Array.isArray(payload?.message) && payload.message.length > 0) {
+        message = payload.message.join(', ');
+      } else if (typeof payload?.message === 'string' && payload.message.length > 0) {
+        message = payload.message;
+      }
+    } catch {
+      // Keep fallback.
+    }
+    throw new Error(message);
+  }
+
+  return (await response.json()) as {
+    stateToken: string;
+    nextStep: TenantOnboardingSessionStepKey;
+    redirectStep: TenantOnboardingSessionStepKey | null;
+    session?: TenantOnboardingResolvedSession;
+    workspace: TenantOnboardingWorkspace;
+  };
+}
+
+export async function verifyTenantOnboardingBusinessRegistration(
+  stateToken: string,
+  input: TenantBusinessDetailsRegistrationInput,
+) {
+  const response = await fetch(
+    `${apiBaseUrl}/v2/tenant/onboarding/${encodeURIComponent(stateToken)}/business-details/verify-registration`,
+    {
+      body: JSON.stringify(input),
+      credentials: 'include',
+      headers: { 'Content-Type': 'application/json' },
+      method: 'POST',
+    },
+  );
+
+  if (!response.ok) {
+    let message = `tenant_onboarding_business_registration_failed_${response.status}`;
+    try {
+      const payload = await response.json();
+      if (Array.isArray(payload?.errors) && payload.errors.length > 0) {
+        message = payload.errors.join(', ');
+      } else if (Array.isArray(payload?.message) && payload.message.length > 0) {
+        message = payload.message.join(', ');
+      } else if (typeof payload?.message === 'string' && payload.message.length > 0) {
+        message = payload.message;
+      }
+    } catch {
+      // Keep fallback.
+    }
+    throw new Error(message);
+  }
+
+  return (await response.json()) as {
+    accepted: boolean;
+    registrationNumber?: string;
+    country?: string;
+    verificationMode?: 'mock' | string;
+    message?: string;
+    redirectStep?: TenantOnboardingSessionStepKey | null;
+    session?: TenantOnboardingResolvedSession;
+    workspace: TenantOnboardingWorkspace;
+  };
+}
+
+export async function saveTenantOnboardingBusinessDetails(
+  stateToken: string,
+  input: TenantBusinessDetailsInput,
+) {
+  const response = await fetch(
+    `${apiBaseUrl}/v2/tenant/onboarding/${encodeURIComponent(stateToken)}/business-details`,
+    {
+      body: JSON.stringify(input),
+      credentials: 'include',
+      headers: { 'Content-Type': 'application/json' },
+      method: 'POST',
+    },
+  );
+
+  if (!response.ok) {
+    let message = `tenant_onboarding_business_details_failed_${response.status}`;
     try {
       const payload = await response.json();
       if (Array.isArray(payload?.errors) && payload.errors.length > 0) {

@@ -67,6 +67,9 @@ export function useTenantOnboardingWorkspace(stateToken?: string, requestedStep?
   const currentStateTokenRef = useRef(stateToken);
   const workspaceRequestSeqRef = useRef(0);
   const latestAppliedWorkspaceSeqRef = useRef(0);
+  const lastResolvedKeyRef = useRef<string | null>(null);
+  const loadingRequestSeqRef = useRef(0);
+  const hasAppliedWorkspaceRef = useRef(Boolean(initialWorkspace));
   const [workspace, setWorkspace] = useState<TenantOnboardingWorkspace | null>(initialWorkspace);
   const [resolvedSession, setResolvedSession] = useState<TenantOnboardingResolvedSession | null>(null);
   const [loading, setLoading] = useState(!initialWorkspace);
@@ -86,7 +89,11 @@ export function useTenantOnboardingWorkspace(stateToken?: string, requestedStep?
   }, []);
 
   const replaceWorkspace = useCallback(
-    (nextWorkspace: TenantOnboardingWorkspace, requestSeq?: number) => {
+    (
+      nextWorkspace: TenantOnboardingWorkspace,
+      requestSeq?: number,
+      options?: { rememberToken?: boolean },
+    ) => {
       const nextSeq = requestSeq ?? workspaceRequestSeqRef.current + 1;
       if (nextSeq < latestAppliedWorkspaceSeqRef.current) {
         return;
@@ -108,10 +115,11 @@ export function useTenantOnboardingWorkspace(stateToken?: string, requestedStep?
         // drop it so the next landing visit goes through a fresh start/resume
         // instead of pinging the API with a 403-bound token.
         clearOnboardingStateToken();
-      } else {
+      } else if (options?.rememberToken ?? true) {
         rememberStateToken(nextWorkspace.stateToken);
       }
       setWorkspace(nextWorkspace);
+      hasAppliedWorkspaceRef.current = true;
       setLastCheckedAt(new Date());
     },
     [rememberStateToken],
@@ -128,7 +136,7 @@ export function useTenantOnboardingWorkspace(stateToken?: string, requestedStep?
       void (async () => {
         try {
           const nextWorkspace = await getTenantOnboardingWorkspaceByStateToken(token);
-          replaceWorkspace(nextWorkspace, requestSeq);
+          replaceWorkspace(nextWorkspace, requestSeq, { rememberToken: false });
         } catch {
           // best-effort — the primary action already succeeded
         }
@@ -143,6 +151,14 @@ export function useTenantOnboardingWorkspace(stateToken?: string, requestedStep?
     }
     try {
       setError(null);
+      const resolveKey = currentStateToken && requestedStep
+        ? `${currentStateToken}:${requestedStep}`
+        : null;
+      if (resolveKey && lastResolvedKeyRef.current === resolveKey && hasAppliedWorkspaceRef.current) {
+        setLoading(false);
+        return;
+      }
+
       const cacheKey = getWorkspaceCacheKey(currentStateToken, session?.tenant.id);
       const cachedWorkspace = cacheKey ? workspaceCache.get(cacheKey) : null;
 
@@ -155,16 +171,25 @@ export function useTenantOnboardingWorkspace(stateToken?: string, requestedStep?
 
       const requestSeq = workspaceRequestSeqRef.current + 1;
       workspaceRequestSeqRef.current = requestSeq;
+      loadingRequestSeqRef.current = requestSeq;
       if (currentStateToken && requestedStep) {
         const nextSession = await resolveTenantOnboardingSession(currentStateToken, requestedStep);
+        if (requestSeq < loadingRequestSeqRef.current) {
+          return;
+        }
+        lastResolvedKeyRef.current = resolveKey;
         setResolvedSession(nextSession);
-        replaceWorkspace(nextSession.workspace, requestSeq);
+        replaceWorkspace(nextSession.workspace, requestSeq, { rememberToken: false });
       } else {
         const nextWorkspace = currentStateToken
           ? await getTenantOnboardingWorkspaceByStateToken(currentStateToken)
           : await getTenantOnboardingWorkspace(session!);
+        if (requestSeq < loadingRequestSeqRef.current) {
+          return;
+        }
+        lastResolvedKeyRef.current = null;
         setResolvedSession(null);
-        replaceWorkspace(nextWorkspace, requestSeq);
+        replaceWorkspace(nextWorkspace, requestSeq, { rememberToken: false });
       }
     } catch (loadError) {
       setError(

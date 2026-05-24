@@ -77,6 +77,33 @@ export const apiGroups: ApiGroup[] = [
           { key: 'addressNote', label: 'addressNote (optional)' },
         ],
       },
+      {
+        id: 'verifyTenantOnboardingBusinessRegistration',
+        method: 'POST',
+        path: '/v2/tenant/onboarding/:stateToken/business-details/verify-registration',
+        pathParams: [{ key: 'stateToken', label: 'State token' }],
+        bodyFields: [
+          { key: 'registrationNumber', label: 'registrationNumber' },
+          { key: 'country', label: 'country (ISO-2, optional)' },
+        ],
+      },
+      {
+        id: 'saveTenantOnboardingBusinessDetails',
+        method: 'POST',
+        path: '/v2/tenant/onboarding/:stateToken/business-details',
+        pathParams: [{ key: 'stateToken', label: 'State token' }],
+        bodyFields: [
+          { key: 'registrationNumber', label: 'registrationNumber' },
+          { key: 'registeredBusinessName', label: 'registeredBusinessName' },
+          { key: 'legalForm', label: 'legalForm (optional)' },
+          { key: 'taxNumber', label: 'taxNumber (optional)' },
+          { key: 'vatRegistered', label: 'vatRegistered (optional boolean)' },
+          { key: 'vatNumber', label: 'vatNumber (optional)' },
+          { key: 'registrationCountry', label: 'registrationCountry (ISO-2)' },
+          { key: 'registeredAddress', label: 'registeredAddress' },
+          { key: 'authorityName', label: 'authorityName (optional)' },
+        ],
+      },
     ],
   },
   {

@@ -179,6 +179,26 @@ export class TenantOnboardingController {
   }
 
   @Public()
+  @Post(':stateToken/business-details/verify-registration')
+  @ApiOperation({ summary: 'Mock-verify the V2 onboarding business registration number.' })
+  verifyBusinessRegistration(
+    @Param('stateToken') stateToken: string,
+    @Body() dto: Dto.VerifyTenantOnboardingBusinessRegistrationDto,
+  ) {
+    return this.onboardingService.verifyBusinessRegistrationByStateToken(stateToken, dto);
+  }
+
+  @Public()
+  @Post(':stateToken/business-details')
+  @ApiOperation({ summary: 'Save and complete the V2 onboarding business details step.' })
+  saveBusinessDetails(
+    @Param('stateToken') stateToken: string,
+    @Body() dto: Dto.SaveTenantOnboardingBusinessDetailsDto,
+  ) {
+    return this.onboardingService.saveBusinessDetailsByStateToken(stateToken, dto);
+  }
+
+  @Public()
   @Patch(':stateToken/steps/:stepKey')
   @ApiOperation({ summary: 'Save a tenant onboarding step draft by state token.' })
   patchStepByStateToken(

@@ -1,4 +1,5 @@
 export * from './address-info.dto';
+export * from './business-details.dto';
 export * from './patch-business-info.dto';
 export * from './patch-legal-tax-info.dto';
 export * from './patch-operations-info.dto';
