@@ -1,6 +1,7 @@
 import { randomBytes, randomUUID } from 'crypto';
 import { BadRequestException, Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { DatabaseService } from '../../database/database.service';
+import { toFiniteNumber as toNumber } from '../../common/utility/numeric';
 import { AddressNormalizationService } from './address-normalization.service';
 import { CoverageService } from './coverage.service';
 import { RankingService, RankingCandidate } from './ranking.service';
@@ -50,11 +51,6 @@ export interface DiscoveryFacet {
   count: number;
 }
 
-function toNumber(value: unknown): number | null {
-  if (value === null || value === undefined || value === '') return null;
-  const parsed = Number(value);
-  return Number.isFinite(parsed) ? parsed : null;
-}
 
 @Injectable()
 export class DiscoveryService {

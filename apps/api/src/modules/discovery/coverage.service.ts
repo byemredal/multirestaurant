@@ -1,18 +1,12 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { DatabaseService } from '../../database/database.service';
+import { toFiniteNumber as toNumber } from '../../common/utility/numeric';
 import {
   CoverageMatch,
   CoverageMatcher,
   MatchContext,
   MatchStrategy,
 } from './entities/discovery.entity';
-
-/** NUMERIC columns arrive from `pg` as strings — coerce defensively. */
-function toNumber(value: unknown): number | null {
-  if (value === null || value === undefined || value === '') return null;
-  const parsed = Number(value);
-  return Number.isFinite(parsed) ? parsed : null;
-}
 
 interface CoverageRow {
   storeId: string;

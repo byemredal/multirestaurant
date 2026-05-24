@@ -8,8 +8,9 @@ Veritabanı işlemleri için DatabaseService kullanılır ve her yöntem, ilgili
 */
 
 import { Injectable } from '@nestjs/common';
-import { createHash, randomBytes, randomUUID } from 'crypto';
+import { randomUUID } from 'crypto';
 import { DatabaseService } from '../../database/database.service';
+import { CryptoUtil } from '../../common/utility/crypto-util';
 import {
   AdminNote,
   TenantApplicationReview,
@@ -27,13 +28,8 @@ import {
   tenantOnboardingStepKeys,
 } from './entities/tenant-onboarding.entity';
 
-function randomTokenSalt() {
-  return randomBytes(10).toString('base64url');
-}
-
-function isTerminalStatus(status: TenantOnboardingApplicationStatus) {
-  return ['approved', 'active', 'rejected', 'suspended'].includes(status);
-}
+const randomTokenSalt = CryptoUtil.randomTokenSalt;
+const isTerminalStatus = CryptoUtil.isTerminalStatus;
 
 @Injectable()
 export class TenantOnboardingStore {
