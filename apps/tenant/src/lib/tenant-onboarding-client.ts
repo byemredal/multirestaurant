@@ -85,6 +85,8 @@ export type TenantOnboardingStepKey =
   | 'business_info'
   | 'legal_tax_info'
   | 'owner_contact_info'
+  | 'bank_details'
+  | 'billing_address'
   | 'operations_info'
   | 'documents'
   | 'final_review';
@@ -305,6 +307,23 @@ export type TenantAuthorizedPersonInput = {
   phoneNumber: string;
   roleTitle?: string | null;
   ownershipPercentage?: number | null;
+};
+
+export type TenantBankDetailsInput = {
+  bankName: string;
+  accountHolderName: string;
+  iban: string;
+  currency?: string | null;
+};
+
+export type TenantBillingAddressInput = {
+  useBusinessAddress?: boolean;
+  billingName: string;
+  country: string;
+  city: string;
+  postalCode: string;
+  addressLine1: string;
+  addressLine2?: string | null;
 };
 
 /* -----------------------------------------------------------------------
@@ -564,6 +583,86 @@ export async function saveTenantOnboardingAuthorizedPerson(
 
   if (!response.ok) {
     let message = `tenant_onboarding_authorized_person_failed_${response.status}`;
+    try {
+      const payload = await response.json();
+      if (Array.isArray(payload?.errors) && payload.errors.length > 0) {
+        message = payload.errors.join(', ');
+      } else if (Array.isArray(payload?.message) && payload.message.length > 0) {
+        message = payload.message.join(', ');
+      } else if (typeof payload?.message === 'string' && payload.message.length > 0) {
+        message = payload.message;
+      }
+    } catch {
+      // Keep fallback.
+    }
+    throw new Error(message);
+  }
+
+  return (await response.json()) as {
+    stateToken: string;
+    nextStep: TenantOnboardingSessionStepKey;
+    redirectStep: TenantOnboardingSessionStepKey | null;
+    session?: TenantOnboardingResolvedSession;
+    workspace: TenantOnboardingWorkspace;
+  };
+}
+
+export async function saveTenantOnboardingBankDetails(
+  stateToken: string,
+  input: TenantBankDetailsInput,
+) {
+  const response = await fetch(
+    `${apiBaseUrl}/v2/tenant/onboarding/${encodeURIComponent(stateToken)}/bank-details`,
+    {
+      body: JSON.stringify(input),
+      credentials: 'include',
+      headers: { 'Content-Type': 'application/json' },
+      method: 'POST',
+    },
+  );
+
+  if (!response.ok) {
+    let message = `tenant_onboarding_bank_details_failed_${response.status}`;
+    try {
+      const payload = await response.json();
+      if (Array.isArray(payload?.errors) && payload.errors.length > 0) {
+        message = payload.errors.join(', ');
+      } else if (Array.isArray(payload?.message) && payload.message.length > 0) {
+        message = payload.message.join(', ');
+      } else if (typeof payload?.message === 'string' && payload.message.length > 0) {
+        message = payload.message;
+      }
+    } catch {
+      // Keep fallback.
+    }
+    throw new Error(message);
+  }
+
+  return (await response.json()) as {
+    stateToken: string;
+    nextStep: TenantOnboardingSessionStepKey;
+    redirectStep: TenantOnboardingSessionStepKey | null;
+    session?: TenantOnboardingResolvedSession;
+    workspace: TenantOnboardingWorkspace;
+  };
+}
+
+export async function saveTenantOnboardingBillingAddress(
+  stateToken: string,
+  input: TenantBillingAddressInput,
+) {
+  const response = await fetch(
+    `${apiBaseUrl}/v2/tenant/onboarding/${encodeURIComponent(stateToken)}/billing-address`,
+    {
+      body: JSON.stringify(input),
+      credentials: 'include',
+      headers: { 'Content-Type': 'application/json' },
+      method: 'POST',
+    },
+  );
+
+  if (!response.ok) {
+    let message = `tenant_onboarding_billing_address_failed_${response.status}`;
     try {
       const payload = await response.json();
       if (Array.isArray(payload?.errors) && payload.errors.length > 0) {

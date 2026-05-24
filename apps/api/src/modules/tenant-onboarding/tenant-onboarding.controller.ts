@@ -209,6 +209,26 @@ export class TenantOnboardingController {
   }
 
   @Public()
+  @Post(':stateToken/bank-details')
+  @ApiOperation({ summary: 'Save and complete the V2 onboarding bank details step.' })
+  saveBankDetails(
+    @Param('stateToken') stateToken: string,
+    @Body() dto: Dto.SaveTenantOnboardingBankDetailsDto,
+  ) {
+    return this.onboardingService.saveBankDetailsByStateToken(stateToken, dto);
+  }
+
+  @Public()
+  @Post(':stateToken/billing-address')
+  @ApiOperation({ summary: 'Save and complete the V2 onboarding billing address step.' })
+  saveBillingAddress(
+    @Param('stateToken') stateToken: string,
+    @Body() dto: Dto.SaveTenantOnboardingBillingAddressDto,
+  ) {
+    return this.onboardingService.saveBillingAddressByStateToken(stateToken, dto);
+  }
+
+  @Public()
   @Patch(':stateToken/steps/:stepKey')
   @ApiOperation({ summary: 'Save a tenant onboarding step draft by state token.' })
   patchStepByStateToken(

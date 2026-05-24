@@ -2,6 +2,8 @@ export const tenantOnboardingStepKeys = [
   'business_info',
   'legal_tax_info',
   'owner_contact_info',
+  'bank_details',
+  'billing_address',
   'operations_info',
   'documents',
   'final_review',
@@ -121,6 +123,31 @@ export interface TenantOwnerContact {
   phoneNumber: string;
   roleTitle: string | null;
   ownershipPercentage: number | null;
+  createdAt: Date;
+  updatedAt: Date;
+}
+
+export interface TenantOnboardingBankDetail {
+  id: string;
+  applicationId: string;
+  bankName: string;
+  accountHolderName: string;
+  iban: string;
+  currency: string;
+  createdAt: Date;
+  updatedAt: Date;
+}
+
+export interface TenantOnboardingBillingAddress {
+  id: string;
+  applicationId: string;
+  useBusinessAddress: boolean;
+  billingName: string;
+  country: string;
+  city: string;
+  postalCode: string;
+  addressLine1: string;
+  addressLine2: string | null;
   createdAt: Date;
   updatedAt: Date;
 }

@@ -117,6 +117,33 @@ export const apiGroups: ApiGroup[] = [
           { key: 'ownershipPercentage', label: 'ownershipPercentage (optional number)', type: 'number' },
         ],
       },
+      {
+        id: 'saveTenantOnboardingBankDetails',
+        method: 'POST',
+        path: '/v2/tenant/onboarding/:stateToken/bank-details',
+        pathParams: [{ key: 'stateToken', label: 'State token' }],
+        bodyFields: [
+          { key: 'bankName', label: 'bankName' },
+          { key: 'accountHolderName', label: 'accountHolderName' },
+          { key: 'iban', label: 'iban' },
+          { key: 'currency', label: 'currency (ISO-4217, optional)' },
+        ],
+      },
+      {
+        id: 'saveTenantOnboardingBillingAddress',
+        method: 'POST',
+        path: '/v2/tenant/onboarding/:stateToken/billing-address',
+        pathParams: [{ key: 'stateToken', label: 'State token' }],
+        bodyFields: [
+          { key: 'useBusinessAddress', label: 'useBusinessAddress (optional boolean)' },
+          { key: 'billingName', label: 'billingName' },
+          { key: 'country', label: 'country (ISO-2)' },
+          { key: 'city', label: 'city / region' },
+          { key: 'postalCode', label: 'postalCode' },
+          { key: 'addressLine1', label: 'addressLine1' },
+          { key: 'addressLine2', label: 'addressLine2 (optional)' },
+        ],
+      },
     ],
   },
   {

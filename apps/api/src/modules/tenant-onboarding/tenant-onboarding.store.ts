@@ -20,6 +20,8 @@ import {
   TenantLegalDetail,
   TenantOnboardingApplication,
   TenantOnboardingApplicationStatus,
+  TenantOnboardingBankDetail,
+  TenantOnboardingBillingAddress,
   TenantOnboardingLocationSelection,
   TenantOnboardingPhoneVerification,
   TenantOnboardingStepKey,
@@ -448,6 +450,86 @@ export class TenantOnboardingStore {
     return row ? this.mapOwner(row) : null;
   }
 
+  async upsertBankDetail(
+    applicationId: string,
+    input: Omit<TenantOnboardingBankDetail, 'id' | 'applicationId' | 'createdAt' | 'updatedAt'>,
+  ) {
+    const existing = await this.getBankDetail(applicationId);
+    if (!existing) {
+      const created: TenantOnboardingBankDetail = {
+        id: randomUUID(),
+        applicationId,
+        ...input,
+        createdAt: new Date(),
+        updatedAt: new Date(),
+      };
+      await this.databaseService.prepare(
+        `INSERT INTO "TenantOnboardingBankDetail" (
+          "id","applicationId","bankName","accountHolderName","iban","currency","createdAt","updatedAt"
+        ) VALUES (
+          $id,$applicationId,$bankName,$accountHolderName,$iban,$currency,$createdAt,$updatedAt
+        )`,
+      ).run(this.bankParams(created));
+      return created;
+    }
+
+    const updated: TenantOnboardingBankDetail = { ...existing, ...input, updatedAt: new Date() };
+    await this.databaseService.prepare(
+      `UPDATE "TenantOnboardingBankDetail"
+       SET "bankName" = $bankName, "accountHolderName" = $accountHolderName,
+           "iban" = $iban, "currency" = $currency, "updatedAt" = $updatedAt
+       WHERE "applicationId" = $applicationId`,
+    ).run(this.bankParams(updated));
+    return updated;
+  }
+
+  async getBankDetail(applicationId: string) {
+    const row = await this.databaseService.prepare(`SELECT * FROM "TenantOnboardingBankDetail" WHERE "applicationId" = $applicationId`).get({ $applicationId: applicationId }) as BankRow | undefined;
+    return row ? this.mapBank(row) : null;
+  }
+
+  async upsertBillingAddress(
+    applicationId: string,
+    input: Omit<TenantOnboardingBillingAddress, 'id' | 'applicationId' | 'createdAt' | 'updatedAt'>,
+  ) {
+    const existing = await this.getBillingAddress(applicationId);
+    if (!existing) {
+      const created: TenantOnboardingBillingAddress = {
+        id: randomUUID(),
+        applicationId,
+        ...input,
+        createdAt: new Date(),
+        updatedAt: new Date(),
+      };
+      await this.databaseService.prepare(
+        `INSERT INTO "TenantOnboardingBillingAddress" (
+          "id","applicationId","useBusinessAddress","billingName","country","city",
+          "postalCode","addressLine1","addressLine2","createdAt","updatedAt"
+        ) VALUES (
+          $id,$applicationId,$useBusinessAddress,$billingName,$country,$city,
+          $postalCode,$addressLine1,$addressLine2,$createdAt,$updatedAt
+        )`,
+      ).run(this.billingParams(created));
+      return created;
+    }
+
+    const updated: TenantOnboardingBillingAddress = { ...existing, ...input, updatedAt: new Date() };
+    await this.databaseService.prepare(
+      `UPDATE "TenantOnboardingBillingAddress"
+       SET "useBusinessAddress" = $useBusinessAddress, "billingName" = $billingName,
+           "country" = $country, "city" = $city, "postalCode" = $postalCode,
+           "addressLine1" = $addressLine1, "addressLine2" = $addressLine2,
+           "updatedAt" = $updatedAt
+       WHERE "applicationId" = $applicationId`,
+    ).run(this.billingParams(updated));
+    return updated;
+  }
+
+  async getBillingAddress(applicationId: string) {
+    const row = await this.databaseService.prepare(`SELECT * FROM "TenantOnboardingBillingAddress" WHERE "applicationId" = $applicationId`).get({ $applicationId: applicationId }) as BillingRow | undefined;
+    return row ? this.mapBilling(row) : null;
+  }
+
   async upsertOperationsProfile(applicationId: string, input: Omit<TenantOperationsProfile, 'id' | 'applicationId' | 'createdAt' | 'updatedAt'>) {
     const existing = await this.getOperationsProfile(applicationId);
     if (!existing) {
@@ -720,6 +802,35 @@ export class TenantOnboardingStore {
     };
   }
 
+  private bankParams(detail: TenantOnboardingBankDetail) {
+    return {
+      $id: detail.id,
+      $applicationId: detail.applicationId,
+      $bankName: detail.bankName,
+      $accountHolderName: detail.accountHolderName,
+      $iban: detail.iban,
+      $currency: detail.currency,
+      $createdAt: detail.createdAt.toISOString(),
+      $updatedAt: detail.updatedAt.toISOString(),
+    };
+  }
+
+  private billingParams(detail: TenantOnboardingBillingAddress) {
+    return {
+      $id: detail.id,
+      $applicationId: detail.applicationId,
+      $useBusinessAddress: detail.useBusinessAddress,
+      $billingName: detail.billingName,
+      $country: detail.country,
+      $city: detail.city,
+      $postalCode: detail.postalCode,
+      $addressLine1: detail.addressLine1,
+      $addressLine2: detail.addressLine2,
+      $createdAt: detail.createdAt.toISOString(),
+      $updatedAt: detail.updatedAt.toISOString(),
+    };
+  }
+
   private phoneVerificationParams(detail: TenantOnboardingPhoneVerification) {
     return {
       $id: detail.id,
@@ -845,6 +956,23 @@ export class TenantOnboardingStore {
     };
   }
 
+  private mapBank(row: BankRow): TenantOnboardingBankDetail {
+    return {
+      ...row,
+      createdAt: new Date(row.createdAt),
+      updatedAt: new Date(row.updatedAt),
+    };
+  }
+
+  private mapBilling(row: BillingRow): TenantOnboardingBillingAddress {
+    return {
+      ...row,
+      useBusinessAddress: Boolean(row.useBusinessAddress),
+      createdAt: new Date(row.createdAt),
+      updatedAt: new Date(row.updatedAt),
+    };
+  }
+
   private mapPhoneVerification(row: PhoneVerificationRow): TenantOnboardingPhoneVerification {
     return {
       id: row.id,
@@ -908,6 +1036,8 @@ interface StepRow { id: string; applicationId: string; stepKey: string; status: 
 interface BusinessRow { id: string; applicationId: string; businessName: string; businessType: string; registrationNumber: string | null; taxNumber: string | null; addressLine1: string; addressLine2: string | null; city: string; postalCode: string; country: string; createdAt: string; updatedAt: string; }
 interface LegalRow { id: string; applicationId: string; legalEntityName: string; taxId: string | null; vatId: string | null; registrationCountry: string; registeredAddress: string; createdAt: string; updatedAt: string; }
 interface OwnerRow { id: string; applicationId: string; fullName: string; email: string; phoneNumber: string; roleTitle: string | null; ownershipPercentage: number | null; createdAt: string; updatedAt: string; }
+interface BankRow { id: string; applicationId: string; bankName: string; accountHolderName: string; iban: string; currency: string; createdAt: string; updatedAt: string; }
+interface BillingRow { id: string; applicationId: string; useBusinessAddress: boolean; billingName: string; country: string; city: string; postalCode: string; addressLine1: string; addressLine2: string | null; createdAt: string; updatedAt: string; }
 interface PhoneVerificationRow { id: string; applicationId: string; phoneNumber: string; otpCodeHash: string | null; expiresAt: string | null; verifiedAt: string | null; resendCount: number; attemptCount: number; lastSentAt: string | null; createdAt: string; updatedAt: string; }
 interface LocationSelectionRow { id: string; applicationId: string; locationLabel: string; rawInput: string; country: string; city: string | null; postalCode: string | null; latitude: number | null; longitude: number | null; createdAt: string; updatedAt: string; }
 interface OperationsRow { id: string; applicationId: string; primaryCity: string; primaryPostalCode: string; deliveryModel: string; supportsPickup: boolean; openingHoursSummary: string | null; estimatedGoLiveDate: string | null; createdAt: string; updatedAt: string; }

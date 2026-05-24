@@ -6,6 +6,8 @@ import { usePathname, useRouter } from 'next/navigation';
 import logoUrl from '@lieferzonen/assets/logo.svg';
 import { AddressStep } from '@/components/tenant/onboarding/AddressStep';
 import { AuthorizedPersonStep } from '@/components/tenant/onboarding/AuthorizedPersonStep';
+import { BankDetailsStep } from '@/components/tenant/onboarding/BankDetailsStep';
+import { BillingAddressStep } from '@/components/tenant/onboarding/BillingAddressStep';
 import { BusinessDetailsStep } from '@/components/tenant/onboarding/BusinessDetailsStep';
 import { LocationSearchStep } from '@/components/tenant/onboarding/LocationSearchStep';
 import { OtpVerificationStep } from '@/components/tenant/onboarding/OtpVerificationStep';
@@ -31,7 +33,6 @@ import {
 function getLegacyRenderableStep(
   step: TenantOnboardingWorkflowStepKey,
 ): TenantOnboardingWorkflowStepKey {
-  if (step === 'billing-address') return 'bank-details';
   if (step === 'submitted') return 'waiting';
   return step;
 }
@@ -176,7 +177,7 @@ export default function TenantOnboardingWorkspace({
     {
       title: 'Isletme detaylari',
       description: 'Konum, isletme, banka ve paket bilgileri.',
-      steps: ['location', 'address', 'business-details', 'authorized-person', 'bank-details', 'plan-selection'],
+      steps: ['location', 'address', 'business-details', 'authorized-person', 'bank-details', 'billing-address', 'plan-selection'],
     },
     {
       title: 'Isletme dogrulama',
@@ -517,6 +518,20 @@ export default function TenantOnboardingWorkspace({
                   />
                 ) : requestedWorkflowStep === 'authorized-person' ? (
                   <AuthorizedPersonStep
+                    resolvedSession={resolvedSession}
+                    workspace={workspace}
+                    onNavigate={navigateToUrl}
+                    onWorkspaceResolved={replaceWorkspace}
+                  />
+                ) : requestedWorkflowStep === 'bank-details' ? (
+                  <BankDetailsStep
+                    resolvedSession={resolvedSession}
+                    workspace={workspace}
+                    onNavigate={navigateToUrl}
+                    onWorkspaceResolved={replaceWorkspace}
+                  />
+                ) : requestedWorkflowStep === 'billing-address' ? (
+                  <BillingAddressStep
                     resolvedSession={resolvedSession}
                     workspace={workspace}
                     onNavigate={navigateToUrl}

@@ -30,6 +30,23 @@ export type AuthorizedPersonFieldConfig = {
   helpText?: string;
 };
 
+export type BankDetailsFieldKey = 'bankName' | 'accountHolderName' | 'iban' | 'currency';
+export type BillingAddressFieldKey =
+  | 'useBusinessAddress'
+  | 'billingName'
+  | 'country'
+  | 'city'
+  | 'postalCode'
+  | 'addressLine1'
+  | 'addressLine2';
+
+export type OnboardingFieldConfig<TKey extends string> = {
+  key: TKey;
+  label: string;
+  required: boolean;
+  helpText?: string;
+};
+
 export function getBusinessDetailsFields(countryPack?: TenantOnboardingCountryPack) {
   const country = countryPack?.country ?? 'CH';
   const registrationLabel = country === 'CH'
@@ -117,5 +134,41 @@ export function getAuthorizedPersonFields(countryPack?: TenantOnboardingCountryP
         helpText: 'Optional placeholder field; future country packs may decide whether this is required.',
       },
     ] satisfies AuthorizedPersonFieldConfig[],
+  };
+}
+
+export function getBankDetailsFields(countryPack?: TenantOnboardingCountryPack) {
+  const currency = countryPack?.currency ?? 'CHF';
+
+  return {
+    helperText:
+      'This account is used for payout setup during onboarding. No real bank provider validation is performed yet.',
+    fields: [
+      { key: 'bankName', label: 'Bank name', required: true },
+      { key: 'accountHolderName', label: 'Account holder name', required: true },
+      {
+        key: 'iban',
+        label: 'IBAN',
+        required: true,
+        helpText: 'Basic IBAN format validation only. Country-specific banking rules will come from country packs later.',
+      },
+      { key: 'currency', label: 'Currency', required: true, helpText: `Default payout currency: ${currency}` },
+    ] satisfies OnboardingFieldConfig<BankDetailsFieldKey>[],
+  };
+}
+
+export function getBillingAddressFields() {
+  return {
+    helperText:
+      'This address is used for invoice and billing records. It can differ from the physical business address.',
+    fields: [
+      { key: 'useBusinessAddress', label: 'Use business address', required: false },
+      { key: 'billingName', label: 'Billing name / company name', required: true },
+      { key: 'country', label: 'Country', required: true },
+      { key: 'city', label: 'City / canton / region', required: true },
+      { key: 'postalCode', label: 'Postal code', required: true },
+      { key: 'addressLine1', label: 'Address line 1', required: true },
+      { key: 'addressLine2', label: 'Address line 2', required: false },
+    ] satisfies OnboardingFieldConfig<BillingAddressFieldKey>[],
   };
 }

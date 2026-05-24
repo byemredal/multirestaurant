@@ -105,6 +105,16 @@ const STEP_META: Record<TenantOnboardingStepKey, StepMeta> = {
     description: 'Pozisyon ve ortaklık bilgisi.',
     Icon: IconUser,
   },
+  bank_details: {
+    title: 'Banka bilgileri',
+    description: 'IBAN ve odeme hazirligi.',
+    Icon: IconScale,
+  },
+  billing_address: {
+    title: 'Fatura adresi',
+    description: 'Faturalama adresi.',
+    Icon: IconFile,
+  },
   operations_info: {
     title: 'Operasyon',
     description: 'Bölge, teslimat ve çalışma planı.',

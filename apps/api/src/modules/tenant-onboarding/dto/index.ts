@@ -1,5 +1,6 @@
 export * from './address-info.dto';
 export * from './authorized-person.dto';
+export * from './bank-billing.dto';
 export * from './business-details.dto';
 export * from './patch-business-info.dto';
 export * from './patch-legal-tax-info.dto';

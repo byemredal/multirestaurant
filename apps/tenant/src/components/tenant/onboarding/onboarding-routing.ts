@@ -104,12 +104,13 @@ export const tenantOnboardingWorkflowSteps: readonly TenantOnboardingWorkflowSte
     key: 'bank-details',
     title: 'Banka bilgileri',
     description: 'IBAN, banka ve odeme hazirligi.',
+    backendStep: 'bank_details',
   },
   {
     key: 'billing-address',
     title: 'Fatura adresi',
     description: 'Faturalama adresini netlestirin.',
-    hideInLegacyNav: true,
+    backendStep: 'billing_address',
   },
   {
     key: 'plan-selection',
@@ -228,6 +229,8 @@ const workflowStepByBackendStep: Partial<
   business_info: 'location',
   legal_tax_info: 'business-details',
   owner_contact_info: 'authorized-person',
+  bank_details: 'bank-details',
+  billing_address: 'billing-address',
   operations_info: 'plan-selection',
   documents: 'verification',
   final_review: 'review',

@@ -638,6 +638,96 @@ export class TenantOnboardingService {
     };
   }
 
+  async saveBankDetailsByStateToken(
+    stateToken: string,
+    input: Dto.SaveTenantOnboardingBankDetailsDto,
+  ) {
+    const application = await this.resolveApplicationFromStateToken(stateToken);
+    this.assertPhoneVerificationEditable(application.status);
+    const workspaceBefore = await this.getWorkspace(application.tenantAccountId);
+    const redirectStep = this.getPrerequisiteRedirectForBankBilling(workspaceBefore);
+    if (redirectStep) {
+      return {
+        stateToken: workspaceBefore.stateToken,
+        nextStep: redirectStep,
+        redirectStep,
+        session: await this.resolveSessionByStateToken(workspaceBefore.stateToken, 'bank-details'),
+        workspace: workspaceBefore,
+      };
+    }
+
+    const dto = this.validateDto(Dto.SaveTenantOnboardingBankDetailsDto, input);
+    await this.store.upsertBankDetail(application.id, {
+      bankName: dto.bankName.trim(),
+      accountHolderName: dto.accountHolderName.trim(),
+      iban: this.normalizeIban(dto.iban),
+      currency: dto.currency?.trim().toUpperCase() || this.getCountryPackSnapshot(workspaceBefore).currency,
+    });
+
+    await this.assertStepReadyForCompletion(application.id, 'bank_details');
+    await this.store.upsertStepProgress(application.id, 'bank_details', 'completed');
+
+    const workspace = await this.getWorkspace(application.tenantAccountId);
+    return {
+      stateToken: workspace.stateToken,
+      nextStep: 'billing-address',
+      redirectStep: null,
+      session: await this.resolveSessionByStateToken(workspace.stateToken, 'billing-address'),
+      workspace,
+    };
+  }
+
+  async saveBillingAddressByStateToken(
+    stateToken: string,
+    input: Dto.SaveTenantOnboardingBillingAddressDto,
+  ) {
+    const application = await this.resolveApplicationFromStateToken(stateToken);
+    this.assertPhoneVerificationEditable(application.status);
+    const workspaceBefore = await this.getWorkspace(application.tenantAccountId);
+    const prerequisiteRedirect = this.getPrerequisiteRedirectForBankBilling(workspaceBefore);
+    if (prerequisiteRedirect) {
+      return {
+        stateToken: workspaceBefore.stateToken,
+        nextStep: prerequisiteRedirect,
+        redirectStep: prerequisiteRedirect,
+        session: await this.resolveSessionByStateToken(workspaceBefore.stateToken, 'billing-address'),
+        workspace: workspaceBefore,
+      };
+    }
+    if (!this.isWorkspaceStepCompleted(workspaceBefore, 'bank_details')) {
+      return {
+        stateToken: workspaceBefore.stateToken,
+        nextStep: 'bank-details',
+        redirectStep: 'bank-details',
+        session: await this.resolveSessionByStateToken(workspaceBefore.stateToken, 'billing-address'),
+        workspace: workspaceBefore,
+      };
+    }
+
+    const dto = this.validateDto(Dto.SaveTenantOnboardingBillingAddressDto, input);
+    await this.store.upsertBillingAddress(application.id, {
+      useBusinessAddress: Boolean(dto.useBusinessAddress),
+      billingName: dto.billingName.trim(),
+      country: dto.country.trim().toUpperCase(),
+      city: dto.city.trim(),
+      postalCode: dto.postalCode.trim(),
+      addressLine1: dto.addressLine1.trim(),
+      addressLine2: dto.addressLine2?.trim() || null,
+    });
+
+    await this.assertStepReadyForCompletion(application.id, 'billing_address');
+    await this.store.upsertStepProgress(application.id, 'billing_address', 'completed');
+
+    const workspace = await this.getWorkspace(application.tenantAccountId);
+    return {
+      stateToken: workspace.stateToken,
+      nextStep: 'plan-selection',
+      redirectStep: null,
+      session: await this.resolveSessionByStateToken(workspace.stateToken, 'plan-selection'),
+      workspace,
+    };
+  }
+
   async sendContinueLinkByStateToken(stateToken: string) {
     const workspace = await this.resolveStateToken(stateToken);
     const tenant = await this.tenantAccountsStore.findById(workspace.application.tenantAccountId);
@@ -743,6 +833,14 @@ export class TenantOnboardingService {
       return 'authorized-person';
     }
 
+    if (!this.isWorkspaceStepCompleted(workspace, 'bank_details')) {
+      return 'bank-details';
+    }
+
+    if (!this.isWorkspaceStepCompleted(workspace, 'billing_address')) {
+      return 'billing-address';
+    }
+
     if (!this.isWorkspaceStepCompleted(workspace, 'operations_info')) {
       return 'plan-selection';
     }
@@ -788,7 +886,13 @@ export class TenantOnboardingService {
 
     if (this.isWorkspaceStepCompleted(workspace, 'owner_contact_info')) {
       allowed.add('bank-details');
+    }
+
+    if (this.isWorkspaceStepCompleted(workspace, 'bank_details')) {
       allowed.add('billing-address');
+    }
+
+    if (this.isWorkspaceStepCompleted(workspace, 'billing_address')) {
       allowed.add('plan-selection');
     }
 
@@ -831,9 +935,15 @@ export class TenantOnboardingService {
       completed.add('authorized-person');
     }
 
-    if (this.isWorkspaceStepCompleted(workspace, 'operations_info')) {
+    if (this.isWorkspaceStepCompleted(workspace, 'bank_details')) {
       completed.add('bank-details');
+    }
+
+    if (this.isWorkspaceStepCompleted(workspace, 'billing_address')) {
       completed.add('billing-address');
+    }
+
+    if (this.isWorkspaceStepCompleted(workspace, 'operations_info')) {
       completed.add('plan-selection');
     }
 
@@ -883,6 +993,8 @@ export class TenantOnboardingService {
       address: 'business_info',
       'business-details': 'legal_tax_info',
       'authorized-person': 'owner_contact_info',
+      'bank-details': 'bank_details',
+      'billing-address': 'billing_address',
       'plan-selection': 'operations_info',
       verification: 'documents',
       review: 'final_review',
@@ -913,6 +1025,28 @@ export class TenantOnboardingService {
     workspace: Awaited<ReturnType<TenantOnboardingService['getWorkspace']>>,
   ) {
     return Boolean(workspace.locationSelection?.locationLabel?.trim());
+  }
+
+  private getPrerequisiteRedirectForBankBilling(
+    workspace: Awaited<ReturnType<TenantOnboardingService['getWorkspace']>>,
+  ): OnboardingSessionStepKey | null {
+    if (!workspace.phoneVerification?.verified) {
+      return this.getCurrentSessionStep(workspace);
+    }
+    if (!this.isWorkspaceStepCompleted(workspace, 'business_info')) {
+      return this.hasLocationSelection(workspace) ? 'address' : 'location';
+    }
+    if (!this.isWorkspaceStepCompleted(workspace, 'legal_tax_info')) {
+      return 'business-details';
+    }
+    if (!this.isWorkspaceStepCompleted(workspace, 'owner_contact_info')) {
+      return 'authorized-person';
+    }
+    return null;
+  }
+
+  private normalizeIban(value: string) {
+    return value.trim().replace(/\s+/g, '').toUpperCase();
   }
 
   private composeAddressLine2(input: {
@@ -975,12 +1109,14 @@ export class TenantOnboardingService {
 
   async getSummary(tenantAccountId: string) {
     const application = await this.getOrCreateApplication(tenantAccountId);
-    const [steps, businessInfo, legalTaxInfo, ownerContactInfo, operationsInfo, documents, reviews, notes, phoneVerification, locationSelection] =
+    const [steps, businessInfo, legalTaxInfo, ownerContactInfo, bankDetails, billingAddress, operationsInfo, documents, reviews, notes, phoneVerification, locationSelection] =
       await Promise.all([
         this.store.listStepProgress(application.id),
         this.store.getBusinessDetail(application.id),
         this.store.getLegalDetail(application.id),
         this.store.getOwnerContact(application.id),
+        this.store.getBankDetail(application.id),
+        this.store.getBillingAddress(application.id),
         this.store.getOperationsProfile(application.id),
         this.store.listDocuments(application.id),
         this.store.listApplicationReviews(application.id),
@@ -1001,6 +1137,8 @@ export class TenantOnboardingService {
       businessInfo,
       legalTaxInfo,
       ownerContactInfo,
+      bankDetails,
+      billingAddress,
       operationsInfo,
       phoneVerification,
       locationSelection,
@@ -1122,6 +1260,31 @@ export class TenantOnboardingService {
           phoneNumber: dto.phoneNumber ?? current?.phoneNumber ?? '',
           roleTitle: dto.roleTitle ?? current?.roleTitle ?? null,
           ownershipPercentage: dto.ownershipPercentage ?? current?.ownershipPercentage ?? null,
+        });
+        break;
+      }
+      case 'bank_details': {
+        const dto = this.validateDto(Dto.SaveTenantOnboardingBankDetailsDto, input);
+        const current = await this.store.getBankDetail(application.id);
+        data = await this.store.upsertBankDetail(application.id, {
+          bankName: dto.bankName ?? current?.bankName ?? '',
+          accountHolderName: dto.accountHolderName ?? current?.accountHolderName ?? '',
+          iban: dto.iban ? this.normalizeIban(dto.iban) : current?.iban ?? '',
+          currency: dto.currency?.trim().toUpperCase() ?? current?.currency ?? 'CHF',
+        });
+        break;
+      }
+      case 'billing_address': {
+        const dto = this.validateDto(Dto.SaveTenantOnboardingBillingAddressDto, input);
+        const current = await this.store.getBillingAddress(application.id);
+        data = await this.store.upsertBillingAddress(application.id, {
+          useBusinessAddress: dto.useBusinessAddress ?? current?.useBusinessAddress ?? false,
+          billingName: dto.billingName ?? current?.billingName ?? '',
+          country: dto.country ?? current?.country ?? '',
+          city: dto.city ?? current?.city ?? '',
+          postalCode: dto.postalCode ?? current?.postalCode ?? '',
+          addressLine1: dto.addressLine1 ?? current?.addressLine1 ?? '',
+          addressLine2: dto.addressLine2 ?? current?.addressLine2 ?? null,
         });
         break;
       }
@@ -1886,6 +2049,16 @@ export class TenantOnboardingService {
         this.assertRequiredFields(detail, ['fullName', 'email', 'phoneNumber']);
         return;
       }
+      case 'bank_details': {
+        const detail = await this.store.getBankDetail(applicationId);
+        this.assertRequiredFields(detail, ['bankName', 'accountHolderName', 'iban', 'currency']);
+        return;
+      }
+      case 'billing_address': {
+        const detail = await this.store.getBillingAddress(applicationId);
+        this.assertRequiredFields(detail, ['billingName', 'country', 'city', 'postalCode', 'addressLine1']);
+        return;
+      }
       case 'operations_info': {
         const detail = await this.store.getOperationsProfile(applicationId);
         this.assertRequiredFields(detail, ['primaryCity', 'primaryPostalCode', 'deliveryModel']);
@@ -1938,6 +2111,10 @@ export class TenantOnboardingService {
         return summary.legalTaxInfo;
       case 'owner_contact_info':
         return summary.ownerContactInfo;
+      case 'bank_details':
+        return summary.bankDetails;
+      case 'billing_address':
+        return summary.billingAddress;
       case 'operations_info':
         return summary.operationsInfo;
       case 'documents':
