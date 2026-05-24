@@ -4,10 +4,13 @@ import { useEffect, useState } from 'react';
 import Image from 'next/image';
 import { useRouter } from 'next/navigation';
 import logoUrl from '@lieferzonen/assets/logo.svg';
+import { AddressStep } from '@/components/tenant/onboarding/AddressStep';
+import { LocationSearchStep } from '@/components/tenant/onboarding/LocationSearchStep';
 import { OtpVerificationStep } from '@/components/tenant/onboarding/OtpVerificationStep';
 import { PhoneVerificationStep } from '@/components/tenant/onboarding/PhoneVerificationStep';
 import { TenantContinuationBanner } from '@/components/tenant/onboarding/TenantContinuationBanner';
 import { TenantOnboardingStepPanel } from '@/components/tenant/onboarding/TenantOnboardingStepPanel';
+import { WelcomeStep } from '@/components/tenant/onboarding/WelcomeStep';
 import { useTenantOnboardingWorkspace } from '@/components/tenant/onboarding/useTenantOnboardingWorkspace';
 import type { TenantOnboardingStepKey } from '@/lib/tenant-onboarding-client';
 import {
@@ -26,7 +29,6 @@ import {
 function getLegacyRenderableStep(
   step: TenantOnboardingWorkflowStepKey,
 ): TenantOnboardingWorkflowStepKey {
-  if (step === 'address') return 'location';
   if (step === 'billing-address') return 'bank-details';
   if (step === 'submitted') return 'waiting';
   return step;
@@ -158,7 +160,7 @@ export default function TenantOnboardingWorkspace({
     {
       title: 'Isletme detaylari',
       description: 'Konum, isletme, banka ve paket bilgileri.',
-      steps: ['location', 'business-details', 'authorized-person', 'bank-details', 'plan-selection'],
+      steps: ['location', 'address', 'business-details', 'authorized-person', 'bank-details', 'plan-selection'],
     },
     {
       title: 'Isletme dogrulama',
@@ -168,6 +170,19 @@ export default function TenantOnboardingWorkspace({
   ];
 
   const getStepStatus = (stepKey: TenantOnboardingWorkflowStepKey) => {
+    if (stepKey === 'location') {
+      return workspace?.locationSelection?.locationLabel ? 'completed' : activeStep === stepKey ? 'in_progress' : 'not_started';
+    }
+
+    if (stepKey === 'address') {
+      const businessInfoStatus = workspace?.steps.find((step) => step.stepKey === 'business_info')?.status ?? 'not_started';
+      return businessInfoStatus === 'completed'
+        ? 'completed'
+        : activeStep === stepKey
+          ? 'in_progress'
+          : businessInfoStatus;
+    }
+
     const workflowStep = tenantOnboardingWorkflowSteps.find((step) => step.key === stepKey);
     if (!workflowStep || !('backendStep' in workflowStep) || !workflowStep.backendStep) {
       if (stepKey === 'phone-verification' && workspace?.phoneVerification?.verified) {
@@ -451,6 +466,27 @@ export default function TenantOnboardingWorkspace({
                   />
                 ) : requestedWorkflowStep === 'otp' ? (
                   <OtpVerificationStep
+                    resolvedSession={resolvedSession}
+                    workspace={workspace}
+                    onNavigate={navigateToUrl}
+                    onWorkspaceResolved={replaceWorkspace}
+                  />
+                ) : requestedWorkflowStep === 'welcome' ? (
+                  <WelcomeStep
+                    resolvedSession={resolvedSession}
+                    workspace={workspace}
+                    onNavigate={navigateToUrl}
+                    onWorkspaceResolved={replaceWorkspace}
+                  />
+                ) : requestedWorkflowStep === 'location' ? (
+                  <LocationSearchStep
+                    resolvedSession={resolvedSession}
+                    workspace={workspace}
+                    onNavigate={navigateToUrl}
+                    onWorkspaceResolved={replaceWorkspace}
+                  />
+                ) : requestedWorkflowStep === 'address' ? (
+                  <AddressStep
                     resolvedSession={resolvedSession}
                     workspace={workspace}
                     onNavigate={navigateToUrl}

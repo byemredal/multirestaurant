@@ -71,6 +71,20 @@ export interface TenantOnboardingPhoneVerification {
   updatedAt: Date;
 }
 
+export interface TenantOnboardingLocationSelection {
+  id: string;
+  applicationId: string;
+  locationLabel: string;
+  rawInput: string;
+  country: string;
+  city: string | null;
+  postalCode: string | null;
+  latitude: number | null;
+  longitude: number | null;
+  createdAt: Date;
+  updatedAt: Date;
+}
+
 export interface TenantBusinessDetail {
   id: string;
   applicationId: string;

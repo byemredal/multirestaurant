@@ -152,6 +152,7 @@ export type TenantOnboardingWorkspace = {
     resendCount?: number;
     attemptCount?: number;
   };
+  locationSelection?: TenantLocationSelection | null;
   stateToken: string;
   studioAccessAllowed: boolean;
   editable: boolean;
@@ -167,6 +168,17 @@ export type TenantOnboardingWorkspace = {
     locked: boolean;
     data: unknown;
   }>;
+};
+
+export type TenantLocationSelection = {
+  locationLabel: string;
+  rawInput: string;
+  country: string;
+  city: string | null;
+  postalCode: string | null;
+  latitude: number | null;
+  longitude: number | null;
+  updatedAt?: string;
 };
 
 export type TenantOnboardingSessionStepKey =
@@ -247,6 +259,29 @@ export type UploadTenantOnboardingDocumentInput = {
   expiresAt?: string;
 };
 
+export type TenantLocationSelectionInput = {
+  locationLabel: string;
+  rawInput: string;
+  country?: string;
+  city?: string | null;
+  postalCode?: string | null;
+  latitude?: number | null;
+  longitude?: number | null;
+};
+
+export type TenantAddressInput = {
+  country: string;
+  city: string;
+  region?: string | null;
+  postalCode: string;
+  addressLine1: string;
+  addressLine2?: string | null;
+  building?: string | null;
+  floor?: string | null;
+  door?: string | null;
+  addressNote?: string | null;
+};
+
 /* -----------------------------------------------------------------------
  * LEGACY: authenticated-session ("me") onboarding helpers.
  *
@@ -300,6 +335,109 @@ export async function resolveTenantOnboardingSession(
   }
 
   return (await response.json()) as TenantOnboardingResolvedSession;
+}
+
+export async function completeTenantOnboardingWelcome(stateToken: string) {
+  const response = await fetch(
+    `${apiBaseUrl}/v2/tenant/onboarding/${encodeURIComponent(stateToken)}/welcome/complete`,
+    {
+      credentials: 'include',
+      method: 'POST',
+    },
+  );
+
+  if (!response.ok) {
+    throw new Error(`tenant_onboarding_welcome_complete_failed_${response.status}`);
+  }
+
+  return (await response.json()) as {
+    stateToken: string;
+    nextStep: TenantOnboardingSessionStepKey;
+    redirectStep: TenantOnboardingSessionStepKey | null;
+    session?: TenantOnboardingResolvedSession;
+    workspace: TenantOnboardingWorkspace;
+  };
+}
+
+export async function saveTenantOnboardingLocationSelection(
+  stateToken: string,
+  input: TenantLocationSelectionInput,
+) {
+  const response = await fetch(
+    `${apiBaseUrl}/v2/tenant/onboarding/${encodeURIComponent(stateToken)}/location`,
+    {
+      body: JSON.stringify(input),
+      credentials: 'include',
+      headers: { 'Content-Type': 'application/json' },
+      method: 'POST',
+    },
+  );
+
+  if (!response.ok) {
+    let message = `tenant_onboarding_location_failed_${response.status}`;
+    try {
+      const payload = await response.json();
+      if (Array.isArray(payload?.errors) && payload.errors.length > 0) {
+        message = payload.errors.join(', ');
+      } else if (Array.isArray(payload?.message) && payload.message.length > 0) {
+        message = payload.message.join(', ');
+      } else if (typeof payload?.message === 'string' && payload.message.length > 0) {
+        message = payload.message;
+      }
+    } catch {
+      // Keep fallback.
+    }
+    throw new Error(message);
+  }
+
+  return (await response.json()) as {
+    stateToken: string;
+    nextStep: TenantOnboardingSessionStepKey;
+    redirectStep: TenantOnboardingSessionStepKey | null;
+    locationSelection: TenantLocationSelection;
+    session?: TenantOnboardingResolvedSession;
+    workspace: TenantOnboardingWorkspace;
+  };
+}
+
+export async function saveTenantOnboardingAddress(
+  stateToken: string,
+  input: TenantAddressInput,
+) {
+  const response = await fetch(
+    `${apiBaseUrl}/v2/tenant/onboarding/${encodeURIComponent(stateToken)}/address`,
+    {
+      body: JSON.stringify(input),
+      credentials: 'include',
+      headers: { 'Content-Type': 'application/json' },
+      method: 'POST',
+    },
+  );
+
+  if (!response.ok) {
+    let message = `tenant_onboarding_address_failed_${response.status}`;
+    try {
+      const payload = await response.json();
+      if (Array.isArray(payload?.errors) && payload.errors.length > 0) {
+        message = payload.errors.join(', ');
+      } else if (Array.isArray(payload?.message) && payload.message.length > 0) {
+        message = payload.message.join(', ');
+      } else if (typeof payload?.message === 'string' && payload.message.length > 0) {
+        message = payload.message;
+      }
+    } catch {
+      // Keep fallback.
+    }
+    throw new Error(message);
+  }
+
+  return (await response.json()) as {
+    stateToken: string;
+    nextStep: TenantOnboardingSessionStepKey;
+    redirectStep: TenantOnboardingSessionStepKey | null;
+    session?: TenantOnboardingResolvedSession;
+    workspace: TenantOnboardingWorkspace;
+  };
 }
 
 export type TenantPhoneVerificationChallenge = {

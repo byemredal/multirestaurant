@@ -152,6 +152,33 @@ export class TenantOnboardingController {
   }
 
   @Public()
+  @Post(':stateToken/welcome/complete')
+  @ApiOperation({ summary: 'Complete the informational V2 welcome step.' })
+  completeWelcome(@Param('stateToken') stateToken: string) {
+    return this.onboardingService.completeWelcomeByStateToken(stateToken);
+  }
+
+  @Public()
+  @Post(':stateToken/location')
+  @ApiOperation({ summary: 'Save the V2 onboarding location search selection.' })
+  saveLocationSelection(
+    @Param('stateToken') stateToken: string,
+    @Body() dto: Dto.SaveTenantOnboardingLocationSelectionDto,
+  ) {
+    return this.onboardingService.saveLocationSelectionByStateToken(stateToken, dto);
+  }
+
+  @Public()
+  @Post(':stateToken/address')
+  @ApiOperation({ summary: 'Save and complete the V2 onboarding address step.' })
+  saveAddress(
+    @Param('stateToken') stateToken: string,
+    @Body() dto: Dto.SaveTenantOnboardingAddressDto,
+  ) {
+    return this.onboardingService.saveAddressByStateToken(stateToken, dto);
+  }
+
+  @Public()
   @Patch(':stateToken/steps/:stepKey')
   @ApiOperation({ summary: 'Save a tenant onboarding step draft by state token.' })
   patchStepByStateToken(

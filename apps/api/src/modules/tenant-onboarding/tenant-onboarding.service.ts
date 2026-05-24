@@ -380,6 +380,133 @@ export class TenantOnboardingService {
     };
   }
 
+  async completeWelcomeByStateToken(stateToken: string) {
+    const application = await this.resolveApplicationFromStateToken(stateToken);
+    const workspace = await this.getWorkspace(application.tenantAccountId);
+
+    if (!workspace.phoneVerification?.verified) {
+      return {
+        stateToken: workspace.stateToken,
+        nextStep: this.getCurrentSessionStep(workspace),
+        redirectStep: this.getCurrentSessionStep(workspace),
+        session: await this.resolveSessionByStateToken(workspace.stateToken, 'welcome'),
+        workspace,
+      };
+    }
+
+    return {
+      stateToken: workspace.stateToken,
+      nextStep: 'location',
+      redirectStep: null,
+      session: await this.resolveSessionByStateToken(workspace.stateToken, 'location'),
+      workspace,
+    };
+  }
+
+  async saveLocationSelectionByStateToken(
+    stateToken: string,
+    input: Dto.SaveTenantOnboardingLocationSelectionDto,
+  ) {
+    const application = await this.resolveApplicationFromStateToken(stateToken);
+    this.assertPhoneVerificationEditable(application.status);
+    const workspaceBefore = await this.getWorkspace(application.tenantAccountId);
+    if (!workspaceBefore.phoneVerification?.verified) {
+      throw new ForbiddenException('Phone verification must be completed before saving location.');
+    }
+
+    const dto = this.validateDto(Dto.SaveTenantOnboardingLocationSelectionDto, input);
+    const normalizedLocation = {
+      locationLabel: dto.locationLabel.trim(),
+      rawInput: dto.rawInput.trim(),
+      country: dto.country?.trim().toUpperCase() || 'CH',
+      city: dto.city?.trim() || null,
+      postalCode: dto.postalCode?.trim() || null,
+      latitude: dto.latitude ?? null,
+      longitude: dto.longitude ?? null,
+    };
+    const locationSelection = await this.store.upsertLocationSelection(application.id, normalizedLocation);
+
+    const currentBusiness = await this.store.getBusinessDetail(application.id);
+    if (currentBusiness) {
+      await this.store.upsertBusinessDetail(application.id, {
+        businessName: currentBusiness.businessName,
+        businessType: currentBusiness.businessType,
+        registrationNumber: currentBusiness.registrationNumber,
+        taxNumber: currentBusiness.taxNumber,
+        addressLine1: currentBusiness.addressLine1?.trim() || normalizedLocation.rawInput,
+        addressLine2: currentBusiness.addressLine2,
+        city: normalizedLocation.city ?? currentBusiness.city,
+        postalCode: normalizedLocation.postalCode ?? currentBusiness.postalCode,
+        country: normalizedLocation.country,
+      });
+    }
+
+    const workspace = await this.getWorkspace(application.tenantAccountId);
+    return {
+      stateToken: workspace.stateToken,
+      nextStep: 'address',
+      redirectStep: null,
+      locationSelection,
+      session: await this.resolveSessionByStateToken(workspace.stateToken, 'address'),
+      workspace,
+    };
+  }
+
+  async saveAddressByStateToken(
+    stateToken: string,
+    input: Dto.SaveTenantOnboardingAddressDto,
+  ) {
+    const application = await this.resolveApplicationFromStateToken(stateToken);
+    this.assertPhoneVerificationEditable(application.status);
+    const workspaceBefore = await this.getWorkspace(application.tenantAccountId);
+    if (!workspaceBefore.phoneVerification?.verified) {
+      throw new ForbiddenException('Phone verification must be completed before saving address.');
+    }
+    if (!this.hasLocationSelection(workspaceBefore)) {
+      return {
+        stateToken: workspaceBefore.stateToken,
+        nextStep: 'location',
+        redirectStep: 'location',
+        session: await this.resolveSessionByStateToken(workspaceBefore.stateToken, 'address'),
+        workspace: workspaceBefore,
+      };
+    }
+
+    const dto = this.validateDto(Dto.SaveTenantOnboardingAddressDto, input);
+    const currentBusiness = await this.store.getBusinessDetail(application.id);
+    const addressLine2 = this.composeAddressLine2({
+      addressLine2: dto.addressLine2,
+      building: dto.building,
+      floor: dto.floor,
+      door: dto.door,
+      addressNote: dto.addressNote,
+    });
+
+    await this.store.upsertBusinessDetail(application.id, {
+      businessName: currentBusiness?.businessName ?? workspaceBefore.locationSelection?.locationLabel ?? '',
+      businessType: currentBusiness?.businessType ?? 'food_service',
+      registrationNumber: currentBusiness?.registrationNumber ?? null,
+      taxNumber: currentBusiness?.taxNumber ?? null,
+      addressLine1: dto.addressLine1.trim(),
+      addressLine2,
+      city: dto.city.trim(),
+      postalCode: dto.postalCode.trim(),
+      country: dto.country.trim().toUpperCase(),
+    });
+
+    await this.assertStepReadyForCompletion(application.id, 'business_info');
+    await this.store.upsertStepProgress(application.id, 'business_info', 'completed');
+
+    const workspace = await this.getWorkspace(application.tenantAccountId);
+    return {
+      stateToken: workspace.stateToken,
+      nextStep: 'business-details',
+      redirectStep: null,
+      session: await this.resolveSessionByStateToken(workspace.stateToken, 'business-details'),
+      workspace,
+    };
+  }
+
   async sendContinueLinkByStateToken(stateToken: string) {
     const workspace = await this.resolveStateToken(stateToken);
     const tenant = await this.tenantAccountsStore.findById(workspace.application.tenantAccountId);
@@ -474,7 +601,7 @@ export class TenantOnboardingService {
     }
 
     if (!this.isWorkspaceStepCompleted(workspace, 'business_info')) {
-      return 'location';
+      return this.hasLocationSelection(workspace) ? 'address' : 'location';
     }
 
     if (!this.isWorkspaceStepCompleted(workspace, 'legal_tax_info')) {
@@ -516,8 +643,11 @@ export class TenantOnboardingService {
     allowed.add('welcome');
 
     allowed.add('location');
-    if (this.isWorkspaceStepCompleted(workspace, 'business_info')) {
+    if (this.hasLocationSelection(workspace)) {
       allowed.add('address');
+    }
+
+    if (this.isWorkspaceStepCompleted(workspace, 'business_info')) {
       allowed.add('business-details');
     }
 
@@ -551,6 +681,10 @@ export class TenantOnboardingService {
       completed.add('phone-verification');
       completed.add('otp');
       completed.add('welcome');
+    }
+
+    if (this.hasLocationSelection(workspace)) {
+      completed.add('location');
     }
 
     if (this.isWorkspaceStepCompleted(workspace, 'business_info')) {
@@ -628,9 +762,44 @@ export class TenantOnboardingService {
       return workspace.phoneVerification ?? null;
     }
 
+    if (step === 'welcome') {
+      return {
+        phoneVerified: Boolean(workspace.phoneVerification?.verified),
+        nextStep: 'location',
+      };
+    }
+
+    if (step === 'location') {
+      return workspace.locationSelection ?? null;
+    }
+
     return backendStep
       ? workspace.steps.find((entry) => entry.stepKey === backendStep)?.data ?? null
       : null;
+  }
+
+  private hasLocationSelection(
+    workspace: Awaited<ReturnType<TenantOnboardingService['getWorkspace']>>,
+  ) {
+    return Boolean(workspace.locationSelection?.locationLabel?.trim());
+  }
+
+  private composeAddressLine2(input: {
+    addressLine2?: string | null;
+    building?: string | null;
+    floor?: string | null;
+    door?: string | null;
+    addressNote?: string | null;
+  }) {
+    const parts = [
+      input.addressLine2?.trim(),
+      input.building?.trim() ? `Building: ${input.building.trim()}` : null,
+      input.floor?.trim() ? `Floor: ${input.floor.trim()}` : null,
+      input.door?.trim() ? `Door: ${input.door.trim()}` : null,
+      input.addressNote?.trim() ? `Note: ${input.addressNote.trim()}` : null,
+    ].filter(Boolean);
+
+    return parts.length > 0 ? parts.join(' | ') : null;
   }
 
   private isPhoneOtpPending(
@@ -675,7 +844,7 @@ export class TenantOnboardingService {
 
   async getSummary(tenantAccountId: string) {
     const application = await this.getOrCreateApplication(tenantAccountId);
-    const [steps, businessInfo, legalTaxInfo, ownerContactInfo, operationsInfo, documents, reviews, notes, phoneVerification] =
+    const [steps, businessInfo, legalTaxInfo, ownerContactInfo, operationsInfo, documents, reviews, notes, phoneVerification, locationSelection] =
       await Promise.all([
         this.store.listStepProgress(application.id),
         this.store.getBusinessDetail(application.id),
@@ -686,6 +855,7 @@ export class TenantOnboardingService {
         this.store.listApplicationReviews(application.id),
         this.store.listAdminNotes(application.id),
         this.store.getPhoneVerification(application.id),
+        this.store.getLocationSelection(application.id),
       ]);
 
     const revisionRequests = [
@@ -702,6 +872,7 @@ export class TenantOnboardingService {
       ownerContactInfo,
       operationsInfo,
       phoneVerification,
+      locationSelection,
       documents: documents.filter((document) => document.isCurrent),
       revisionRequests,
     };
@@ -742,6 +913,18 @@ export class TenantOnboardingService {
         resendCount: summary.phoneVerification?.resendCount ?? 0,
         attemptCount: summary.phoneVerification?.attemptCount ?? 0,
       },
+      locationSelection: summary.locationSelection
+        ? {
+            locationLabel: summary.locationSelection.locationLabel,
+            rawInput: summary.locationSelection.rawInput,
+            country: summary.locationSelection.country,
+            city: summary.locationSelection.city,
+            postalCode: summary.locationSelection.postalCode,
+            latitude: summary.locationSelection.latitude,
+            longitude: summary.locationSelection.longitude,
+            updatedAt: summary.locationSelection.updatedAt,
+          }
+        : null,
       studioAccessAllowed: summary.studioAccessAllowed,
       editable,
       revisionRequests: summary.revisionRequests,

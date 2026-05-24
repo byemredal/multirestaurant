@@ -87,7 +87,6 @@ export const tenantOnboardingWorkflowSteps: readonly TenantOnboardingWorkflowSte
     title: 'Adres',
     description: 'Isletme adresini netlestirin.',
     backendStep: 'business_info',
-    hideInLegacyNav: true,
   },
   {
     key: 'business-details',
@@ -172,6 +171,14 @@ function isWorkflowStepSatisfied(
     return true;
   }
 
+  if (step.key === 'location') {
+    return Boolean(workspace.locationSelection?.locationLabel?.trim());
+  }
+
+  if (step.key === 'address') {
+    return isBackendStepCompleted(workspace, 'business_info');
+  }
+
   return step.backendStep ? isBackendStepCompleted(workspace, step.backendStep) : true;
 }
 
@@ -204,7 +211,11 @@ export function getFirstLockedSafeTenantOnboardingStep(workspace: TenantOnboardi
   const accessibleSteps = getTenantOnboardingAccessibleStepKeys(workspace);
   const revisionStep = workspace.steps.find((step) => step.status === 'needs_revision');
   const incompleteStep = workspace.steps.find((step) => step.status !== 'completed');
-  const preferredStep = getWorkflowStepForBackendStep(revisionStep?.stepKey ?? incompleteStep?.stepKey);
+  const preferredStep =
+    (revisionStep?.stepKey ?? incompleteStep?.stepKey) === 'business_info' &&
+    workspace.locationSelection?.locationLabel?.trim()
+      ? 'address'
+      : getWorkflowStepForBackendStep(revisionStep?.stepKey ?? incompleteStep?.stepKey);
 
   return accessibleSteps.includes(preferredStep)
     ? preferredStep

@@ -20,6 +20,7 @@ import {
   TenantLegalDetail,
   TenantOnboardingApplication,
   TenantOnboardingApplicationStatus,
+  TenantOnboardingLocationSelection,
   TenantOnboardingPhoneVerification,
   TenantOnboardingStepKey,
   TenantOnboardingStepProgress,
@@ -308,6 +309,55 @@ export class TenantOnboardingStore {
            "updatedAt" = $updatedAt
        WHERE "applicationId" = $applicationId`,
     ).run(this.phoneVerificationParams(updated));
+    return updated;
+  }
+
+  async getLocationSelection(applicationId: string) {
+    const row = await this.databaseService
+      .prepare(`SELECT * FROM "TenantOnboardingLocationSelection" WHERE "applicationId" = $applicationId`)
+      .get({ $applicationId: applicationId }) as LocationSelectionRow | undefined;
+    return row ? this.mapLocationSelection(row) : null;
+  }
+
+  async upsertLocationSelection(
+    applicationId: string,
+    input: Omit<TenantOnboardingLocationSelection, 'id' | 'applicationId' | 'createdAt' | 'updatedAt'>,
+  ) {
+    const existing = await this.getLocationSelection(applicationId);
+    const now = new Date();
+
+    if (!existing) {
+      const created: TenantOnboardingLocationSelection = {
+        id: randomUUID(),
+        applicationId,
+        ...input,
+        createdAt: now,
+        updatedAt: now,
+      };
+      await this.databaseService.prepare(
+        `INSERT INTO "TenantOnboardingLocationSelection" (
+          "id","applicationId","locationLabel","rawInput","country","city","postalCode",
+          "latitude","longitude","createdAt","updatedAt"
+        ) VALUES (
+          $id,$applicationId,$locationLabel,$rawInput,$country,$city,$postalCode,
+          $latitude,$longitude,$createdAt,$updatedAt
+        )`,
+      ).run(this.locationSelectionParams(created));
+      return created;
+    }
+
+    const updated: TenantOnboardingLocationSelection = {
+      ...existing,
+      ...input,
+      updatedAt: now,
+    };
+    await this.databaseService.prepare(
+      `UPDATE "TenantOnboardingLocationSelection"
+       SET "locationLabel" = $locationLabel, "rawInput" = $rawInput, "country" = $country,
+           "city" = $city, "postalCode" = $postalCode, "latitude" = $latitude,
+           "longitude" = $longitude, "updatedAt" = $updatedAt
+       WHERE "applicationId" = $applicationId`,
+    ).run(this.locationSelectionParams(updated));
     return updated;
   }
 
@@ -686,6 +736,22 @@ export class TenantOnboardingStore {
     };
   }
 
+  private locationSelectionParams(detail: TenantOnboardingLocationSelection) {
+    return {
+      $id: detail.id,
+      $applicationId: detail.applicationId,
+      $locationLabel: detail.locationLabel,
+      $rawInput: detail.rawInput,
+      $country: detail.country,
+      $city: detail.city,
+      $postalCode: detail.postalCode,
+      $latitude: detail.latitude,
+      $longitude: detail.longitude,
+      $createdAt: detail.createdAt.toISOString(),
+      $updatedAt: detail.updatedAt.toISOString(),
+    };
+  }
+
   private operationsParams(detail: TenantOperationsProfile) {
     return {
       $id: detail.id,
@@ -795,6 +861,22 @@ export class TenantOnboardingStore {
     };
   }
 
+  private mapLocationSelection(row: LocationSelectionRow): TenantOnboardingLocationSelection {
+    return {
+      id: row.id,
+      applicationId: row.applicationId,
+      locationLabel: row.locationLabel,
+      rawInput: row.rawInput,
+      country: row.country,
+      city: row.city,
+      postalCode: row.postalCode,
+      latitude: row.latitude === null ? null : Number(row.latitude),
+      longitude: row.longitude === null ? null : Number(row.longitude),
+      createdAt: new Date(row.createdAt),
+      updatedAt: new Date(row.updatedAt),
+    };
+  }
+
   private mapOperations(row: OperationsRow): TenantOperationsProfile {
     return {
       ...row,
@@ -827,6 +909,7 @@ interface BusinessRow { id: string; applicationId: string; businessName: string;
 interface LegalRow { id: string; applicationId: string; legalEntityName: string; taxId: string | null; vatId: string | null; registrationCountry: string; registeredAddress: string; createdAt: string; updatedAt: string; }
 interface OwnerRow { id: string; applicationId: string; fullName: string; email: string; phoneNumber: string; roleTitle: string | null; ownershipPercentage: number | null; createdAt: string; updatedAt: string; }
 interface PhoneVerificationRow { id: string; applicationId: string; phoneNumber: string; otpCodeHash: string | null; expiresAt: string | null; verifiedAt: string | null; resendCount: number; attemptCount: number; lastSentAt: string | null; createdAt: string; updatedAt: string; }
+interface LocationSelectionRow { id: string; applicationId: string; locationLabel: string; rawInput: string; country: string; city: string | null; postalCode: string | null; latitude: number | null; longitude: number | null; createdAt: string; updatedAt: string; }
 interface OperationsRow { id: string; applicationId: string; primaryCity: string; primaryPostalCode: string; deliveryModel: string; supportsPickup: boolean; openingHoursSummary: string | null; estimatedGoLiveDate: string | null; createdAt: string; updatedAt: string; }
 interface DocumentRow { id: string; applicationId: string; fileAssetId: string; type: string; status: string; isRequired: boolean; version: number; isCurrent: boolean; uploadedAt: string; reviewedAt: string | null; reviewedByAdminId: string | null; rejectionReason: string | null; expiresAt: string | null; createdAt: string; updatedAt: string; }
 interface ApplicationReviewRow { id: string; applicationId: string; adminId: string; decision: string; internalNote: string | null; tenantVisibleNote: string | null; createdAt: string; }
