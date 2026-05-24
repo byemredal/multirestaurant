@@ -11,6 +11,7 @@ import {
 import { getTenantOnboardingStepUrl } from './onboarding-routing';
 import { OnboardingBottomActionBar } from './OnboardingBottomActionBar';
 import { StepHeader } from './shared/StepHeader';
+import { useOnboardingActionGuard } from './hooks/useOnboardingActionGuard';
 
 type AddressStepProps = {
   resolvedSession: TenantOnboardingResolvedSession | null;
@@ -80,6 +81,7 @@ export function AddressStep({
   const [errors, setErrors] = useState<AddressErrors>({});
   const [saving, setSaving] = useState(false);
   const [submitError, setSubmitError] = useState<string | null>(null);
+  const runOnce = useOnboardingActionGuard();
   const location = workspace.locationSelection;
 
   function updateField<K extends keyof TenantAddressInput>(key: K, value: TenantAddressInput[K]) {
@@ -95,18 +97,20 @@ export function AddressStep({
       return;
     }
 
-    setSaving(true);
-    setSubmitError(null);
-    try {
-      const result = await saveTenantOnboardingAddress(workspace.stateToken, normalizeAddress(form));
-      onWorkspaceResolved(result.workspace);
-      const nextStep = result.redirectStep ?? result.nextStep ?? result.session?.currentStep ?? 'business-details';
-      onNavigate(getTenantOnboardingStepUrl(result.stateToken, nextStep));
-    } catch (error) {
-      setSubmitError(error instanceof Error ? error.message : 'Adres kaydedilemedi.');
-    } finally {
-      setSaving(false);
-    }
+    await runOnce(async () => {
+      setSaving(true);
+      setSubmitError(null);
+      try {
+        const result = await saveTenantOnboardingAddress(workspace.stateToken, normalizeAddress(form));
+        onWorkspaceResolved(result.workspace);
+        const nextStep = result.redirectStep ?? result.nextStep ?? result.session?.currentStep ?? 'business-details';
+        onNavigate(getTenantOnboardingStepUrl(workspace.stateToken, nextStep));
+      } catch (error) {
+        setSubmitError(error instanceof Error ? error.message : 'Adres kaydedilemedi.');
+      } finally {
+        setSaving(false);
+      }
+    });
   }
 
   return (

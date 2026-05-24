@@ -87,6 +87,7 @@ export type TenantOnboardingStepKey =
   | 'owner_contact_info'
   | 'bank_details'
   | 'billing_address'
+  | 'membership_plan'
   | 'operations_info'
   | 'documents'
   | 'final_review';
@@ -324,6 +325,26 @@ export type TenantBillingAddressInput = {
   postalCode: string;
   addressLine1: string;
   addressLine2?: string | null;
+};
+
+export type TenantOnboardingPlanCatalogEntry = {
+  planKey: string;
+  title: string;
+  description: string;
+  commissionSummary: string;
+  monthlyFeeSummary: string | null;
+  includedServices: string[];
+  benefits: string[];
+  limitations: string[];
+  recommended: boolean;
+  country: string;
+  currency: string;
+  active: boolean;
+  sortOrder: number;
+};
+
+export type TenantPlanSelectionInput = {
+  planKey: string;
 };
 
 /* -----------------------------------------------------------------------
@@ -663,6 +684,71 @@ export async function saveTenantOnboardingBillingAddress(
 
   if (!response.ok) {
     let message = `tenant_onboarding_billing_address_failed_${response.status}`;
+    try {
+      const payload = await response.json();
+      if (Array.isArray(payload?.errors) && payload.errors.length > 0) {
+        message = payload.errors.join(', ');
+      } else if (Array.isArray(payload?.message) && payload.message.length > 0) {
+        message = payload.message.join(', ');
+      } else if (typeof payload?.message === 'string' && payload.message.length > 0) {
+        message = payload.message;
+      }
+    } catch {
+      // Keep fallback.
+    }
+    throw new Error(message);
+  }
+
+  return (await response.json()) as {
+    stateToken: string;
+    nextStep: TenantOnboardingSessionStepKey;
+    redirectStep: TenantOnboardingSessionStepKey | null;
+    session?: TenantOnboardingResolvedSession;
+    workspace: TenantOnboardingWorkspace;
+  };
+}
+
+export async function getTenantOnboardingPlans(stateToken: string) {
+  const response = await fetch(
+    `${apiBaseUrl}/v2/tenant/onboarding/${encodeURIComponent(stateToken)}/plans`,
+    { credentials: 'include' },
+  );
+
+  if (!response.ok) {
+    throw new Error(`tenant_onboarding_plans_failed_${response.status}`);
+  }
+
+  return (await response.json()) as {
+    stateToken: string;
+    redirectStep: TenantOnboardingSessionStepKey | null;
+    countryPack: TenantOnboardingCountryPack;
+    plans: TenantOnboardingPlanCatalogEntry[];
+    selectedPlan: {
+      planKey: string;
+      planNameSnapshot: string;
+      commissionSummarySnapshot: string;
+      currency: string;
+      selectedAt: string;
+    } | null;
+  };
+}
+
+export async function saveTenantOnboardingPlanSelection(
+  stateToken: string,
+  input: TenantPlanSelectionInput,
+) {
+  const response = await fetch(
+    `${apiBaseUrl}/v2/tenant/onboarding/${encodeURIComponent(stateToken)}/plan-selection`,
+    {
+      body: JSON.stringify(input),
+      credentials: 'include',
+      headers: { 'Content-Type': 'application/json' },
+      method: 'POST',
+    },
+  );
+
+  if (!response.ok) {
+    let message = `tenant_onboarding_plan_selection_failed_${response.status}`;
     try {
       const payload = await response.json();
       if (Array.isArray(payload?.errors) && payload.errors.length > 0) {

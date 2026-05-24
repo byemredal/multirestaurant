@@ -12,6 +12,7 @@ import { getTenantOnboardingStepUrl } from './onboarding-routing';
 import { OnboardingBottomActionBar } from './OnboardingBottomActionBar';
 import { getBillingAddressFields } from './onboarding-country-pack';
 import { StepHeader } from './shared/StepHeader';
+import { useOnboardingActionGuard } from './hooks/useOnboardingActionGuard';
 
 type BillingAddressStepProps = {
   resolvedSession: TenantOnboardingResolvedSession | null;
@@ -93,6 +94,7 @@ export function BillingAddressStep({
   const [saving, setSaving] = useState(false);
   const [errors, setErrors] = useState<BillingAddressErrors>({});
   const [submitError, setSubmitError] = useState<string | null>(null);
+  const runOnce = useOnboardingActionGuard();
   const config = useMemo(() => getBillingAddressFields(), []);
   const labelByKey = Object.fromEntries(config.fields.map((field) => [field.key, field.label])) as Record<string, string>;
   const status = workspace.steps.find((step) => step.stepKey === 'billing_address')?.status ?? 'in_progress';
@@ -123,18 +125,20 @@ export function BillingAddressStep({
       return;
     }
 
-    setSaving(true);
-    setSubmitError(null);
-    try {
-      const result = await saveTenantOnboardingBillingAddress(workspace.stateToken, normalizeForm(form));
-      onWorkspaceResolved(result.workspace);
-      const nextStep = result.redirectStep ?? result.nextStep ?? result.session?.currentStep ?? 'plan-selection';
-      onNavigate(getTenantOnboardingStepUrl(result.stateToken, nextStep));
-    } catch (error) {
-      setSubmitError(error instanceof Error ? error.message : 'Billing address could not be saved.');
-    } finally {
-      setSaving(false);
-    }
+    await runOnce(async () => {
+      setSaving(true);
+      setSubmitError(null);
+      try {
+        const result = await saveTenantOnboardingBillingAddress(workspace.stateToken, normalizeForm(form));
+        onWorkspaceResolved(result.workspace);
+        const nextStep = result.redirectStep ?? result.nextStep ?? result.session?.currentStep ?? 'plan-selection';
+        onNavigate(getTenantOnboardingStepUrl(workspace.stateToken, nextStep));
+      } catch (error) {
+        setSubmitError(error instanceof Error ? error.message : 'Billing address could not be saved.');
+      } finally {
+        setSaving(false);
+      }
+    });
   }
 
   return (

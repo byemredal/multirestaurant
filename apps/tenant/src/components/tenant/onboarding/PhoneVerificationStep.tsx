@@ -11,6 +11,7 @@ import {
 import { getTenantOnboardingStepUrl } from './onboarding-routing';
 import { OnboardingBottomActionBar } from './OnboardingBottomActionBar';
 import { StepHeader } from './shared/StepHeader';
+import { useOnboardingActionGuard } from './hooks/useOnboardingActionGuard';
 
 type PhoneVerificationStepProps = {
   resolvedSession: TenantOnboardingResolvedSession | null;
@@ -45,6 +46,7 @@ export function PhoneVerificationStep({
   const canSend = phoneNumber.trim().length >= 7 && !sending;
   const initialMaskedPhone = workspace.phoneVerification?.maskedPhoneNumber;
   const showDebugCode = challenge?.debugCode && process.env.NODE_ENV !== 'production';
+  const runOnce = useOnboardingActionGuard();
 
   const status = useMemo(() => {
     if (workspace.phoneVerification?.verified) return 'completed';
@@ -58,22 +60,24 @@ export function PhoneVerificationStep({
       return;
     }
 
-    setSending(true);
-    setError(null);
-    try {
-      const result = await sendTenantOnboardingPhoneCode(workspace.stateToken, phoneNumber.trim());
-      setChallenge(result);
-      if (result.session?.workspace) {
-        onWorkspaceResolved(result.session.workspace);
+    await runOnce(async () => {
+      setSending(true);
+      setError(null);
+      try {
+        const result = await sendTenantOnboardingPhoneCode(workspace.stateToken, phoneNumber.trim());
+        setChallenge(result);
+        if (result.session?.workspace) {
+          onWorkspaceResolved(result.session.workspace);
+        }
+        const nextStep = result.redirectStep ?? result.nextStep ?? 'otp';
+        onNavigate(getTenantOnboardingStepUrl(workspace.stateToken, nextStep));
+      } catch (sendError) {
+        const message = sendError instanceof Error ? sendError.message : 'Kod gonderilemedi.';
+        setError(formatSendError(message));
+      } finally {
+        setSending(false);
       }
-      const nextStep = result.redirectStep ?? result.nextStep ?? 'otp';
-      onNavigate(getTenantOnboardingStepUrl(workspace.stateToken, nextStep));
-    } catch (sendError) {
-      const message = sendError instanceof Error ? sendError.message : 'Kod gonderilemedi.';
-      setError(formatSendError(message));
-    } finally {
-      setSending(false);
-    }
+    });
   }
 
   return (

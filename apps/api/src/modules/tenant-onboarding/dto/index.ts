@@ -7,6 +7,7 @@ export * from './patch-legal-tax-info.dto';
 export * from './patch-operations-info.dto';
 export * from './patch-owner-contact-info.dto';
 export * from './phone-verification.dto';
+export * from './plan-selection.dto';
 export * from './location-selection.dto';
 export * from './start-tenant-onboarding.dto';
 export * from './update-business-info.dto';

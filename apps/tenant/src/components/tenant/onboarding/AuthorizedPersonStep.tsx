@@ -12,6 +12,7 @@ import { getTenantOnboardingStepUrl } from './onboarding-routing';
 import { OnboardingBottomActionBar } from './OnboardingBottomActionBar';
 import { getAuthorizedPersonFields } from './onboarding-country-pack';
 import { StepHeader } from './shared/StepHeader';
+import { useOnboardingActionGuard } from './hooks/useOnboardingActionGuard';
 
 type AuthorizedPersonStepProps = {
   resolvedSession: TenantOnboardingResolvedSession | null;
@@ -89,6 +90,7 @@ export function AuthorizedPersonStep({
   const [saving, setSaving] = useState(false);
   const [errors, setErrors] = useState<AuthorizedPersonErrors>({});
   const [submitError, setSubmitError] = useState<string | null>(null);
+  const runOnce = useOnboardingActionGuard();
   const countryConfig = useMemo(
     () => getAuthorizedPersonFields(resolvedSession?.countryPack),
     [resolvedSession?.countryPack],
@@ -108,18 +110,20 @@ export function AuthorizedPersonStep({
       return;
     }
 
-    setSaving(true);
-    setSubmitError(null);
-    try {
-      const result = await saveTenantOnboardingAuthorizedPerson(workspace.stateToken, normalizeForm(form));
-      onWorkspaceResolved(result.workspace);
-      const nextStep = result.redirectStep ?? result.nextStep ?? result.session?.currentStep ?? 'bank-details';
-      onNavigate(getTenantOnboardingStepUrl(result.stateToken, nextStep));
-    } catch (error) {
-      setSubmitError(error instanceof Error ? error.message : 'Authorized person details could not be saved.');
-    } finally {
-      setSaving(false);
-    }
+    await runOnce(async () => {
+      setSaving(true);
+      setSubmitError(null);
+      try {
+        const result = await saveTenantOnboardingAuthorizedPerson(workspace.stateToken, normalizeForm(form));
+        onWorkspaceResolved(result.workspace);
+        const nextStep = result.redirectStep ?? result.nextStep ?? result.session?.currentStep ?? 'bank-details';
+        onNavigate(getTenantOnboardingStepUrl(workspace.stateToken, nextStep));
+      } catch (error) {
+        setSubmitError(error instanceof Error ? error.message : 'Authorized person details could not be saved.');
+      } finally {
+        setSaving(false);
+      }
+    });
   }
 
   const ownerStatus = workspace.steps.find((step) => step.stepKey === 'owner_contact_info')?.status ?? 'in_progress';

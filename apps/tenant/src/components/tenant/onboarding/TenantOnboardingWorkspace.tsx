@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import Image from 'next/image';
 import { usePathname, useRouter } from 'next/navigation';
 import logoUrl from '@lieferzonen/assets/logo.svg';
@@ -12,6 +12,7 @@ import { BusinessDetailsStep } from '@/components/tenant/onboarding/BusinessDeta
 import { LocationSearchStep } from '@/components/tenant/onboarding/LocationSearchStep';
 import { OtpVerificationStep } from '@/components/tenant/onboarding/OtpVerificationStep';
 import { PhoneVerificationStep } from '@/components/tenant/onboarding/PhoneVerificationStep';
+import { PlanSelectionStep } from '@/components/tenant/onboarding/PlanSelectionStep';
 import { TenantContinuationBanner } from '@/components/tenant/onboarding/TenantContinuationBanner';
 import { TenantOnboardingStepPanel } from '@/components/tenant/onboarding/TenantOnboardingStepPanel';
 import { WelcomeStep } from '@/components/tenant/onboarding/WelcomeStep';
@@ -59,6 +60,7 @@ export default function TenantOnboardingWorkspace({
     completeStep,
     error,
     loading,
+    applyMutationWorkspace,
     replaceWorkspace,
     saveDraft,
     savingStep,
@@ -77,13 +79,19 @@ export default function TenantOnboardingWorkspace({
   );
   const activeStep = useMemo(() => getLegacyRenderableStep(requestedWorkflowStep), [requestedWorkflowStep]);
 
-  const replaceRoute = (url: string) => {
+  const replaceRoute = useCallback((url: string) => {
     if (pathname === url || lastRedirectTargetRef.current === url) {
       return;
     }
     lastRedirectTargetRef.current = url;
     router.replace(url);
-  };
+  }, [pathname, router]);
+
+  useEffect(() => {
+    if (lastRedirectTargetRef.current === pathname) {
+      lastRedirectTargetRef.current = null;
+    }
+  }, [pathname]);
 
   useEffect(() => {
     if (!workspace || !resolvedSession?.redirectStep) {
@@ -92,7 +100,7 @@ export default function TenantOnboardingWorkspace({
 
     const target = getTenantOnboardingStepUrl(stateToken ?? workspace.stateToken, resolvedSession.redirectStep);
     replaceRoute(target);
-  }, [pathname, resolvedSession?.redirectStep, router, stateToken, workspace]);
+  }, [replaceRoute, resolvedSession?.redirectStep, stateToken, workspace]);
 
   useEffect(() => {
     if (!workspace) {
@@ -103,7 +111,7 @@ export default function TenantOnboardingWorkspace({
     if (resumeUrl === '/dashboard' || resumeUrl.endsWith('/waiting')) {
       replaceRoute(resumeUrl);
     }
-  }, [pathname, router, workspace]);
+  }, [replaceRoute, workspace]);
 
   useEffect(() => {
     if (
@@ -120,9 +128,9 @@ export default function TenantOnboardingWorkspace({
         getFirstLockedSafeTenantOnboardingStep(workspace),
       ),
     );
-  }, [activeStep, pathname, resolvedSession, router, stateToken, workspace]);
+  }, [activeStep, replaceRoute, resolvedSession, stateToken, workspace]);
 
-  const selectStep = (nextStep: TenantOnboardingWorkflowStepKey) => {
+  const selectStep = useCallback((nextStep: TenantOnboardingWorkflowStepKey) => {
     const nextToken = stateToken ?? workspace?.stateToken;
     if (workspace && !canAccessTenantOnboardingStep(workspace, nextStep)) {
       return;
@@ -131,28 +139,28 @@ export default function TenantOnboardingWorkspace({
     if (nextToken) {
       replaceRoute(getTenantOnboardingStepUrl(nextToken, nextStep));
     }
-  };
+  }, [replaceRoute, stateToken, workspace]);
 
-  const moveToNextStep = () => {
+  const moveToNextStep = useCallback(() => {
     selectStep(getNextTenantOnboardingStepKey(requestedWorkflowStep));
-  };
+  }, [requestedWorkflowStep, selectStep]);
 
-  const moveToPreviousStep = () => {
+  const moveToPreviousStep = useCallback(() => {
     selectStep(getPreviousTenantOnboardingStepKey(requestedWorkflowStep));
-  };
+  }, [requestedWorkflowStep, selectStep]);
 
-  const completeStepAndNavigate = async (step: TenantOnboardingStepKey) => {
+  const completeStepAndNavigate = useCallback(async (step: TenantOnboardingStepKey) => {
     const result = await completeStep(step);
     const nextStep = step === 'owner_contact_info' ? 'bank-details' : result.nextStepKey;
     if (nextStep) {
       replaceRoute(getTenantOnboardingStepUrl(result.stateToken, nextStep));
     }
     return result;
-  };
+  }, [completeStep, replaceRoute]);
 
-  const navigateToUrl = (url: string) => {
+  const navigateToUrl = useCallback((url: string) => {
     replaceRoute(url);
-  };
+  }, [replaceRoute]);
 
   const progressIndex = tenantOnboardingProgressStepOrder.indexOf(activeStep);
   const completedProgress =
@@ -479,63 +487,70 @@ export default function TenantOnboardingWorkspace({
                     resolvedSession={resolvedSession}
                     workspace={workspace}
                     onNavigate={navigateToUrl}
-                    onWorkspaceResolved={replaceWorkspace}
+                    onWorkspaceResolved={applyMutationWorkspace}
                   />
                 ) : requestedWorkflowStep === 'otp' ? (
                   <OtpVerificationStep
                     resolvedSession={resolvedSession}
                     workspace={workspace}
                     onNavigate={navigateToUrl}
-                    onWorkspaceResolved={replaceWorkspace}
+                    onWorkspaceResolved={applyMutationWorkspace}
                   />
                 ) : requestedWorkflowStep === 'welcome' ? (
                   <WelcomeStep
                     resolvedSession={resolvedSession}
                     workspace={workspace}
                     onNavigate={navigateToUrl}
-                    onWorkspaceResolved={replaceWorkspace}
+                    onWorkspaceResolved={applyMutationWorkspace}
                   />
                 ) : requestedWorkflowStep === 'location' ? (
                   <LocationSearchStep
                     resolvedSession={resolvedSession}
                     workspace={workspace}
                     onNavigate={navigateToUrl}
-                    onWorkspaceResolved={replaceWorkspace}
+                    onWorkspaceResolved={applyMutationWorkspace}
                   />
                 ) : requestedWorkflowStep === 'address' ? (
                   <AddressStep
                     resolvedSession={resolvedSession}
                     workspace={workspace}
                     onNavigate={navigateToUrl}
-                    onWorkspaceResolved={replaceWorkspace}
+                    onWorkspaceResolved={applyMutationWorkspace}
                   />
                 ) : requestedWorkflowStep === 'business-details' ? (
                   <BusinessDetailsStep
                     resolvedSession={resolvedSession}
                     workspace={workspace}
                     onNavigate={navigateToUrl}
-                    onWorkspaceResolved={replaceWorkspace}
+                    onWorkspaceResolved={applyMutationWorkspace}
                   />
                 ) : requestedWorkflowStep === 'authorized-person' ? (
                   <AuthorizedPersonStep
                     resolvedSession={resolvedSession}
                     workspace={workspace}
                     onNavigate={navigateToUrl}
-                    onWorkspaceResolved={replaceWorkspace}
+                    onWorkspaceResolved={applyMutationWorkspace}
                   />
                 ) : requestedWorkflowStep === 'bank-details' ? (
                   <BankDetailsStep
                     resolvedSession={resolvedSession}
                     workspace={workspace}
                     onNavigate={navigateToUrl}
-                    onWorkspaceResolved={replaceWorkspace}
+                    onWorkspaceResolved={applyMutationWorkspace}
                   />
                 ) : requestedWorkflowStep === 'billing-address' ? (
                   <BillingAddressStep
                     resolvedSession={resolvedSession}
                     workspace={workspace}
                     onNavigate={navigateToUrl}
-                    onWorkspaceResolved={replaceWorkspace}
+                    onWorkspaceResolved={applyMutationWorkspace}
+                  />
+                ) : requestedWorkflowStep === 'plan-selection' ? (
+                  <PlanSelectionStep
+                    resolvedSession={resolvedSession}
+                    workspace={workspace}
+                    onNavigate={navigateToUrl}
+                    onWorkspaceResolved={applyMutationWorkspace}
                   />
                 ) : (
                   <TenantOnboardingStepPanel

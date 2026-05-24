@@ -10,6 +10,7 @@ import {
 import { getTenantOnboardingStepUrl } from './onboarding-routing';
 import { OnboardingBottomActionBar } from './OnboardingBottomActionBar';
 import { StepHeader } from './shared/StepHeader';
+import { useOnboardingActionGuard } from './hooks/useOnboardingActionGuard';
 
 type WelcomeStepProps = {
   resolvedSession: TenantOnboardingResolvedSession | null;
@@ -26,22 +27,25 @@ export function WelcomeStep({
 }: WelcomeStepProps) {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const runOnce = useOnboardingActionGuard();
 
   async function continueToLocation() {
-    setLoading(true);
-    setError(null);
-    try {
-      const result = await completeTenantOnboardingWelcome(workspace.stateToken);
-      if (result.workspace) {
-        onWorkspaceResolved(result.workspace);
+    await runOnce(async () => {
+      setLoading(true);
+      setError(null);
+      try {
+        const result = await completeTenantOnboardingWelcome(workspace.stateToken);
+        if (result.workspace) {
+          onWorkspaceResolved(result.workspace);
+        }
+        const nextStep = result.redirectStep ?? result.nextStep ?? result.session?.currentStep ?? 'location';
+        onNavigate(getTenantOnboardingStepUrl(workspace.stateToken, nextStep));
+      } catch (continueError) {
+        setError(continueError instanceof Error ? continueError.message : 'Devam edilemedi.');
+      } finally {
+        setLoading(false);
       }
-      const nextStep = result.redirectStep ?? result.nextStep ?? result.session?.currentStep ?? 'location';
-      onNavigate(getTenantOnboardingStepUrl(result.stateToken, nextStep));
-    } catch (continueError) {
-      setError(continueError instanceof Error ? continueError.message : 'Devam edilemedi.');
-    } finally {
-      setLoading(false);
-    }
+    });
   }
 
   return (

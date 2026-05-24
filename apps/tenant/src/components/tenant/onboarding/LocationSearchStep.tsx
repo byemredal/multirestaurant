@@ -11,6 +11,7 @@ import {
 import { getTenantOnboardingStepUrl } from './onboarding-routing';
 import { OnboardingBottomActionBar } from './OnboardingBottomActionBar';
 import { StepHeader } from './shared/StepHeader';
+import { useOnboardingActionGuard } from './hooks/useOnboardingActionGuard';
 
 type LocationSearchStepProps = {
   resolvedSession: TenantOnboardingResolvedSession | null;
@@ -55,6 +56,7 @@ export function LocationSearchStep({
   );
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const runOnce = useOnboardingActionGuard();
   const canContinue = rawInput.trim().length >= 2 && /^[A-Z]{2}$/.test(country.trim().toUpperCase());
 
   async function saveAndContinue() {
@@ -63,21 +65,23 @@ export function LocationSearchStep({
       return;
     }
 
-    setSaving(true);
-    setError(null);
-    try {
-      const result = await saveTenantOnboardingLocationSelection(
-        workspace.stateToken,
-        buildLocationPayload(rawInput, country.trim().toUpperCase()),
-      );
-      onWorkspaceResolved(result.workspace);
-      const nextStep = result.redirectStep ?? result.nextStep ?? result.session?.currentStep ?? 'address';
-      onNavigate(getTenantOnboardingStepUrl(result.stateToken, nextStep));
-    } catch (saveError) {
-      setError(saveError instanceof Error ? saveError.message : 'Konum kaydedilemedi.');
-    } finally {
-      setSaving(false);
-    }
+    await runOnce(async () => {
+      setSaving(true);
+      setError(null);
+      try {
+        const result = await saveTenantOnboardingLocationSelection(
+          workspace.stateToken,
+          buildLocationPayload(rawInput, country.trim().toUpperCase()),
+        );
+        onWorkspaceResolved(result.workspace);
+        const nextStep = result.redirectStep ?? result.nextStep ?? result.session?.currentStep ?? 'address';
+        onNavigate(getTenantOnboardingStepUrl(workspace.stateToken, nextStep));
+      } catch (saveError) {
+        setError(saveError instanceof Error ? saveError.message : 'Konum kaydedilemedi.');
+      } finally {
+        setSaving(false);
+      }
+    });
   }
 
   return (

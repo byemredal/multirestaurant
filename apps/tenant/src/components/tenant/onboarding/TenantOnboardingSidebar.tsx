@@ -115,6 +115,11 @@ const STEP_META: Record<TenantOnboardingStepKey, StepMeta> = {
     description: 'Faturalama adresi.',
     Icon: IconFile,
   },
+  membership_plan: {
+    title: 'Paket secimi',
+    description: 'Uyelik veya hizmet planini secin.',
+    Icon: IconTruck,
+  },
   operations_info: {
     title: 'Operasyon',
     description: 'Bölge, teslimat ve çalışma planı.',

@@ -12,6 +12,7 @@ import { getTenantOnboardingStepUrl } from './onboarding-routing';
 import { OnboardingBottomActionBar } from './OnboardingBottomActionBar';
 import { getBankDetailsFields } from './onboarding-country-pack';
 import { StepHeader } from './shared/StepHeader';
+import { useOnboardingActionGuard } from './hooks/useOnboardingActionGuard';
 
 type BankDetailsStepProps = {
   resolvedSession: TenantOnboardingResolvedSession | null;
@@ -79,6 +80,7 @@ export function BankDetailsStep({
   const [saving, setSaving] = useState(false);
   const [errors, setErrors] = useState<BankDetailsErrors>({});
   const [submitError, setSubmitError] = useState<string | null>(null);
+  const runOnce = useOnboardingActionGuard();
   const config = useMemo(() => getBankDetailsFields(resolvedSession?.countryPack), [resolvedSession?.countryPack]);
   const labelByKey = Object.fromEntries(config.fields.map((field) => [field.key, field.label])) as Record<string, string>;
   const helpByKey = Object.fromEntries(config.fields.map((field) => [field.key, field.helpText])) as Record<string, string | undefined>;
@@ -96,18 +98,20 @@ export function BankDetailsStep({
       return;
     }
 
-    setSaving(true);
-    setSubmitError(null);
-    try {
-      const result = await saveTenantOnboardingBankDetails(workspace.stateToken, normalizeForm(form));
-      onWorkspaceResolved(result.workspace);
-      const nextStep = result.redirectStep ?? result.nextStep ?? result.session?.currentStep ?? 'billing-address';
-      onNavigate(getTenantOnboardingStepUrl(result.stateToken, nextStep));
-    } catch (error) {
-      setSubmitError(error instanceof Error ? error.message : 'Bank details could not be saved.');
-    } finally {
-      setSaving(false);
-    }
+    await runOnce(async () => {
+      setSaving(true);
+      setSubmitError(null);
+      try {
+        const result = await saveTenantOnboardingBankDetails(workspace.stateToken, normalizeForm(form));
+        onWorkspaceResolved(result.workspace);
+        const nextStep = result.redirectStep ?? result.nextStep ?? result.session?.currentStep ?? 'billing-address';
+        onNavigate(getTenantOnboardingStepUrl(workspace.stateToken, nextStep));
+      } catch (error) {
+        setSubmitError(error instanceof Error ? error.message : 'Bank details could not be saved.');
+      } finally {
+        setSaving(false);
+      }
+    });
   }
 
   return (

@@ -19,6 +19,7 @@ import {
   TenantOnboardingStepKey,
 } from './entities/tenant-onboarding.entity';
 import { TenantOnboardingStore } from './tenant-onboarding.store';
+import { getTenantOnboardingPlanCatalog } from './tenant-onboarding-plan-catalog';
 import { CryptoUtil } from '../../common/utility/crypto-util';
 import {
   ONBOARDING_STATUS_TRANSITIONS,
@@ -728,6 +729,70 @@ export class TenantOnboardingService {
     };
   }
 
+  async getPlansByStateToken(stateToken: string) {
+    const application = await this.resolveApplicationFromStateToken(stateToken);
+    const workspace = await this.getWorkspace(application.tenantAccountId);
+    const countryPack = this.getCountryPackSnapshot(workspace);
+    const accessible = this.isWorkspaceStepCompleted(workspace, 'billing_address');
+    const redirectStep = accessible ? null : this.getCurrentSessionStep(workspace);
+
+    return {
+      stateToken: workspace.stateToken,
+      redirectStep,
+      countryPack,
+      plans: accessible
+        ? getTenantOnboardingPlanCatalog(countryPack.country, countryPack.currency)
+        : [],
+      selectedPlan: await this.store.getPlanSelection(application.id),
+    };
+  }
+
+  async savePlanSelectionByStateToken(
+    stateToken: string,
+    input: Dto.SaveTenantOnboardingPlanSelectionDto,
+  ) {
+    const application = await this.resolveApplicationFromStateToken(stateToken);
+    this.assertPhoneVerificationEditable(application.status);
+    const workspaceBefore = await this.getWorkspace(application.tenantAccountId);
+    if (!this.isWorkspaceStepCompleted(workspaceBefore, 'billing_address')) {
+      const redirectStep = this.getCurrentSessionStep(workspaceBefore);
+      return {
+        stateToken: workspaceBefore.stateToken,
+        nextStep: redirectStep,
+        redirectStep,
+        session: await this.resolveSessionByStateToken(workspaceBefore.stateToken, 'plan-selection'),
+        workspace: workspaceBefore,
+      };
+    }
+
+    const dto = this.validateDto(Dto.SaveTenantOnboardingPlanSelectionDto, input);
+    const countryPack = this.getCountryPackSnapshot(workspaceBefore);
+    const selectedPlan = getTenantOnboardingPlanCatalog(countryPack.country, countryPack.currency)
+      .find((plan) => plan.active && plan.planKey === dto.planKey.trim());
+    if (!selectedPlan) {
+      throw new BadRequestException('Selected onboarding plan is not available.');
+    }
+
+    await this.store.upsertPlanSelection(application.id, {
+      planKey: selectedPlan.planKey,
+      planNameSnapshot: selectedPlan.title,
+      commissionSummarySnapshot: selectedPlan.commissionSummary,
+      currency: selectedPlan.currency,
+      selectedAt: new Date(),
+    });
+    await this.assertStepReadyForCompletion(application.id, 'membership_plan');
+    await this.store.upsertStepProgress(application.id, 'membership_plan', 'completed');
+
+    const workspace = await this.getWorkspace(application.tenantAccountId);
+    return {
+      stateToken: workspace.stateToken,
+      nextStep: 'review',
+      redirectStep: null,
+      session: await this.resolveSessionByStateToken(workspace.stateToken, 'review'),
+      workspace,
+    };
+  }
+
   async sendContinueLinkByStateToken(stateToken: string) {
     const workspace = await this.resolveStateToken(stateToken);
     const tenant = await this.tenantAccountsStore.findById(workspace.application.tenantAccountId);
@@ -841,12 +906,8 @@ export class TenantOnboardingService {
       return 'billing-address';
     }
 
-    if (!this.isWorkspaceStepCompleted(workspace, 'operations_info')) {
+    if (!this.isWorkspaceStepCompleted(workspace, 'membership_plan')) {
       return 'plan-selection';
-    }
-
-    if (!this.isWorkspaceStepCompleted(workspace, 'documents')) {
-      return 'verification';
     }
 
     return 'review';
@@ -900,7 +961,7 @@ export class TenantOnboardingService {
       allowed.add('verification');
     }
 
-    if (this.isWorkspaceStepCompleted(workspace, 'documents')) {
+    if (this.isWorkspaceStepCompleted(workspace, 'membership_plan')) {
       allowed.add('review');
     }
 
@@ -943,7 +1004,7 @@ export class TenantOnboardingService {
       completed.add('billing-address');
     }
 
-    if (this.isWorkspaceStepCompleted(workspace, 'operations_info')) {
+    if (this.isWorkspaceStepCompleted(workspace, 'membership_plan')) {
       completed.add('plan-selection');
     }
 
@@ -995,7 +1056,7 @@ export class TenantOnboardingService {
       'authorized-person': 'owner_contact_info',
       'bank-details': 'bank_details',
       'billing-address': 'billing_address',
-      'plan-selection': 'operations_info',
+      'plan-selection': 'membership_plan',
       verification: 'documents',
       review: 'final_review',
     };
@@ -1109,7 +1170,7 @@ export class TenantOnboardingService {
 
   async getSummary(tenantAccountId: string) {
     const application = await this.getOrCreateApplication(tenantAccountId);
-    const [steps, businessInfo, legalTaxInfo, ownerContactInfo, bankDetails, billingAddress, operationsInfo, documents, reviews, notes, phoneVerification, locationSelection] =
+    const [steps, businessInfo, legalTaxInfo, ownerContactInfo, bankDetails, billingAddress, planSelection, operationsInfo, documents, reviews, notes, phoneVerification, locationSelection] =
       await Promise.all([
         this.store.listStepProgress(application.id),
         this.store.getBusinessDetail(application.id),
@@ -1117,6 +1178,7 @@ export class TenantOnboardingService {
         this.store.getOwnerContact(application.id),
         this.store.getBankDetail(application.id),
         this.store.getBillingAddress(application.id),
+        this.store.getPlanSelection(application.id),
         this.store.getOperationsProfile(application.id),
         this.store.listDocuments(application.id),
         this.store.listApplicationReviews(application.id),
@@ -1139,6 +1201,7 @@ export class TenantOnboardingService {
       ownerContactInfo,
       bankDetails,
       billingAddress,
+      planSelection,
       operationsInfo,
       phoneVerification,
       locationSelection,
@@ -2006,7 +2069,7 @@ export class TenantOnboardingService {
 
   private assertEditableStepKey(step: string): EditableStepKey {
     const stepKey = this.assertStepKey(step);
-    if (stepKey === 'final_review' || stepKey === 'documents') {
+    if (stepKey === 'final_review' || stepKey === 'documents' || stepKey === 'membership_plan') {
       throw new BadRequestException(`Draft updates are not supported for onboarding step: ${step}.`);
     }
 
@@ -2057,6 +2120,11 @@ export class TenantOnboardingService {
       case 'billing_address': {
         const detail = await this.store.getBillingAddress(applicationId);
         this.assertRequiredFields(detail, ['billingName', 'country', 'city', 'postalCode', 'addressLine1']);
+        return;
+      }
+      case 'membership_plan': {
+        const detail = await this.store.getPlanSelection(applicationId);
+        this.assertRequiredFields(detail, ['planKey', 'planNameSnapshot', 'commissionSummarySnapshot', 'currency']);
         return;
       }
       case 'operations_info': {
@@ -2115,6 +2183,8 @@ export class TenantOnboardingService {
         return summary.bankDetails;
       case 'billing_address':
         return summary.billingAddress;
+      case 'membership_plan':
+        return summary.planSelection;
       case 'operations_info':
         return summary.operationsInfo;
       case 'documents':

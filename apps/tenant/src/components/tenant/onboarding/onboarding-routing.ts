@@ -116,7 +116,7 @@ export const tenantOnboardingWorkflowSteps: readonly TenantOnboardingWorkflowSte
     key: 'plan-selection',
     title: 'Paket secimi',
     description: 'Baslangic paketini secin.',
-    backendStep: 'operations_info',
+    backendStep: 'membership_plan',
   },
   {
     key: 'verification',
@@ -189,6 +189,10 @@ export function getTenantOnboardingAccessibleStepKeys(workspace: TenantOnboardin
       return true;
     }
 
+    if (stepKey === 'review') {
+      return isBackendStepCompleted(workspace, 'membership_plan');
+    }
+
     const previousSteps = tenantOnboardingWorkflowStepOrder
       .slice(0, index)
       .map((key) => getWorkflowStep(key));
@@ -210,6 +214,12 @@ export function canAccessTenantOnboardingStep(
 
 export function getFirstLockedSafeTenantOnboardingStep(workspace: TenantOnboardingWorkspace) {
   const accessibleSteps = getTenantOnboardingAccessibleStepKeys(workspace);
+  if (isBackendStepCompleted(workspace, 'membership_plan')) {
+    return 'review';
+  }
+  if (isBackendStepCompleted(workspace, 'billing_address')) {
+    return 'plan-selection';
+  }
   const revisionStep = workspace.steps.find((step) => step.status === 'needs_revision');
   const incompleteStep = workspace.steps.find((step) => step.status !== 'completed');
   const preferredStep =
@@ -231,6 +241,7 @@ const workflowStepByBackendStep: Partial<
   owner_contact_info: 'authorized-person',
   bank_details: 'bank-details',
   billing_address: 'billing-address',
+  membership_plan: 'plan-selection',
   operations_info: 'plan-selection',
   documents: 'verification',
   final_review: 'review',

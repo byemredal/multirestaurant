@@ -72,7 +72,7 @@ export function useTenantOnboardingWorkspace(stateToken?: string, requestedStep?
   const hasAppliedWorkspaceRef = useRef(Boolean(initialWorkspace));
   const [workspace, setWorkspace] = useState<TenantOnboardingWorkspace | null>(initialWorkspace);
   const [resolvedSession, setResolvedSession] = useState<TenantOnboardingResolvedSession | null>(null);
-  const [loading, setLoading] = useState(!initialWorkspace);
+  const [loading, setLoading] = useState(Boolean(requestedStep) || !initialWorkspace);
   const [error, setError] = useState<string | null>(null);
   const [savingStep, setSavingStep] = useState<TenantOnboardingStepKey | null>(null);
   const [lastCheckedAt, setLastCheckedAt] = useState<Date | null>(null);
@@ -87,6 +87,25 @@ export function useTenantOnboardingWorkspace(stateToken?: string, requestedStep?
     setCurrentStateToken(nextStateToken);
     writeOnboardingStateToken(nextStateToken);
   }, []);
+
+  const keepRouteTokenInWorkspace = useCallback(
+    (nextWorkspace: TenantOnboardingWorkspace) => {
+      const routeToken = stateToken ? currentStateTokenRef.current ?? stateToken : null;
+      if (!routeToken || nextWorkspace.stateToken === routeToken) {
+        return nextWorkspace;
+      }
+
+      return {
+        ...nextWorkspace,
+        application: {
+          ...nextWorkspace.application,
+          stateToken: routeToken,
+        },
+        stateToken: routeToken,
+      };
+    },
+    [stateToken],
+  );
 
   const replaceWorkspace = useCallback(
     (
@@ -123,6 +142,16 @@ export function useTenantOnboardingWorkspace(stateToken?: string, requestedStep?
       setLastCheckedAt(new Date());
     },
     [rememberStateToken],
+  );
+
+  // A V2 mutation response is already authoritative for displayed data, but
+  // its freshly issued token belongs to the next URL. Keeping it out of the
+  // current route dependency prevents resolving the just-completed old step.
+  const applyMutationWorkspace = useCallback(
+    (nextWorkspace: TenantOnboardingWorkspace) => {
+      replaceWorkspace(keepRouteTokenInWorkspace(nextWorkspace), undefined, { rememberToken: false });
+    },
+    [keepRouteTokenInWorkspace, replaceWorkspace],
   );
 
   // Fire-and-forget workspace re-read. Callers (saveDraft / completeStep)
@@ -165,7 +194,7 @@ export function useTenantOnboardingWorkspace(stateToken?: string, requestedStep?
       if (cachedWorkspace && !requestedStep) {
         setWorkspace(cachedWorkspace);
         setLoading(false);
-      } else {
+      } else if (!lastResolvedKeyRef.current) {
         setLoading(true);
       }
 
@@ -178,8 +207,13 @@ export function useTenantOnboardingWorkspace(stateToken?: string, requestedStep?
           return;
         }
         lastResolvedKeyRef.current = resolveKey;
-        setResolvedSession(nextSession);
-        replaceWorkspace(nextSession.workspace, requestSeq, { rememberToken: false });
+        const stableWorkspace = keepRouteTokenInWorkspace(nextSession.workspace);
+        setResolvedSession({
+          ...nextSession,
+          stateToken: currentStateToken,
+          workspace: stableWorkspace,
+        });
+        replaceWorkspace(stableWorkspace, requestSeq, { rememberToken: false });
       } else {
         const nextWorkspace = currentStateToken
           ? await getTenantOnboardingWorkspaceByStateToken(currentStateToken)
@@ -189,7 +223,7 @@ export function useTenantOnboardingWorkspace(stateToken?: string, requestedStep?
         }
         lastResolvedKeyRef.current = null;
         setResolvedSession(null);
-        replaceWorkspace(nextWorkspace, requestSeq, { rememberToken: false });
+        replaceWorkspace(keepRouteTokenInWorkspace(nextWorkspace), requestSeq, { rememberToken: false });
       }
     } catch (loadError) {
       setError(
@@ -200,7 +234,7 @@ export function useTenantOnboardingWorkspace(stateToken?: string, requestedStep?
     } finally {
       setLoading(false);
     }
-  }, [currentStateToken, replaceWorkspace, requestedStep, session]);
+  }, [currentStateToken, keepRouteTokenInWorkspace, replaceWorkspace, requestedStep, session]);
 
   // Initial load + SSE-driven refresh: `onboardingStatus` changes when the API
   // pushes a transition, so the workspace re-fetches without polling.
@@ -356,6 +390,7 @@ export function useTenantOnboardingWorkspace(stateToken?: string, requestedStep?
     completeStep,
     loadWorkspace,
     replaceWorkspace,
+    applyMutationWorkspace,
     saveDraft,
     submitForReview,
     uploadDocument,

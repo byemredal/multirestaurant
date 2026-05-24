@@ -12,6 +12,7 @@ import {
 import { getTenantOnboardingStepUrl } from './onboarding-routing';
 import { OnboardingBottomActionBar } from './OnboardingBottomActionBar';
 import { StepHeader } from './shared/StepHeader';
+import { useOnboardingActionGuard } from './hooks/useOnboardingActionGuard';
 
 type OtpVerificationStepProps = {
   resolvedSession: TenantOnboardingResolvedSession | null;
@@ -49,6 +50,7 @@ export function OtpVerificationStep({
   const showDebugCode = challenge?.debugCode && process.env.NODE_ENV !== 'production';
   const verifying = busyAction === 'verify';
   const resending = busyAction === 'resend';
+  const runOnce = useOnboardingActionGuard();
 
   const digits = useMemo(() => code.padEnd(6, ' ').split(''), [code]);
 
@@ -67,26 +69,28 @@ export function OtpVerificationStep({
   }
 
   async function resendCode() {
-    setBusyAction('resend');
-    setError(null);
-    try {
-      const result = await resendTenantOnboardingPhoneCode(
-        workspace.stateToken,
-        workspace.phoneVerification?.phoneNumber ?? undefined,
-      );
-      setChallenge(result);
-      if (result.debugCode) {
-        setCode(result.debugCode);
+    await runOnce(async () => {
+      setBusyAction('resend');
+      setError(null);
+      try {
+        const result = await resendTenantOnboardingPhoneCode(
+          workspace.stateToken,
+          workspace.phoneVerification?.phoneNumber ?? undefined,
+        );
+        setChallenge(result);
+        if (result.debugCode) {
+          setCode(result.debugCode);
+        }
+        if (result.session?.workspace) {
+          onWorkspaceResolved(result.session.workspace);
+        }
+      } catch (resendError) {
+        const message = resendError instanceof Error ? resendError.message : 'Kod yeniden gonderilemedi.';
+        setError(message);
+      } finally {
+        setBusyAction(null);
       }
-      if (result.session?.workspace) {
-        onWorkspaceResolved(result.session.workspace);
-      }
-    } catch (resendError) {
-      const message = resendError instanceof Error ? resendError.message : 'Kod yeniden gonderilemedi.';
-      setError(message);
-    } finally {
-      setBusyAction(null);
-    }
+    });
   }
 
   async function verifyCode() {
@@ -95,19 +99,21 @@ export function OtpVerificationStep({
       return;
     }
 
-    setBusyAction('verify');
-    setError(null);
-    try {
-      const result = await verifyTenantOnboardingPhoneCode(workspace.stateToken, code);
-      onWorkspaceResolved(result.workspace);
-      const nextStep = result.redirectStep ?? result.nextStep ?? result.session?.currentStep ?? 'welcome';
-      onNavigate(getTenantOnboardingStepUrl(result.workspace.stateToken, nextStep));
-    } catch (verifyError) {
-      const message = verifyError instanceof Error ? verifyError.message : 'Kod dogrulanamadi.';
-      setError(formatVerifyError(message));
-    } finally {
-      setBusyAction(null);
-    }
+    await runOnce(async () => {
+      setBusyAction('verify');
+      setError(null);
+      try {
+        const result = await verifyTenantOnboardingPhoneCode(workspace.stateToken, code);
+        onWorkspaceResolved(result.workspace);
+        const nextStep = result.redirectStep ?? result.nextStep ?? result.session?.currentStep ?? 'welcome';
+        onNavigate(getTenantOnboardingStepUrl(workspace.stateToken, nextStep));
+      } catch (verifyError) {
+        const message = verifyError instanceof Error ? verifyError.message : 'Kod dogrulanamadi.';
+        setError(formatVerifyError(message));
+      } finally {
+        setBusyAction(null);
+      }
+    });
   }
 
   return (

@@ -4,6 +4,7 @@ export const tenantOnboardingStepKeys = [
   'owner_contact_info',
   'bank_details',
   'billing_address',
+  'membership_plan',
   'operations_info',
   'documents',
   'final_review',
@@ -148,6 +149,18 @@ export interface TenantOnboardingBillingAddress {
   postalCode: string;
   addressLine1: string;
   addressLine2: string | null;
+  createdAt: Date;
+  updatedAt: Date;
+}
+
+export interface TenantOnboardingPlanSelection {
+  id: string;
+  applicationId: string;
+  planKey: string;
+  planNameSnapshot: string;
+  commissionSummarySnapshot: string;
+  currency: string;
+  selectedAt: Date;
   createdAt: Date;
   updatedAt: Date;
 }

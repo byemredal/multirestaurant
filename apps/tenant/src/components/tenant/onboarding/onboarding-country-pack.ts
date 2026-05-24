@@ -172,3 +172,15 @@ export function getBillingAddressFields() {
     ] satisfies OnboardingFieldConfig<BillingAddressFieldKey>[],
   };
 }
+
+export function getPlanSelectionCopy(countryPack?: TenantOnboardingCountryPack) {
+  const currency = countryPack?.currency ?? 'CHF';
+
+  return {
+    title: 'Choose your plan',
+    helperText: 'Select the service package you want to take to review.',
+    disclaimer:
+      'Plan pricing and commission text is configurable placeholder copy only. Country and contract review is required before production use.',
+    currency,
+  };
+}

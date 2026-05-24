@@ -144,6 +144,19 @@ export const apiGroups: ApiGroup[] = [
           { key: 'addressLine2', label: 'addressLine2 (optional)' },
         ],
       },
+      {
+        id: 'getTenantOnboardingPlans',
+        method: 'GET',
+        path: '/v2/tenant/onboarding/:stateToken/plans',
+        pathParams: [{ key: 'stateToken', label: 'State token' }],
+      },
+      {
+        id: 'saveTenantOnboardingPlanSelection',
+        method: 'POST',
+        path: '/v2/tenant/onboarding/:stateToken/plan-selection',
+        pathParams: [{ key: 'stateToken', label: 'State token' }],
+        bodyFields: [{ key: 'planKey', label: 'planKey' }],
+      },
     ],
   },
   {

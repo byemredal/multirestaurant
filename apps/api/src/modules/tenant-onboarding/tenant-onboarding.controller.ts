@@ -229,6 +229,23 @@ export class TenantOnboardingController {
   }
 
   @Public()
+  @Get(':stateToken/plans')
+  @ApiOperation({ summary: 'List the configurable placeholder plan catalog for V2 onboarding.' })
+  getPlans(@Param('stateToken') stateToken: string) {
+    return this.onboardingService.getPlansByStateToken(stateToken);
+  }
+
+  @Public()
+  @Post(':stateToken/plan-selection')
+  @ApiOperation({ summary: 'Save and complete the V2 onboarding plan selection step.' })
+  savePlanSelection(
+    @Param('stateToken') stateToken: string,
+    @Body() dto: Dto.SaveTenantOnboardingPlanSelectionDto,
+  ) {
+    return this.onboardingService.savePlanSelectionByStateToken(stateToken, dto);
+  }
+
+  @Public()
   @Patch(':stateToken/steps/:stepKey')
   @ApiOperation({ summary: 'Save a tenant onboarding step draft by state token.' })
   patchStepByStateToken(

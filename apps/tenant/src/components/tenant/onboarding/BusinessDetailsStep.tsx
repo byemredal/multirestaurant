@@ -13,6 +13,7 @@ import { getTenantOnboardingStepUrl } from './onboarding-routing';
 import { OnboardingBottomActionBar } from './OnboardingBottomActionBar';
 import { getBusinessDetailsFields } from './onboarding-country-pack';
 import { StepHeader } from './shared/StepHeader';
+import { useOnboardingActionGuard } from './hooks/useOnboardingActionGuard';
 
 type BusinessDetailsStepProps = {
   resolvedSession: TenantOnboardingResolvedSession | null;
@@ -123,6 +124,7 @@ export function BusinessDetailsStep({
   const [errors, setErrors] = useState<BusinessDetailsErrors>({});
   const [message, setMessage] = useState<string | null>(null);
   const [submitError, setSubmitError] = useState<string | null>(null);
+  const runOnce = useOnboardingActionGuard();
   const countryConfig = useMemo(
     () => getBusinessDetailsFields(resolvedSession?.countryPack),
     [resolvedSession?.countryPack],
@@ -144,27 +146,29 @@ export function BusinessDetailsStep({
       return;
     }
 
-    setChecking(true);
-    setSubmitError(null);
-    try {
-      const result = await verifyTenantOnboardingBusinessRegistration(workspace.stateToken, {
-        registrationNumber: form.registrationNumber.trim(),
-        country: form.registrationCountry.trim().toUpperCase() || resolvedSession?.countryPack.country || 'CH',
-      });
-      if (result.workspace) {
-        onWorkspaceResolved(result.workspace);
+    await runOnce(async () => {
+      setChecking(true);
+      setSubmitError(null);
+      try {
+        const result = await verifyTenantOnboardingBusinessRegistration(workspace.stateToken, {
+          registrationNumber: form.registrationNumber.trim(),
+          country: form.registrationCountry.trim().toUpperCase() || resolvedSession?.countryPack.country || 'CH',
+        });
+        if (result.workspace) {
+          onWorkspaceResolved(result.workspace);
+        }
+        if (result.redirectStep) {
+          onNavigate(getTenantOnboardingStepUrl(workspace.stateToken, result.redirectStep));
+          return;
+        }
+        setVerified(result.accepted);
+        setMessage(result.message ?? 'Registration accepted for draft review.');
+      } catch (error) {
+        setSubmitError(error instanceof Error ? error.message : 'Registration could not be checked.');
+      } finally {
+        setChecking(false);
       }
-      if (result.redirectStep) {
-        onNavigate(getTenantOnboardingStepUrl(workspace.stateToken, result.redirectStep));
-        return;
-      }
-      setVerified(result.accepted);
-      setMessage(result.message ?? 'Registration accepted for draft review.');
-    } catch (error) {
-      setSubmitError(error instanceof Error ? error.message : 'Registration could not be checked.');
-    } finally {
-      setChecking(false);
-    }
+    });
   }
 
   async function saveAndContinue() {
@@ -174,18 +178,20 @@ export function BusinessDetailsStep({
       return;
     }
 
-    setSaving(true);
-    setSubmitError(null);
-    try {
-      const result = await saveTenantOnboardingBusinessDetails(workspace.stateToken, normalizeForm(form));
-      onWorkspaceResolved(result.workspace);
-      const nextStep = result.redirectStep ?? result.nextStep ?? result.session?.currentStep ?? 'authorized-person';
-      onNavigate(getTenantOnboardingStepUrl(result.stateToken, nextStep));
-    } catch (error) {
-      setSubmitError(error instanceof Error ? error.message : 'Business details could not be saved.');
-    } finally {
-      setSaving(false);
-    }
+    await runOnce(async () => {
+      setSaving(true);
+      setSubmitError(null);
+      try {
+        const result = await saveTenantOnboardingBusinessDetails(workspace.stateToken, normalizeForm(form));
+        onWorkspaceResolved(result.workspace);
+        const nextStep = result.redirectStep ?? result.nextStep ?? result.session?.currentStep ?? 'authorized-person';
+        onNavigate(getTenantOnboardingStepUrl(workspace.stateToken, nextStep));
+      } catch (error) {
+        setSubmitError(error instanceof Error ? error.message : 'Business details could not be saved.');
+      } finally {
+        setSaving(false);
+      }
+    });
   }
 
   return (
