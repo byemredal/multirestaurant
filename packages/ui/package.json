@@ -1,0 +1,15 @@
+{
+  "name": "@lieferzonen/ui",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Shared React UI components for Lieferzonen frontend apps.",
+  "main": "./index.ts",
+  "types": "./index.ts",
+  "peerDependencies": {
+    "react": "^18.2.0"
+  },
+  "devDependencies": {
+    "@types/react": "19.2.14",
+    "typescript": "^5.7.3"
+  }
+}

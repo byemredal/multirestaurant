@@ -1,0 +1,90 @@
+/**
+ * Tenant lifecycle state — the single input to routing. The frontend never
+ * routes on URL structure; it routes on this value (delivered by the API and
+ * pushed live over SSE).
+ */
+export type TenantStatus = 'ONBOARDING' | 'PENDING_APPROVAL' | 'ACTIVE';
+
+/**
+ * Clean, state-free URLs. These are the only tenant paths; the lifecycle
+ * state is never encoded into them. `entry` is the public partner landing;
+ * `login` is the dedicated sign-in screen.
+ */
+export const TENANT_ROUTES = {
+  entry: '/',
+  login: '/login',
+  dashboard: '/dashboard',
+} as const;
+
+/**
+ * Fallback mapping from the raw 8-value `onboardingStatus` to the coarse
+ * status. The API already sends `status` directly; this is only used when an
+ * older payload lacks it.
+ */
+export function toTenantStatus(onboardingStatus: string | undefined): TenantStatus {
+  switch (onboardingStatus) {
+    case 'submitted':
+    case 'under_review':
+    case 'rejected':
+    case 'suspended':
+      return 'PENDING_APPROVAL';
+    case 'approved':
+    case 'active':
+      return 'ACTIVE';
+    default:
+      return 'ONBOARDING';
+  }
+}
+
+/** The route a tenant in a given state belongs on. */
+export function routeForStatus(status: TenantStatus | null, authed: boolean): string {
+  if (!authed) {
+    // Logged-out visitors land on the public partner page; the gate only
+    // sends them here from a protected route, so funnel them to sign-in.
+    return TENANT_ROUTES.login;
+  }
+  switch (status) {
+    case 'ACTIVE':
+      return TENANT_ROUTES.dashboard;
+    case 'ONBOARDING':
+      return TENANT_ROUTES.entry;
+    case 'PENDING_APPROVAL':
+    default:
+      // The waiting screen renders on the entry route — no dedicated URL.
+      return TENANT_ROUTES.entry;
+  }
+}
+
+/**
+ * Whether the current path is valid for the tenant's state. Sub-routes of an
+ * allowed area (e.g. /dashboard/settings, /orders/:id) stay allowed so the
+ * gate does not bounce a tenant out of a legitimate deep link.
+ */
+export function isPathAllowedForStatus(
+  status: TenantStatus | null,
+  authed: boolean,
+  pathname: string,
+): boolean {
+  if (!authed) {
+    return (
+      pathname === TENANT_ROUTES.entry ||
+      pathname === TENANT_ROUTES.login ||
+      pathname.startsWith('/onboarding/')
+    );
+  }
+  switch (status) {
+    case 'ONBOARDING':
+      return pathname === TENANT_ROUTES.entry || pathname.startsWith('/onboarding/');
+    case 'PENDING_APPROVAL':
+      return pathname === TENANT_ROUTES.entry;
+    case 'ACTIVE':
+      return (
+        pathname === '/dashboard' ||
+        pathname.startsWith('/dashboard/') ||
+        pathname === '/orders' ||
+        pathname.startsWith('/orders/')
+      );
+    default:
+      return false;
+  }
+}

@@ -1,0 +1,179 @@
+# ============================================================================
+# Lieferzonen — BASE Compose file
+# ============================================================================
+# This file holds only the parts shared by every environment: the service
+# topology (images, working dirs, ports, dependency wiring, health checks and
+# the bind-mount / node_modules volume strategy).
+#
+# It is NOT meant to be run on its own — always combine it with an overlay:
+#
+#   Development : docker compose -f docker-compose.yml -f docker-compose.override.yml up
+#   Production  : docker compose --env-file .env.prod -f docker-compose.yml -f docker-compose.prod.yml up
+#
+# Production requires infra/docker/.env.prod (copy it from .env.prod.example).
+#
+# Environment-specific bits (commands, environment variables, restart policies,
+# Postgres/Redis host ports, the prod-only `builder`) live in the overlays.
+#
+# Volumes and container names are intentionally NOT pinned with explicit names,
+# so Compose namespaces them by project name — `lieferzonen` for development,
+# `lieferzonen-prod` for production. The two environments never collide.
+# ============================================================================
+
+name: lieferzonen
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: lieferzonen
+      POSTGRES_USER: postgres
+      # POSTGRES_PASSWORD is supplied by the active overlay.
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d lieferzonen"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+
+  redis:
+    image: redis:7-alpine
+    volumes:
+      - redis-data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+
+  # One-shot: install workspace dependencies. The exact install command and
+  # whether it also builds packages is set per environment.
+  installer:
+    image: node:22-alpine
+    working_dir: /app
+    volumes:
+      - ../../:/app
+      - root-node-modules:/app/node_modules
+      - api-node-modules:/app/apps/api/node_modules
+      - web-node-modules:/app/apps/web/node_modules
+      - admin-node-modules:/app/apps/admin/node_modules
+      - tenant-node-modules:/app/apps/tenant/node_modules
+      - setup-node-modules:/app/apps/setup/node_modules
+      # Shared packages' node_modules are volume-backed too, so the container
+      # never writes them into the host bind mount (avoids host/container
+      # package-manager collisions).
+      - config-node-modules:/app/packages/config/node_modules
+      - ui-node-modules:/app/packages/ui/node_modules
+
+  # One-shot: apply database migrations (`db:init` is idempotent — already
+  # applied migrations are skipped via the schema_migrations table).
+  migrator:
+    image: node:22-alpine
+    working_dir: /app/apps/api
+    volumes:
+      - ../../:/app
+      - root-node-modules:/app/node_modules
+      - api-node-modules:/app/apps/api/node_modules
+    depends_on:
+      installer:
+        condition: service_completed_successfully
+      postgres:
+        condition: service_healthy
+
+  api:
+    image: node:22-alpine
+    working_dir: /app/apps/api
+    volumes:
+      - ../../:/app
+      - root-node-modules:/app/node_modules
+      - api-node-modules:/app/apps/api/node_modules
+    ports:
+      - "4000:4000"
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:4000/api/v1/health >/dev/null"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+    depends_on:
+      migrator:
+        condition: service_completed_successfully
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+
+  web:
+    image: node:22-alpine
+    working_dir: /app/apps/web
+    volumes:
+      - ../../:/app
+      - root-node-modules:/app/node_modules
+      - web-node-modules:/app/apps/web/node_modules
+    ports:
+      - "3000:3000"
+    depends_on:
+      api:
+        condition: service_healthy
+      migrator:
+        condition: service_completed_successfully
+
+  admin:
+    image: node:22-alpine
+    working_dir: /app/apps/admin
+    volumes:
+      - ../../:/app
+      - root-node-modules:/app/node_modules
+      - admin-node-modules:/app/apps/admin/node_modules
+    ports:
+      - "3051:3051"
+    depends_on:
+      api:
+        condition: service_healthy
+      migrator:
+        condition: service_completed_successfully
+
+  tenant:
+    image: node:22-alpine
+    working_dir: /app/apps/tenant
+    volumes:
+      - ../../:/app
+      - root-node-modules:/app/node_modules
+      - tenant-node-modules:/app/apps/tenant/node_modules
+    ports:
+      - "3060:3060"
+    depends_on:
+      api:
+        condition: service_healthy
+      migrator:
+        condition: service_completed_successfully
+
+  # Setup wizard — needed only until the platform is initialized. After setup
+  # the API rejects re-initialization and the wizard self-closes; it can be
+  # stopped with `docker compose ... stop setup`.
+  setup:
+    image: node:22-alpine
+    working_dir: /app/apps/setup
+    volumes:
+      - ../../:/app
+      - root-node-modules:/app/node_modules
+      - setup-node-modules:/app/apps/setup/node_modules
+    ports:
+      - "3070:3070"
+    depends_on:
+      api:
+        condition: service_healthy
+      migrator:
+        condition: service_completed_successfully
+
+volumes:
+  postgres-data:
+  redis-data:
+  root-node-modules:
+  api-node-modules:
+  web-node-modules:
+  admin-node-modules:
+  tenant-node-modules:
+  setup-node-modules:
+  config-node-modules:
+  ui-node-modules:

@@ -1,0 +1,144 @@
+# ============================================================================
+# Lieferzonen — PRODUCTION overlay
+# ============================================================================
+# Layered on top of docker-compose.yml. It is NOT standalone — always combine:
+#
+#   docker compose --env-file infra/docker/.env.prod \
+#     -f docker-compose.yml -f docker-compose.prod.yml up -d
+#
+# (or `pnpm run docker:prod` from the repo root).
+#
+# Differences from the development overlay:
+#   - installs with a frozen lockfile and builds every app (`builder`),
+#   - runs each app in PRODUCTION mode (`next start` / `node dist/main`),
+#   - takes secrets from the environment instead of hard-coding dev values,
+#   - keeps Postgres/Redis on the internal network only (no host ports),
+#   - restarts long-running services automatically.
+#
+# Required environment variables — see infra/docker/.env.prod.example:
+#   POSTGRES_PASSWORD, JWT_SECRET, BOOTSTRAP_KEY, CORS_ORIGINS,
+#   NEXT_PUBLIC_API_BASE_URL  (+ optional NEXT_PUBLIC_ADMIN_URL / _SETUP_URL)
+#
+# NOTE: production-ORIENTED — no per-app Dockerfiles, so `builder` rebuilds on
+# every container recreate. Image-based deploy is the recommended next step.
+# ============================================================================
+
+name: lieferzonen-prod
+
+services:
+  postgres:
+    ports:
+      - "5432:5432"
+    environment:
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}
+    restart: unless-stopped
+
+  redis:
+    restart: unless-stopped
+
+  installer:
+    command: sh -c "corepack enable && pnpm install --frozen-lockfile"
+    restart: "no"
+
+  # One-shot (prod only): build the shared package and every app.
+  builder:
+    image: node:22-alpine
+    working_dir: /app
+    volumes:
+      - ../../:/app
+      - root-node-modules:/app/node_modules
+      - api-node-modules:/app/apps/api/node_modules
+      - web-node-modules:/app/apps/web/node_modules
+      - admin-node-modules:/app/apps/admin/node_modules
+      - tenant-node-modules:/app/apps/tenant/node_modules
+      - setup-node-modules:/app/apps/setup/node_modules
+      # Shared packages' node_modules are volume-backed by `installer`; the
+      # builder must mount the same volumes or tsc/transpile deps go missing.
+      - config-node-modules:/app/packages/config/node_modules
+      - ui-node-modules:/app/packages/ui/node_modules
+    environment:
+      NODE_ENV: production
+      # NEXT_PUBLIC_* values are inlined at build time — required here.
+      NEXT_PUBLIC_API_BASE_URL: ${NEXT_PUBLIC_API_BASE_URL:?NEXT_PUBLIC_API_BASE_URL is required}
+      NEXT_PUBLIC_ADMIN_URL: ${NEXT_PUBLIC_ADMIN_URL:-}
+      NEXT_PUBLIC_SETUP_URL: ${NEXT_PUBLIC_SETUP_URL:-}
+    command: >
+      sh -c "corepack enable &&
+             pnpm run build:config &&
+             pnpm run build:api &&
+             pnpm run build:web &&
+             pnpm run build:admin &&
+             pnpm run build:tenant &&
+             pnpm run build:setup"
+    depends_on:
+      installer:
+        condition: service_completed_successfully
+    restart: "no"
+
+  migrator:
+    command: sh -c "corepack enable && pnpm run db:init"
+    environment:
+      DATABASE_URL: postgresql://postgres:${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}@postgres:5432/lieferzonen
+    restart: "no"
+
+  api:
+    command: sh -c "corepack enable && pnpm run start:prod"
+    environment:
+      NODE_ENV: production
+      PORT: "4000"
+      DATABASE_URL: postgresql://postgres:${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}@postgres:5432/lieferzonen
+      REDIS_URL: redis://redis:6379
+      JWT_SECRET: ${JWT_SECRET:?JWT_SECRET is required}
+      BOOTSTRAP_KEY: ${BOOTSTRAP_KEY:?BOOTSTRAP_KEY is required}
+      CORS_ORIGINS: ${CORS_ORIGINS:?CORS_ORIGINS is required}
+      # Stripe — optional so the API still boots, but real payments require
+      # all three to be set in infra/docker/.env.prod.
+      STRIPE_SECRET_KEY: ${STRIPE_SECRET_KEY:-}
+      STRIPE_PUBLISHABLE_KEY: ${STRIPE_PUBLISHABLE_KEY:-}
+      STRIPE_WEBHOOK_SECRET: ${STRIPE_WEBHOOK_SECRET:-}
+      WEB_APP_BASE_URL: ${WEB_APP_BASE_URL:?WEB_APP_BASE_URL is required}
+    depends_on:
+      builder:
+        condition: service_completed_successfully
+    restart: unless-stopped
+
+  web:
+    command: sh -c "corepack enable && pnpm run start"
+    environment:
+      NODE_ENV: production
+      NEXT_PUBLIC_API_BASE_URL: ${NEXT_PUBLIC_API_BASE_URL}
+    depends_on:
+      builder:
+        condition: service_completed_successfully
+    restart: unless-stopped
+
+  admin:
+    command: sh -c "corepack enable && pnpm run start"
+    environment:
+      NODE_ENV: production
+      NEXT_PUBLIC_API_BASE_URL: ${NEXT_PUBLIC_API_BASE_URL}
+    depends_on:
+      builder:
+        condition: service_completed_successfully
+    restart: unless-stopped
+
+  tenant:
+    command: sh -c "corepack enable && pnpm run start"
+    environment:
+      NODE_ENV: production
+      NEXT_PUBLIC_API_BASE_URL: ${NEXT_PUBLIC_API_BASE_URL}
+    depends_on:
+      builder:
+        condition: service_completed_successfully
+    restart: unless-stopped
+
+  setup:
+    command: sh -c "corepack enable && pnpm run start"
+    environment:
+      NODE_ENV: production
+      NEXT_PUBLIC_API_BASE_URL: ${NEXT_PUBLIC_API_BASE_URL}
+      NEXT_PUBLIC_ADMIN_URL: ${NEXT_PUBLIC_ADMIN_URL:-}
+    depends_on:
+      builder:
+        condition: service_completed_successfully
+    restart: unless-stopped

@@ -1,0 +1,56 @@
+{
+  "name": "lieferzonen-mvp",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Phase 0 MVP skeleton for the Lieferzonen multi-store SaaS repo",
+  "workspaces": [
+    "apps/*",
+    "packages/*"
+  ],
+  "scripts": {
+    "dev": "npm run dev:api",
+    "dev:api": "powershell -ExecutionPolicy Bypass -File .\\scripts\\start-api-local.ps1",
+    "dev:web": "npm --prefix apps/web run dev",
+    "dev:admin": "npm --prefix apps/admin run dev",
+    "dev:tenant": "npm --prefix apps/tenant run dev",
+    "dev:setup": "npm --prefix apps/setup run dev",
+    "build": "npm run build:config && npm run build:api && npm run build:web && npm run build:tenant",
+    "build:config": "npm --prefix packages/config run build",
+    "build:api": "npm --prefix apps/api run build",
+    "build:web": "npm --prefix apps/web run build",
+    "build:admin": "npm --prefix apps/admin run build",
+    "build:tenant": "npm --prefix apps/tenant run build",
+    "build:setup": "npm --prefix apps/setup run build",
+    "db:init": "npm --prefix apps/api run db:init",
+    "start:api": "npm --prefix apps/api run start:prod",
+    "start:web": "npm --prefix apps/web run start",
+    "start:admin": "npm --prefix apps/admin run start",
+    "start:tenant": "npm --prefix apps/tenant run start",
+    "start:setup": "npm --prefix apps/setup run start",
+    "docker:up": "docker compose -f infra/docker/docker-compose.yml -f infra/docker/docker-compose.override.yml up -d",
+    "docker:down": "docker compose -f infra/docker/docker-compose.yml -f infra/docker/docker-compose.override.yml down",
+    "docker:prod": "docker compose --env-file infra/docker/.env.prod -f infra/docker/docker-compose.yml -f infra/docker/docker-compose.prod.yml up -d",
+    "docker:prod:down": "docker compose --env-file infra/docker/.env.prod -f infra/docker/docker-compose.yml -f infra/docker/docker-compose.prod.yml down",
+    "phase0:status": "node -e \"console.log('Phase 0 skeleton active: apps/api and apps/web are now the primary runtime targets.')\""
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "packageManager": "pnpm@10.32.1",
+  "devDependencies": {
+    "@types/react": "19.2.14",
+    "react": "18.3.1",
+    "react-dom": "18.3.1"
+  },
+  "overrides": {
+    "react": "18.3.1",
+    "react-dom": "18.3.1"
+  },
+  "pnpm": {
+    "overrides": {
+      "signal-exit": "3.0.7",
+      "react": "18.3.1",
+      "react-dom": "18.3.1"
+    }
+  }
+}

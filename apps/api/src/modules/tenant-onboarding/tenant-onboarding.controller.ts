@@ -1,0 +1,313 @@
+import {
+  BadRequestException,
+  Body,
+  Controller,
+  Get,
+  Param,
+  Patch,
+  Post,
+  Put,
+  Req,
+  UploadedFile,
+  UseInterceptors,
+} from '@nestjs/common';
+import { FileInterceptor } from '@nestjs/platform-express';
+import { ApiBearerAuth, ApiConsumes, ApiOperation, ApiTags } from '@nestjs/swagger';
+import { mkdirSync } from 'fs';
+import { diskStorage } from 'multer';
+import { basename, extname, join } from 'path';
+import { AuthTypes } from '../../common/security/decorators/auth-types.decorator';
+import { Public } from '../../common/security/decorators/public.decorator';
+import { AuthenticatedRequest } from '../../common/types/authenticated-request.interface';
+import * as Dto from './dto';
+import { TenantOnboardingService } from './tenant-onboarding.service';
+
+type PatchTenantStepDto =
+  | Dto.PatchTenantBusinessInfoDto
+  | Dto.PatchTenantLegalTaxInfoDto
+  | Dto.PatchTenantOwnerContactInfoDto
+  | Dto.PatchTenantOperationsInfoDto;
+
+function sanitizeFileName(value: string) {
+  return basename(value).replace(/[^a-zA-Z0-9._-]/g, '_');
+}
+
+@Controller('v2/tenant/onboarding')
+@AuthTypes('tenant')
+@ApiBearerAuth('bearer')
+@ApiTags('tenant-onboarding')
+export class TenantOnboardingController {
+  constructor(private readonly onboardingService: TenantOnboardingService) {}
+
+  @Public()
+  @Post('start')
+  @ApiOperation({ summary: 'Start a stateless tenant onboarding application.' })
+  start(@Body() dto: Dto.StartTenantOnboardingDto) {
+    return this.onboardingService.start(dto);
+  }
+
+  @Public()
+  @Post('phone-verification/send')
+  @ApiOperation({ summary: 'Send a tenant onboarding phone verification code by token body.' })
+  sendPhoneVerificationCodeFromBody(
+    @Body() dto: Dto.SendTenantOnboardingPhoneVerificationByTokenDto,
+  ) {
+    return this.onboardingService.sendPhoneVerificationCodeByStateToken(
+      dto.stateToken,
+      dto.phoneNumber,
+    );
+  }
+
+  @Public()
+  @Post('phone-verification/verify')
+  @ApiOperation({ summary: 'Verify a tenant onboarding phone verification code by token body.' })
+  verifyPhoneVerificationCodeFromBody(
+    @Body() dto: Dto.VerifyTenantOnboardingPhoneByTokenDto,
+  ) {
+    return this.onboardingService.verifyPhoneByStateToken(dto.stateToken, dto.code);
+  }
+
+  @Public()
+  @Get(':stateToken/workspace')
+  @ApiOperation({ summary: 'Get the tenant onboarding workspace by state token.' })
+  getWorkspaceByStateToken(@Param('stateToken') stateToken: string) {
+    return this.onboardingService.resolveStateToken(stateToken);
+  }
+
+  @Public()
+  @Post(':stateToken/phone-verification/send')
+  @ApiOperation({ summary: 'Send a tenant onboarding phone verification code.' })
+  sendPhoneVerificationCode(
+    @Param('stateToken') stateToken: string,
+    @Body() dto: Dto.SendTenantOnboardingPhoneVerificationDto,
+  ) {
+    return this.onboardingService.sendPhoneVerificationCodeByStateToken(
+      stateToken,
+      dto.phoneNumber,
+    );
+  }
+
+  @Public()
+  @Post(':stateToken/phone-verification/verify')
+  @ApiOperation({ summary: 'Verify a tenant onboarding phone verification code.' })
+  verifyPhoneVerificationCode(
+    @Param('stateToken') stateToken: string,
+    @Body() dto: Dto.VerifyTenantOnboardingPhoneDto,
+  ) {
+    return this.onboardingService.verifyPhoneByStateToken(stateToken, dto.code);
+  }
+
+  @Public()
+  @Post(':stateToken/continue-link/email')
+  @ApiOperation({ summary: 'Email the tenant onboarding continuation link.' })
+  sendContinueLinkEmail(@Param('stateToken') stateToken: string) {
+    return this.onboardingService.sendContinueLinkByStateToken(stateToken);
+  }
+
+  @Public()
+  @Patch(':stateToken/steps/:stepKey')
+  @ApiOperation({ summary: 'Save a tenant onboarding step draft by state token.' })
+  patchStepByStateToken(
+    @Param('stateToken') stateToken: string,
+    @Param('stepKey') stepKey: string,
+    @Body() dto: PatchTenantStepDto,
+  ) {
+    return this.onboardingService.saveStepDraftByStateToken(stateToken, stepKey, dto);
+  }
+
+  @Public()
+  @Post(':stateToken/steps/:stepKey/complete')
+  @ApiOperation({ summary: 'Complete a tenant onboarding step by state token.' })
+  completeStepByStateToken(
+    @Param('stateToken') stateToken: string,
+    @Param('stepKey') stepKey: string,
+  ) {
+    return this.onboardingService.completeStepByStateToken(stateToken, stepKey);
+  }
+
+  @Public()
+  @Post(':stateToken/documents/upload')
+  @ApiConsumes('multipart/form-data')
+  @UseInterceptors(
+    FileInterceptor('file', {
+      storage: diskStorage({
+        destination: (request, _file, callback) => {
+          const stateToken = String((request.params as { stateToken?: string }).stateToken ?? 'anonymous');
+          const directory = join(
+            process.cwd(),
+            'uploads',
+            'tenant-onboarding',
+            sanitizeFileName(stateToken).slice(0, 48),
+          );
+          mkdirSync(directory, { recursive: true });
+          callback(null, directory);
+        },
+        filename: (_request, file, callback) => {
+          const extension = extname(file.originalname);
+          const baseName = sanitizeFileName(file.originalname.replace(extension, ''));
+          callback(null, `${Date.now()}-${baseName}${extension}`);
+        },
+      }),
+      limits: {
+        fileSize: 10 * 1024 * 1024,
+      },
+    }),
+  )
+  uploadDocumentFileByStateToken(
+    @Param('stateToken') stateToken: string,
+    @UploadedFile() file: { originalname: string; mimetype: string; size: number; path: string },
+    @Body() body: Record<string, string | boolean | undefined>,
+  ) {
+    if (!file) {
+      throw new BadRequestException('Document file is required.');
+    }
+
+    return this.onboardingService.uploadDocumentFileByStateToken(stateToken, file, {
+      type: String(body.type ?? ''),
+      isRequired:
+        body.isRequired === undefined
+          ? true
+          : body.isRequired === true || body.isRequired === 'true' || body.isRequired === 'on',
+      expiresAt: body.expiresAt ? String(body.expiresAt) : undefined,
+    });
+  }
+
+  @Public()
+  @Post(':stateToken/submit')
+  @ApiOperation({ summary: 'Submit tenant onboarding for review by state token.' })
+  submitForReviewByStateToken(@Param('stateToken') stateToken: string) {
+    return this.onboardingService.submitForReviewByStateToken(stateToken);
+  }
+
+  @Get()
+  @ApiOperation({ summary: 'Get the tenant onboarding summary and studio gating state.' })
+  getSummary(@Req() request: AuthenticatedRequest) {
+    return this.onboardingService.getSummary(request.user.id);
+  }
+
+  @Get('me')
+  @ApiOperation({ summary: 'Get the authenticated tenant onboarding workspace.' })
+  getWorkspace(@Req() request: AuthenticatedRequest) {
+    return this.onboardingService.getWorkspace(request.user.id);
+  }
+
+  @Get('steps')
+  getSteps(@Req() request: AuthenticatedRequest) {
+    return this.onboardingService.getSteps(request.user.id);
+  }
+
+  @Patch('me/:step')
+  patchStep(
+    @Req() request: AuthenticatedRequest,
+    @Param('step') step: string,
+    @Body() dto: PatchTenantStepDto,
+  ) {
+    return this.onboardingService.saveStepDraft(request.user.id, step, dto);
+  }
+
+  @Post('me/:step/complete')
+  completeStep(@Req() request: AuthenticatedRequest, @Param('step') step: string) {
+    return this.onboardingService.completeStep(request.user.id, step);
+  }
+
+  @Post('me/documents')
+  uploadDocumentForCurrentTenant(
+    @Req() request: AuthenticatedRequest,
+    @Body() dto: Dto.UploadTenantDocumentDto,
+  ) {
+    return this.onboardingService.uploadDocumentForCurrentTenant(request.user.id, dto);
+  }
+
+  @Post('me/documents/upload')
+  @ApiConsumes('multipart/form-data')
+  @UseInterceptors(
+    FileInterceptor('file', {
+      storage: diskStorage({
+        destination: (request, _file, callback) => {
+          const tenantId = (request as AuthenticatedRequest).user?.id ?? 'anonymous';
+          const directory = join(process.cwd(), 'uploads', 'tenant-onboarding', tenantId);
+          mkdirSync(directory, { recursive: true });
+          callback(null, directory);
+        },
+        filename: (_request, file, callback) => {
+          const extension = extname(file.originalname);
+          const baseName = sanitizeFileName(file.originalname.replace(extension, ''));
+          callback(null, `${Date.now()}-${baseName}${extension}`);
+        },
+      }),
+      limits: {
+        fileSize: 10 * 1024 * 1024,
+      },
+    }),
+  )
+  uploadDocumentFileForCurrentTenant(
+    @Req() request: AuthenticatedRequest,
+    @UploadedFile() file: { originalname: string; mimetype: string; size: number; path: string },
+    @Body() body: Record<string, string | boolean | undefined>,
+  ) {
+    if (!file) {
+      throw new BadRequestException('Document file is required.');
+    }
+
+    return this.onboardingService.uploadDocumentFileForCurrentTenant(request.user.id, file, {
+      type: String(body.type ?? ''),
+      isRequired:
+        body.isRequired === undefined
+          ? true
+          : body.isRequired === true || body.isRequired === 'true' || body.isRequired === 'on',
+      expiresAt: body.expiresAt ? String(body.expiresAt) : undefined,
+    });
+  }
+
+  @Post('me/submit')
+  submitForReview(@Req() request: AuthenticatedRequest) {
+    return this.onboardingService.submitForReview(request.user.id);
+  }
+
+  @Put('business-info')
+  saveBusinessInfo(
+    @Req() request: AuthenticatedRequest,
+    @Body() dto: Dto.UpdateTenantBusinessInfoDto,
+  ) {
+    return this.onboardingService.saveBusinessInfo(request.user.id, dto);
+  }
+
+  @Put('legal-tax-info')
+  saveLegalTaxInfo(
+    @Req() request: AuthenticatedRequest,
+    @Body() dto: Dto.UpdateTenantLegalTaxInfoDto,
+  ) {
+    return this.onboardingService.saveLegalTaxInfo(request.user.id, dto);
+  }
+
+  @Put('owner-contact-info')
+  saveOwnerContactInfo(
+    @Req() request: AuthenticatedRequest,
+    @Body() dto: Dto.UpdateTenantOwnerContactInfoDto,
+  ) {
+    return this.onboardingService.saveOwnerContactInfo(request.user.id, dto);
+  }
+
+  @Put('operations-info')
+  saveOperationsInfo(
+    @Req() request: AuthenticatedRequest,
+    @Body() dto: Dto.UpdateTenantOperationsInfoDto,
+  ) {
+    return this.onboardingService.saveOperationsInfo(request.user.id, dto);
+  }
+
+  @Post('documents')
+  uploadDocument(@Req() request: AuthenticatedRequest, @Body() dto: Dto.UploadTenantDocumentDto) {
+    return this.onboardingService.uploadDocument(request.user.id, dto);
+  }
+
+  @Post('submit')
+  submit(@Req() request: AuthenticatedRequest) {
+    return this.onboardingService.submit(request.user.id);
+  }
+
+  @Post('resubmit')
+  resubmit(@Req() request: AuthenticatedRequest) {
+    return this.onboardingService.resubmit(request.user.id);
+  }
+}
