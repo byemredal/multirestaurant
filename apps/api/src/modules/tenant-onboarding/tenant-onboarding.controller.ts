@@ -99,9 +99,45 @@ export class TenantOnboardingController {
   }
 
   @Public()
+  @Post(':stateToken/phone/send-code')
+  @ApiOperation({ summary: 'Send a tenant onboarding phone verification code for the V2 phone step.' })
+  sendPhoneCode(
+    @Param('stateToken') stateToken: string,
+    @Body() dto: Dto.SendTenantOnboardingPhoneVerificationDto,
+  ) {
+    return this.onboardingService.sendPhoneVerificationCodeByStateToken(
+      stateToken,
+      dto.phoneNumber,
+    );
+  }
+
+  @Public()
+  @Post(':stateToken/phone/resend-code')
+  @ApiOperation({ summary: 'Resend a tenant onboarding phone verification code for the V2 OTP step.' })
+  resendPhoneCode(
+    @Param('stateToken') stateToken: string,
+    @Body() dto: Dto.ResendTenantOnboardingPhoneVerificationDto,
+  ) {
+    return this.onboardingService.resendPhoneVerificationCodeByStateToken(
+      stateToken,
+      dto.phoneNumber,
+    );
+  }
+
+  @Public()
   @Post(':stateToken/phone-verification/verify')
   @ApiOperation({ summary: 'Verify a tenant onboarding phone verification code.' })
   verifyPhoneVerificationCode(
+    @Param('stateToken') stateToken: string,
+    @Body() dto: Dto.VerifyTenantOnboardingPhoneDto,
+  ) {
+    return this.onboardingService.verifyPhoneByStateToken(stateToken, dto.code);
+  }
+
+  @Public()
+  @Post(':stateToken/phone/verify-code')
+  @ApiOperation({ summary: 'Verify a tenant onboarding phone verification code for the V2 OTP step.' })
+  verifyPhoneCode(
     @Param('stateToken') stateToken: string,
     @Body() dto: Dto.VerifyTenantOnboardingPhoneDto,
   ) {

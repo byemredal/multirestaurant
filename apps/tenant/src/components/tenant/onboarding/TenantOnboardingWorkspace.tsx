@@ -4,6 +4,8 @@ import { useEffect, useState } from 'react';
 import Image from 'next/image';
 import { useRouter } from 'next/navigation';
 import logoUrl from '@lieferzonen/assets/logo.svg';
+import { OtpVerificationStep } from '@/components/tenant/onboarding/OtpVerificationStep';
+import { PhoneVerificationStep } from '@/components/tenant/onboarding/PhoneVerificationStep';
 import { TenantContinuationBanner } from '@/components/tenant/onboarding/TenantContinuationBanner';
 import { TenantOnboardingStepPanel } from '@/components/tenant/onboarding/TenantOnboardingStepPanel';
 import { useTenantOnboardingWorkspace } from '@/components/tenant/onboarding/useTenantOnboardingWorkspace';
@@ -24,7 +26,6 @@ import {
 function getLegacyRenderableStep(
   step: TenantOnboardingWorkflowStepKey,
 ): TenantOnboardingWorkflowStepKey {
-  if (step === 'otp') return 'phone-verification';
   if (step === 'address') return 'location';
   if (step === 'billing-address') return 'bank-details';
   if (step === 'submitted') return 'waiting';
@@ -128,6 +129,10 @@ export default function TenantOnboardingWorkspace({
       router.replace(getTenantOnboardingStepUrl(result.stateToken, nextStep));
     }
     return result;
+  };
+
+  const navigateToUrl = (url: string) => {
+    router.replace(url);
   };
 
   const progressIndex = tenantOnboardingProgressStepOrder.indexOf(activeStep);
@@ -437,18 +442,34 @@ export default function TenantOnboardingWorkspace({
               )}
 
               <div className="pnl-slide-in min-w-0 max-w-[760px]">
-                <TenantOnboardingStepPanel
-                  activeStep={activeStep}
-                  onBack={moveToPreviousStep}
-                  onComplete={completeStepAndNavigate}
-                  onContinue={moveToNextStep}
-                  onPhoneVerified={replaceWorkspace}
-                  onSaveDraft={saveDraft}
-                  onSubmit={submitForReview}
-                  onUploadDocument={uploadDocument}
-                  savingStep={savingStep}
-                  workspace={workspace}
-                />
+                {requestedWorkflowStep === 'phone-verification' ? (
+                  <PhoneVerificationStep
+                    resolvedSession={resolvedSession}
+                    workspace={workspace}
+                    onNavigate={navigateToUrl}
+                    onWorkspaceResolved={replaceWorkspace}
+                  />
+                ) : requestedWorkflowStep === 'otp' ? (
+                  <OtpVerificationStep
+                    resolvedSession={resolvedSession}
+                    workspace={workspace}
+                    onNavigate={navigateToUrl}
+                    onWorkspaceResolved={replaceWorkspace}
+                  />
+                ) : (
+                  <TenantOnboardingStepPanel
+                    activeStep={activeStep}
+                    onBack={moveToPreviousStep}
+                    onComplete={completeStepAndNavigate}
+                    onContinue={moveToNextStep}
+                    onPhoneVerified={replaceWorkspace}
+                    onSaveDraft={saveDraft}
+                    onSubmit={submitForReview}
+                    onUploadDocument={uploadDocument}
+                    savingStep={savingStep}
+                    workspace={workspace}
+                  />
+                )}
               </div>
             </div>
           </main>

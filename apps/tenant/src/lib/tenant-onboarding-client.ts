@@ -143,7 +143,14 @@ export type TenantOnboardingWorkspace = {
   };
   phoneVerification?: {
     verified: boolean;
+    pending?: boolean;
     phoneNumber: string | null;
+    maskedPhoneNumber?: string | null;
+    expiresAt?: string | null;
+    verifiedAt?: string | null;
+    lastSentAt?: string | null;
+    resendCount?: number;
+    attemptCount?: number;
   };
   stateToken: string;
   studioAccessAllowed: boolean;
@@ -299,8 +306,70 @@ export type TenantPhoneVerificationChallenge = {
   maskedPhoneNumber: string;
   expiresAt: string;
   delivery: 'email_fallback' | string;
+  nextStep?: TenantOnboardingSessionStepKey;
+  redirectStep?: TenantOnboardingSessionStepKey | null;
+  session?: TenantOnboardingResolvedSession;
+  verified?: boolean;
   debugCode?: string;
 };
+
+export async function sendTenantOnboardingPhoneCode(
+  stateToken: string,
+  phoneNumber: string,
+) {
+  const response = await fetch(`${apiBaseUrl}/v2/tenant/onboarding/${encodeURIComponent(stateToken)}/phone/send-code`, {
+    body: JSON.stringify({ phoneNumber }),
+    credentials: 'include',
+    headers: { 'Content-Type': 'application/json' },
+    method: 'POST',
+  });
+
+  if (!response.ok) {
+    let message = `tenant_onboarding_phone_send_failed_${response.status}`;
+    try {
+      const payload = await response.json();
+      if (Array.isArray(payload?.message) && payload.message.length > 0) {
+        message = payload.message.join(', ');
+      } else if (typeof payload?.message === 'string' && payload.message.length > 0) {
+        message = payload.message;
+      }
+    } catch {
+      // Keep fallback.
+    }
+    throw new Error(message);
+  }
+
+  return (await response.json()) as TenantPhoneVerificationChallenge;
+}
+
+export async function resendTenantOnboardingPhoneCode(
+  stateToken: string,
+  phoneNumber?: string,
+) {
+  const response = await fetch(`${apiBaseUrl}/v2/tenant/onboarding/${encodeURIComponent(stateToken)}/phone/resend-code`, {
+    body: JSON.stringify(phoneNumber ? { phoneNumber } : {}),
+    credentials: 'include',
+    headers: { 'Content-Type': 'application/json' },
+    method: 'POST',
+  });
+
+  if (!response.ok) {
+    let message = `tenant_onboarding_phone_resend_failed_${response.status}`;
+    try {
+      const payload = await response.json();
+      if (Array.isArray(payload?.message) && payload.message.length > 0) {
+        message = payload.message.join(', ');
+      } else if (typeof payload?.message === 'string' && payload.message.length > 0) {
+        message = payload.message;
+      }
+    } catch {
+      // Keep fallback.
+    }
+    throw new Error(message);
+  }
+
+  return (await response.json()) as TenantPhoneVerificationChallenge;
+}
 
 export async function sendTenantOnboardingPhoneVerification(
   stateToken: string,
@@ -354,7 +423,45 @@ export async function verifyTenantOnboardingPhone(stateToken: string, code: stri
     throw new Error(message);
   }
 
-  return (await response.json()) as { verified: true; workspace: TenantOnboardingWorkspace };
+  return (await response.json()) as {
+    verified: true;
+    nextStep?: TenantOnboardingSessionStepKey;
+    redirectStep?: TenantOnboardingSessionStepKey | null;
+    session?: TenantOnboardingResolvedSession;
+    workspace: TenantOnboardingWorkspace;
+  };
+}
+
+export async function verifyTenantOnboardingPhoneCode(stateToken: string, code: string) {
+  const response = await fetch(`${apiBaseUrl}/v2/tenant/onboarding/${encodeURIComponent(stateToken)}/phone/verify-code`, {
+    body: JSON.stringify({ code }),
+    credentials: 'include',
+    headers: { 'Content-Type': 'application/json' },
+    method: 'POST',
+  });
+
+  if (!response.ok) {
+    let message = `tenant_onboarding_phone_verify_failed_${response.status}`;
+    try {
+      const payload = await response.json();
+      if (Array.isArray(payload?.message) && payload.message.length > 0) {
+        message = payload.message.join(', ');
+      } else if (typeof payload?.message === 'string' && payload.message.length > 0) {
+        message = payload.message;
+      }
+    } catch {
+      // Keep the status-based fallback.
+    }
+    throw new Error(message);
+  }
+
+  return (await response.json()) as {
+    verified: true;
+    nextStep?: TenantOnboardingSessionStepKey;
+    redirectStep?: TenantOnboardingSessionStepKey | null;
+    session?: TenantOnboardingResolvedSession;
+    workspace: TenantOnboardingWorkspace;
+  };
 }
 
 export async function emailTenantOnboardingContinueLink(stateToken: string) {

@@ -1,4 +1,4 @@
-import { IsNotEmpty, IsString, Length, Matches } from 'class-validator';
+import { IsNotEmpty, IsOptional, IsString, Length, Matches } from 'class-validator';
 
 export class SendTenantOnboardingPhoneVerificationDto {
   @IsString()
@@ -25,4 +25,11 @@ export class VerifyTenantOnboardingPhoneByTokenDto extends VerifyTenantOnboardin
   @IsString()
   @IsNotEmpty()
   stateToken: string;
+}
+
+export class ResendTenantOnboardingPhoneVerificationDto {
+  @IsOptional()
+  @IsString()
+  @Matches(/^\+?[0-9\s().-]{7,20}$/)
+  phoneNumber?: string;
 }

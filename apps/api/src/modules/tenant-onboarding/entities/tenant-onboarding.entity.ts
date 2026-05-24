@@ -57,6 +57,20 @@ export interface TenantOnboardingStepProgress {
   updatedAt: Date;
 }
 
+export interface TenantOnboardingPhoneVerification {
+  id: string;
+  applicationId: string;
+  phoneNumber: string;
+  otpCodeHash: string | null;
+  expiresAt: Date | null;
+  verifiedAt: Date | null;
+  resendCount: number;
+  attemptCount: number;
+  lastSentAt: Date | null;
+  createdAt: Date;
+  updatedAt: Date;
+}
+
 export interface TenantBusinessDetail {
   id: string;
   applicationId: string;

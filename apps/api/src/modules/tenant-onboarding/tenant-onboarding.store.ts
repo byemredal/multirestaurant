@@ -20,6 +20,7 @@ import {
   TenantLegalDetail,
   TenantOnboardingApplication,
   TenantOnboardingApplicationStatus,
+  TenantOnboardingPhoneVerification,
   TenantOnboardingStepKey,
   TenantOnboardingStepProgress,
   TenantOnboardingStepStatus,
@@ -200,6 +201,113 @@ export class TenantOnboardingStore {
       $blockedReason: updated.blockedReason,
       $updatedAt: updated.updatedAt.toISOString(),
     });
+    return updated;
+  }
+
+  async getPhoneVerification(applicationId: string) {
+    const row = await this.databaseService
+      .prepare(`SELECT * FROM "TenantOnboardingPhoneVerification" WHERE "applicationId" = $applicationId`)
+      .get({ $applicationId: applicationId }) as PhoneVerificationRow | undefined;
+    return row ? this.mapPhoneVerification(row) : null;
+  }
+
+  async upsertPhoneVerificationChallenge(
+    applicationId: string,
+    input: {
+      phoneNumber: string;
+      otpCodeHash: string;
+      expiresAt: Date;
+      incrementResendCount?: boolean;
+    },
+  ) {
+    const existing = await this.getPhoneVerification(applicationId);
+    const now = new Date();
+
+    if (!existing) {
+      const created: TenantOnboardingPhoneVerification = {
+        id: randomUUID(),
+        applicationId,
+        phoneNumber: input.phoneNumber,
+        otpCodeHash: input.otpCodeHash,
+        expiresAt: input.expiresAt,
+        verifiedAt: null,
+        resendCount: input.incrementResendCount ? 1 : 0,
+        attemptCount: 0,
+        lastSentAt: now,
+        createdAt: now,
+        updatedAt: now,
+      };
+      await this.databaseService.prepare(
+        `INSERT INTO "TenantOnboardingPhoneVerification" (
+          "id","applicationId","phoneNumber","otpCodeHash","expiresAt","verifiedAt","resendCount",
+          "attemptCount","lastSentAt","createdAt","updatedAt"
+        ) VALUES (
+          $id,$applicationId,$phoneNumber,$otpCodeHash,$expiresAt,$verifiedAt,$resendCount,
+          $attemptCount,$lastSentAt,$createdAt,$updatedAt
+        )`,
+      ).run(this.phoneVerificationParams(created));
+      return created;
+    }
+
+    const updated: TenantOnboardingPhoneVerification = {
+      ...existing,
+      phoneNumber: input.phoneNumber,
+      otpCodeHash: input.otpCodeHash,
+      expiresAt: input.expiresAt,
+      verifiedAt: null,
+      resendCount: input.incrementResendCount ? existing.resendCount + 1 : 0,
+      attemptCount: 0,
+      lastSentAt: now,
+      updatedAt: now,
+    };
+    await this.databaseService.prepare(
+      `UPDATE "TenantOnboardingPhoneVerification"
+       SET "phoneNumber" = $phoneNumber, "otpCodeHash" = $otpCodeHash, "expiresAt" = $expiresAt,
+           "verifiedAt" = $verifiedAt, "resendCount" = $resendCount, "attemptCount" = $attemptCount,
+           "lastSentAt" = $lastSentAt, "updatedAt" = $updatedAt
+       WHERE "applicationId" = $applicationId`,
+    ).run(this.phoneVerificationParams(updated));
+    return updated;
+  }
+
+  async incrementPhoneVerificationAttempt(applicationId: string) {
+    const existing = await this.getPhoneVerification(applicationId);
+    if (!existing) {
+      return null;
+    }
+
+    const updated: TenantOnboardingPhoneVerification = {
+      ...existing,
+      attemptCount: existing.attemptCount + 1,
+      updatedAt: new Date(),
+    };
+    await this.databaseService.prepare(
+      `UPDATE "TenantOnboardingPhoneVerification"
+       SET "attemptCount" = $attemptCount, "updatedAt" = $updatedAt
+       WHERE "applicationId" = $applicationId`,
+    ).run(this.phoneVerificationParams(updated));
+    return updated;
+  }
+
+  async markPhoneVerificationVerified(applicationId: string) {
+    const existing = await this.getPhoneVerification(applicationId);
+    if (!existing) {
+      throw new Error(`Phone verification for application ${applicationId} not found.`);
+    }
+
+    const updated: TenantOnboardingPhoneVerification = {
+      ...existing,
+      otpCodeHash: null,
+      expiresAt: null,
+      verifiedAt: new Date(),
+      updatedAt: new Date(),
+    };
+    await this.databaseService.prepare(
+      `UPDATE "TenantOnboardingPhoneVerification"
+       SET "otpCodeHash" = $otpCodeHash, "expiresAt" = $expiresAt, "verifiedAt" = $verifiedAt,
+           "updatedAt" = $updatedAt
+       WHERE "applicationId" = $applicationId`,
+    ).run(this.phoneVerificationParams(updated));
     return updated;
   }
 
@@ -562,6 +670,22 @@ export class TenantOnboardingStore {
     };
   }
 
+  private phoneVerificationParams(detail: TenantOnboardingPhoneVerification) {
+    return {
+      $id: detail.id,
+      $applicationId: detail.applicationId,
+      $phoneNumber: detail.phoneNumber,
+      $otpCodeHash: detail.otpCodeHash,
+      $expiresAt: detail.expiresAt?.toISOString() ?? null,
+      $verifiedAt: detail.verifiedAt?.toISOString() ?? null,
+      $resendCount: detail.resendCount,
+      $attemptCount: detail.attemptCount,
+      $lastSentAt: detail.lastSentAt?.toISOString() ?? null,
+      $createdAt: detail.createdAt.toISOString(),
+      $updatedAt: detail.updatedAt.toISOString(),
+    };
+  }
+
   private operationsParams(detail: TenantOperationsProfile) {
     return {
       $id: detail.id,
@@ -655,6 +779,22 @@ export class TenantOnboardingStore {
     };
   }
 
+  private mapPhoneVerification(row: PhoneVerificationRow): TenantOnboardingPhoneVerification {
+    return {
+      id: row.id,
+      applicationId: row.applicationId,
+      phoneNumber: row.phoneNumber,
+      otpCodeHash: row.otpCodeHash,
+      expiresAt: row.expiresAt ? new Date(row.expiresAt) : null,
+      verifiedAt: row.verifiedAt ? new Date(row.verifiedAt) : null,
+      resendCount: Number(row.resendCount),
+      attemptCount: Number(row.attemptCount),
+      lastSentAt: row.lastSentAt ? new Date(row.lastSentAt) : null,
+      createdAt: new Date(row.createdAt),
+      updatedAt: new Date(row.updatedAt),
+    };
+  }
+
   private mapOperations(row: OperationsRow): TenantOperationsProfile {
     return {
       ...row,
@@ -686,6 +826,7 @@ interface StepRow { id: string; applicationId: string; stepKey: string; status: 
 interface BusinessRow { id: string; applicationId: string; businessName: string; businessType: string; registrationNumber: string | null; taxNumber: string | null; addressLine1: string; addressLine2: string | null; city: string; postalCode: string; country: string; createdAt: string; updatedAt: string; }
 interface LegalRow { id: string; applicationId: string; legalEntityName: string; taxId: string | null; vatId: string | null; registrationCountry: string; registeredAddress: string; createdAt: string; updatedAt: string; }
 interface OwnerRow { id: string; applicationId: string; fullName: string; email: string; phoneNumber: string; roleTitle: string | null; ownershipPercentage: number | null; createdAt: string; updatedAt: string; }
+interface PhoneVerificationRow { id: string; applicationId: string; phoneNumber: string; otpCodeHash: string | null; expiresAt: string | null; verifiedAt: string | null; resendCount: number; attemptCount: number; lastSentAt: string | null; createdAt: string; updatedAt: string; }
 interface OperationsRow { id: string; applicationId: string; primaryCity: string; primaryPostalCode: string; deliveryModel: string; supportsPickup: boolean; openingHoursSummary: string | null; estimatedGoLiveDate: string | null; createdAt: string; updatedAt: string; }
 interface DocumentRow { id: string; applicationId: string; fileAssetId: string; type: string; status: string; isRequired: boolean; version: number; isCurrent: boolean; uploadedAt: string; reviewedAt: string | null; reviewedByAdminId: string | null; rejectionReason: string | null; expiresAt: string | null; createdAt: string; updatedAt: string; }
 interface ApplicationReviewRow { id: string; applicationId: string; adminId: string; decision: string; internalNote: string | null; tenantVisibleNote: string | null; createdAt: string; }

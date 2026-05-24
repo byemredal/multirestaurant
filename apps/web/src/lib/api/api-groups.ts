@@ -18,6 +18,27 @@ export const apiGroups: ApiGroup[] = [
         pathParams: [{ key: 'stateToken', label: 'State token' }],
         queryParams: [{ key: 'step', label: 'requested step slug' }],
       },
+      {
+        id: 'sendTenantOnboardingPhoneCode',
+        method: 'POST',
+        path: '/v2/tenant/onboarding/:stateToken/phone/send-code',
+        pathParams: [{ key: 'stateToken', label: 'State token' }],
+        bodyFields: [{ key: 'phoneNumber', label: 'phoneNumber' }],
+      },
+      {
+        id: 'verifyTenantOnboardingPhoneCode',
+        method: 'POST',
+        path: '/v2/tenant/onboarding/:stateToken/phone/verify-code',
+        pathParams: [{ key: 'stateToken', label: 'State token' }],
+        bodyFields: [{ key: 'code', label: '6-digit code' }],
+      },
+      {
+        id: 'resendTenantOnboardingPhoneCode',
+        method: 'POST',
+        path: '/v2/tenant/onboarding/:stateToken/phone/resend-code',
+        pathParams: [{ key: 'stateToken', label: 'State token' }],
+        bodyFields: [{ key: 'phoneNumber', label: 'phoneNumber (optional)' }],
+      },
     ],
   },
   {

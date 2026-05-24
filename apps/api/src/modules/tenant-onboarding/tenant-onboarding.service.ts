@@ -5,6 +5,7 @@ import {
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
+import { createHash } from 'crypto';
 import { plainToInstance } from 'class-transformer';
 import { validateSync } from 'class-validator';
 import { AdminAuditLogService } from '../admin-audit-log/admin-audit-log.service';
@@ -43,14 +44,6 @@ type UploadedTenantFile = {
   mimetype: string;
   size: number;
   path: string;
-};
-
-type PhoneVerificationChallenge = {
-  applicationId: string;
-  phoneNumber: string;
-  code: string;
-  expiresAt: number;
-  attempts: number;
 };
 
 type OnboardingSessionStepKey =
@@ -116,9 +109,6 @@ const TERMINAL_WAITING_STATUSES = new Set<TenantOnboardingApplicationStatus>([
 
 @Injectable()
 export class TenantOnboardingService {
-  private readonly phoneVerificationChallenges = new Map<string, PhoneVerificationChallenge>();
-  private readonly verifiedPhoneApplications = new Map<string, string>();
-
   constructor(
     private readonly store: TenantOnboardingStore,
     private readonly tenantAccountsStore: TenantAccountsStore,
@@ -299,21 +289,50 @@ export class TenantOnboardingService {
   }
 
   async sendPhoneVerificationCodeByStateToken(stateToken: string, phoneNumber: string) {
+    return this.sendPhoneVerificationCode(stateToken, phoneNumber, false);
+  }
+
+  async resendPhoneVerificationCodeByStateToken(stateToken: string, phoneNumber?: string) {
+    return this.sendPhoneVerificationCode(stateToken, phoneNumber, true);
+  }
+
+  private async sendPhoneVerificationCode(
+    stateToken: string,
+    phoneNumber: string | undefined,
+    isResend: boolean,
+  ) {
     const application = await this.resolveApplicationFromStateToken(stateToken);
+    this.assertPhoneVerificationEditable(application.status);
     const tenant = await this.tenantAccountsStore.findById(application.tenantAccountId);
     if (!tenant) {
       throw new NotFoundException('Tenant account could not be found.');
     }
 
-    const normalizedPhoneNumber = this.normalizePhoneNumber(phoneNumber);
+    const existingVerification = await this.store.getPhoneVerification(application.id);
+    if (existingVerification?.verifiedAt) {
+      const workspace = await this.getWorkspace(application.tenantAccountId);
+      return {
+        verified: true,
+        redirectStep: this.getCurrentSessionStep(workspace),
+        session: await this.resolveSessionByStateToken(workspace.stateToken, 'welcome'),
+      };
+    }
+
+    const ownerContact = await this.store.getOwnerContact(application.id);
+    const normalizedPhoneNumber = this.normalizePhoneNumber(
+      phoneNumber ?? existingVerification?.phoneNumber ?? ownerContact?.phoneNumber ?? tenant.phoneNumber,
+    );
+    if (normalizedPhoneNumber.length < 7) {
+      throw new BadRequestException('Phone number is required before sending a verification code.');
+    }
+
     const code = String(Math.floor(100000 + Math.random() * 900000));
-    const expiresAt = Date.now() + 10 * 60 * 1000;
-    this.phoneVerificationChallenges.set(application.id, {
-      applicationId: application.id,
+    const expiresAt = new Date(Date.now() + 10 * 60 * 1000);
+    await this.store.upsertPhoneVerificationChallenge(application.id, {
       phoneNumber: normalizedPhoneNumber,
-      code,
+      otpCodeHash: this.hashPhoneVerificationCode(application.id, code),
       expiresAt,
-      attempts: 0,
+      incrementResendCount: isResend,
     });
 
     await this.emailService.send({
@@ -322,37 +341,42 @@ export class TenantOnboardingService {
       text: `Telefon doğrulama kodunuz: ${code}. Bu kod 10 dakika geçerlidir.`,
     });
 
+    const workspace = await this.getWorkspace(application.tenantAccountId);
     return {
       maskedPhoneNumber: this.maskPhoneNumber(normalizedPhoneNumber),
-      expiresAt: new Date(expiresAt).toISOString(),
+      expiresAt: expiresAt.toISOString(),
       delivery: 'email_fallback',
+      nextStep: 'otp',
+      session: await this.resolveSessionByStateToken(workspace.stateToken, 'otp'),
       debugCode: this.shouldExposeDebugVerificationCode() ? code : undefined,
     };
   }
 
   async verifyPhoneByStateToken(stateToken: string, code: string) {
     const application = await this.resolveApplicationFromStateToken(stateToken);
-    const challenge = this.phoneVerificationChallenges.get(application.id);
-    if (!challenge || challenge.expiresAt < Date.now()) {
-      this.phoneVerificationChallenges.delete(application.id);
+    this.assertPhoneVerificationEditable(application.status);
+    const challenge = await this.store.getPhoneVerification(application.id);
+    if (!challenge || !challenge.otpCodeHash || !challenge.expiresAt || challenge.expiresAt < new Date()) {
       throw new BadRequestException('Phone verification code expired.');
     }
 
-    if (challenge.attempts >= 5) {
-      this.phoneVerificationChallenges.delete(application.id);
+    if (challenge.attemptCount >= 5) {
       throw new BadRequestException('Phone verification attempts exceeded.');
     }
 
-    if (challenge.code !== code) {
-      challenge.attempts += 1;
+    if (challenge.otpCodeHash !== this.hashPhoneVerificationCode(application.id, code)) {
+      await this.store.incrementPhoneVerificationAttempt(application.id);
       throw new BadRequestException('Invalid phone verification code.');
     }
 
-    this.phoneVerificationChallenges.delete(application.id);
-    this.verifiedPhoneApplications.set(application.id, challenge.phoneNumber);
+    await this.store.markPhoneVerificationVerified(application.id);
+    const workspace = await this.getWorkspace(application.tenantAccountId);
     return {
       verified: true,
-      workspace: await this.getWorkspace(application.tenantAccountId),
+      nextStep: 'welcome',
+      redirectStep: null,
+      session: await this.resolveSessionByStateToken(workspace.stateToken, 'welcome'),
+      workspace,
     };
   }
 
@@ -446,7 +470,7 @@ export class TenantOnboardingService {
     }
 
     if (!workspace.phoneVerification?.verified) {
-      return 'phone-verification';
+      return this.isPhoneOtpPending(workspace) ? 'otp' : 'phone-verification';
     }
 
     if (!this.isWorkspaceStepCompleted(workspace, 'business_info')) {
@@ -482,13 +506,13 @@ export class TenantOnboardingService {
     const allowed = new Set<OnboardingSessionStepKey>(['phone-verification']);
 
     if (!workspace.phoneVerification?.verified) {
-      // The OTP page is a canonical V2 route, but the legacy UI still renders
-      // phone send + code verification together.
-      allowed.add('otp');
+      if (this.isPhoneOtpPending(workspace)) {
+        allowed.add('otp');
+      }
       return ONBOARDING_SESSION_STEP_ORDER.filter((step) => allowed.has(step));
     }
 
-    allowed.add('otp');
+    allowed.delete('phone-verification');
     allowed.add('welcome');
 
     allowed.add('location');
@@ -600,9 +624,23 @@ export class TenantOnboardingService {
     };
     const backendStep = backendStepBySessionStep[step];
 
+    if (step === 'phone-verification' || step === 'otp') {
+      return workspace.phoneVerification ?? null;
+    }
+
     return backendStep
       ? workspace.steps.find((entry) => entry.stepKey === backendStep)?.data ?? null
       : null;
+  }
+
+  private isPhoneOtpPending(
+    workspace: Awaited<ReturnType<TenantOnboardingService['getWorkspace']>>,
+  ) {
+    return Boolean(
+      workspace.phoneVerification?.pending &&
+      workspace.phoneVerification.expiresAt &&
+      new Date(workspace.phoneVerification.expiresAt) > new Date(),
+    );
   }
 
   private maskPhoneNumber(phoneNumber: string) {
@@ -618,13 +656,26 @@ export class TenantOnboardingService {
     return phoneNumber.trim().replace(/\s+/g, ' ');
   }
 
+  private hashPhoneVerificationCode(applicationId: string, code: string) {
+    const secret = process.env.ONBOARDING_OTP_SECRET ?? process.env.JWT_SECRET ?? 'lieferzonen-dev-otp';
+    return createHash('sha256')
+      .update(`${secret}:${applicationId}:${code}`)
+      .digest('hex');
+  }
+
+  private assertPhoneVerificationEditable(status: TenantOnboardingApplicationStatus) {
+    if (!this.isEditableStatus(status)) {
+      throw new ForbiddenException('This onboarding application cannot verify phone in the current state.');
+    }
+  }
+
   private shouldExposeDebugVerificationCode() {
     return process.env.NODE_ENV !== 'production' || process.env.EMAIL_TRANSPORT === 'log';
   }
 
   async getSummary(tenantAccountId: string) {
     const application = await this.getOrCreateApplication(tenantAccountId);
-    const [steps, businessInfo, legalTaxInfo, ownerContactInfo, operationsInfo, documents, reviews, notes] =
+    const [steps, businessInfo, legalTaxInfo, ownerContactInfo, operationsInfo, documents, reviews, notes, phoneVerification] =
       await Promise.all([
         this.store.listStepProgress(application.id),
         this.store.getBusinessDetail(application.id),
@@ -634,6 +685,7 @@ export class TenantOnboardingService {
         this.store.listDocuments(application.id),
         this.store.listApplicationReviews(application.id),
         this.store.listAdminNotes(application.id),
+        this.store.getPhoneVerification(application.id),
       ]);
 
     const revisionRequests = [
@@ -649,6 +701,7 @@ export class TenantOnboardingService {
       legalTaxInfo,
       ownerContactInfo,
       operationsInfo,
+      phoneVerification,
       documents: documents.filter((document) => document.isCurrent),
       revisionRequests,
     };
@@ -669,8 +722,25 @@ export class TenantOnboardingService {
         stateToken,
       },
       phoneVerification: {
-        verified: this.verifiedPhoneApplications.has(summary.application.id),
-        phoneNumber: this.verifiedPhoneApplications.get(summary.application.id) ?? null,
+        verified: Boolean(summary.phoneVerification?.verifiedAt),
+        pending: Boolean(
+          summary.phoneVerification?.otpCodeHash &&
+          summary.phoneVerification?.expiresAt &&
+          summary.phoneVerification.expiresAt > new Date() &&
+          !summary.phoneVerification.verifiedAt,
+        ),
+        phoneNumber:
+          summary.phoneVerification?.phoneNumber ??
+          summary.ownerContactInfo?.phoneNumber ??
+          null,
+        maskedPhoneNumber: summary.phoneVerification?.phoneNumber
+          ? this.maskPhoneNumber(summary.phoneVerification.phoneNumber)
+          : null,
+        expiresAt: summary.phoneVerification?.expiresAt?.toISOString() ?? null,
+        verifiedAt: summary.phoneVerification?.verifiedAt?.toISOString() ?? null,
+        lastSentAt: summary.phoneVerification?.lastSentAt?.toISOString() ?? null,
+        resendCount: summary.phoneVerification?.resendCount ?? 0,
+        attemptCount: summary.phoneVerification?.attemptCount ?? 0,
       },
       studioAccessAllowed: summary.studioAccessAllowed,
       editable,
