@@ -51,7 +51,7 @@ export function workflowSlugFromBackendStep(stepKey: TenantOnboardingStepKey): s
   const workflowSlugs: Record<TenantOnboardingStepKey, string> = {
     business_info: 'location',
     legal_tax_info: 'business-details',
-    owner_contact_info: 'business-details',
+    owner_contact_info: 'authorized-person',
     operations_info: 'plan-selection',
     documents: 'verification',
     final_review: 'review',

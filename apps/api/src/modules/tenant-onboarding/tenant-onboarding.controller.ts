@@ -199,6 +199,16 @@ export class TenantOnboardingController {
   }
 
   @Public()
+  @Post(':stateToken/authorized-person')
+  @ApiOperation({ summary: 'Save and complete the V2 onboarding authorized person step.' })
+  saveAuthorizedPerson(
+    @Param('stateToken') stateToken: string,
+    @Body() dto: Dto.SaveTenantOnboardingAuthorizedPersonDto,
+  ) {
+    return this.onboardingService.saveAuthorizedPersonByStateToken(stateToken, dto);
+  }
+
+  @Public()
   @Patch(':stateToken/steps/:stepKey')
   @ApiOperation({ summary: 'Save a tenant onboarding step draft by state token.' })
   patchStepByStateToken(

@@ -586,6 +586,58 @@ export class TenantOnboardingService {
     };
   }
 
+  async saveAuthorizedPersonByStateToken(
+    stateToken: string,
+    input: Dto.SaveTenantOnboardingAuthorizedPersonDto,
+  ) {
+    const application = await this.resolveApplicationFromStateToken(stateToken);
+    this.assertPhoneVerificationEditable(application.status);
+    const workspaceBefore = await this.getWorkspace(application.tenantAccountId);
+    if (!workspaceBefore.phoneVerification?.verified) {
+      throw new ForbiddenException('Phone verification must be completed before saving authorized person.');
+    }
+    if (!this.isWorkspaceStepCompleted(workspaceBefore, 'business_info')) {
+      const redirectStep = this.hasLocationSelection(workspaceBefore) ? 'address' : 'location';
+      return {
+        stateToken: workspaceBefore.stateToken,
+        nextStep: redirectStep,
+        redirectStep,
+        session: await this.resolveSessionByStateToken(workspaceBefore.stateToken, 'authorized-person'),
+        workspace: workspaceBefore,
+      };
+    }
+    if (!this.isWorkspaceStepCompleted(workspaceBefore, 'legal_tax_info')) {
+      return {
+        stateToken: workspaceBefore.stateToken,
+        nextStep: 'business-details',
+        redirectStep: 'business-details',
+        session: await this.resolveSessionByStateToken(workspaceBefore.stateToken, 'authorized-person'),
+        workspace: workspaceBefore,
+      };
+    }
+
+    const dto = this.validateDto(Dto.SaveTenantOnboardingAuthorizedPersonDto, input);
+    await this.store.upsertOwnerContact(application.id, {
+      fullName: dto.fullName.trim(),
+      email: dto.email.trim().toLowerCase(),
+      phoneNumber: dto.phoneNumber.trim(),
+      roleTitle: dto.roleTitle?.trim() || null,
+      ownershipPercentage: dto.ownershipPercentage ?? null,
+    });
+
+    await this.assertStepReadyForCompletion(application.id, 'owner_contact_info');
+    await this.store.upsertStepProgress(application.id, 'owner_contact_info', 'completed');
+
+    const workspace = await this.getWorkspace(application.tenantAccountId);
+    return {
+      stateToken: workspace.stateToken,
+      nextStep: 'bank-details',
+      redirectStep: null,
+      session: await this.resolveSessionByStateToken(workspace.stateToken, 'bank-details'),
+      workspace,
+    };
+  }
+
   async sendContinueLinkByStateToken(stateToken: string) {
     const workspace = await this.resolveStateToken(stateToken);
     const tenant = await this.tenantAccountsStore.findById(workspace.application.tenantAccountId);

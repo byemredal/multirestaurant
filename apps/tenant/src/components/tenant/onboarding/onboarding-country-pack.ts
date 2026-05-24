@@ -16,6 +16,20 @@ export type BusinessDetailsFieldConfig = {
   helpText?: string;
 };
 
+export type AuthorizedPersonFieldKey =
+  | 'fullName'
+  | 'email'
+  | 'phoneNumber'
+  | 'roleTitle'
+  | 'ownershipPercentage';
+
+export type AuthorizedPersonFieldConfig = {
+  key: AuthorizedPersonFieldKey;
+  label: string;
+  required: boolean;
+  helpText?: string;
+};
+
 export function getBusinessDetailsFields(countryPack?: TenantOnboardingCountryPack) {
   const country = countryPack?.country ?? 'CH';
   const registrationLabel = country === 'CH'
@@ -63,5 +77,45 @@ export function getBusinessDetailsFields(countryPack?: TenantOnboardingCountryPa
         required: true,
       },
     ] satisfies BusinessDetailsFieldConfig[],
+  };
+}
+
+export function getAuthorizedPersonFields(countryPack?: TenantOnboardingCountryPack) {
+  const country = countryPack?.country ?? 'CH';
+
+  return {
+    guidance:
+      'If you are a sole proprietor, enter your own information. If this is a company, enter the authorized representative or signatory information.',
+    legalReviewNote:
+      'Placeholder labels only. Country-specific identity and signatory wording must be reviewed before production.',
+    fields: [
+      {
+        key: 'fullName',
+        label: 'Full legal name',
+        required: true,
+      },
+      {
+        key: 'email',
+        label: 'Contact email',
+        required: true,
+      },
+      {
+        key: 'phoneNumber',
+        label: 'Contact phone',
+        required: true,
+      },
+      {
+        key: 'roleTitle',
+        label: country === 'CH' ? 'Role / signatory capacity' : 'Role / title',
+        required: false,
+        helpText: 'Examples: owner, managing director, authorized representative.',
+      },
+      {
+        key: 'ownershipPercentage',
+        label: 'Ownership share',
+        required: false,
+        helpText: 'Optional placeholder field; future country packs may decide whether this is required.',
+      },
+    ] satisfies AuthorizedPersonFieldConfig[],
   };
 }

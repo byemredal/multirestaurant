@@ -104,6 +104,19 @@ export const apiGroups: ApiGroup[] = [
           { key: 'authorityName', label: 'authorityName (optional)' },
         ],
       },
+      {
+        id: 'saveTenantOnboardingAuthorizedPerson',
+        method: 'POST',
+        path: '/v2/tenant/onboarding/:stateToken/authorized-person',
+        pathParams: [{ key: 'stateToken', label: 'State token' }],
+        bodyFields: [
+          { key: 'fullName', label: 'fullName' },
+          { key: 'email', label: 'email' },
+          { key: 'phoneNumber', label: 'phoneNumber' },
+          { key: 'roleTitle', label: 'roleTitle (optional)' },
+          { key: 'ownershipPercentage', label: 'ownershipPercentage (optional number)', type: 'number' },
+        ],
+      },
     ],
   },
   {

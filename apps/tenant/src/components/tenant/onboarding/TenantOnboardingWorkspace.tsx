@@ -5,6 +5,7 @@ import Image from 'next/image';
 import { usePathname, useRouter } from 'next/navigation';
 import logoUrl from '@lieferzonen/assets/logo.svg';
 import { AddressStep } from '@/components/tenant/onboarding/AddressStep';
+import { AuthorizedPersonStep } from '@/components/tenant/onboarding/AuthorizedPersonStep';
 import { BusinessDetailsStep } from '@/components/tenant/onboarding/BusinessDetailsStep';
 import { LocationSearchStep } from '@/components/tenant/onboarding/LocationSearchStep';
 import { OtpVerificationStep } from '@/components/tenant/onboarding/OtpVerificationStep';
@@ -509,6 +510,13 @@ export default function TenantOnboardingWorkspace({
                   />
                 ) : requestedWorkflowStep === 'business-details' ? (
                   <BusinessDetailsStep
+                    resolvedSession={resolvedSession}
+                    workspace={workspace}
+                    onNavigate={navigateToUrl}
+                    onWorkspaceResolved={replaceWorkspace}
+                  />
+                ) : requestedWorkflowStep === 'authorized-person' ? (
+                  <AuthorizedPersonStep
                     resolvedSession={resolvedSession}
                     workspace={workspace}
                     onNavigate={navigateToUrl}

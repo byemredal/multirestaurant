@@ -299,6 +299,14 @@ export type TenantBusinessDetailsInput = {
   authorityName?: string | null;
 };
 
+export type TenantAuthorizedPersonInput = {
+  fullName: string;
+  email: string;
+  phoneNumber: string;
+  roleTitle?: string | null;
+  ownershipPercentage?: number | null;
+};
+
 /* -----------------------------------------------------------------------
  * LEGACY: authenticated-session ("me") onboarding helpers.
  *
@@ -516,6 +524,46 @@ export async function saveTenantOnboardingBusinessDetails(
 
   if (!response.ok) {
     let message = `tenant_onboarding_business_details_failed_${response.status}`;
+    try {
+      const payload = await response.json();
+      if (Array.isArray(payload?.errors) && payload.errors.length > 0) {
+        message = payload.errors.join(', ');
+      } else if (Array.isArray(payload?.message) && payload.message.length > 0) {
+        message = payload.message.join(', ');
+      } else if (typeof payload?.message === 'string' && payload.message.length > 0) {
+        message = payload.message;
+      }
+    } catch {
+      // Keep fallback.
+    }
+    throw new Error(message);
+  }
+
+  return (await response.json()) as {
+    stateToken: string;
+    nextStep: TenantOnboardingSessionStepKey;
+    redirectStep: TenantOnboardingSessionStepKey | null;
+    session?: TenantOnboardingResolvedSession;
+    workspace: TenantOnboardingWorkspace;
+  };
+}
+
+export async function saveTenantOnboardingAuthorizedPerson(
+  stateToken: string,
+  input: TenantAuthorizedPersonInput,
+) {
+  const response = await fetch(
+    `${apiBaseUrl}/v2/tenant/onboarding/${encodeURIComponent(stateToken)}/authorized-person`,
+    {
+      body: JSON.stringify(input),
+      credentials: 'include',
+      headers: { 'Content-Type': 'application/json' },
+      method: 'POST',
+    },
+  );
+
+  if (!response.ok) {
+    let message = `tenant_onboarding_authorized_person_failed_${response.status}`;
     try {
       const payload = await response.json();
       if (Array.isArray(payload?.errors) && payload.errors.length > 0) {
