@@ -58,28 +58,6 @@ async function request<T>(
   return (await response.json()) as T;
 }
 
-export async function loginTenant(email: string, password: string) {
-  const response = await fetch(`${apiBaseUrl}/tenants/login`, {
-    body: JSON.stringify({ email, password }),
-    credentials: 'include',
-    headers: {
-      'Content-Type': 'application/json',
-    },
-    method: 'POST',
-  });
-
-  if (!response.ok) {
-    throw new Error('tenant_login_failed');
-  }
-
-  const payload = (await response.json()) as TenantPayload;
-  return {
-    accessToken: payload.accessToken,
-    csrfToken: payload.csrfToken,
-    tenant: payload.tenant,
-  } satisfies StoredTenantSession;
-}
-
 type StartOnboardingInput = {
   firstName: string;
   lastName: string;
@@ -152,65 +130,6 @@ export async function resumeTenantOnboarding(
     continuationToken: payload.continuationToken,
     tenant: payload.tenant,
   };
-}
-
-/** Sets (or replaces) the authenticated tenant's password — used after approval. */
-export function setTenantPassword(session: StoredTenantSession, password: string) {
-  return request<StoredTenantSession['tenant']>('/tenants/me/password', session, {
-    body: JSON.stringify({ password }),
-    method: 'POST',
-  });
-}
-
-export async function bootstrapTenantSession(session: StoredTenantSession) {
-  const response = await fetch(`${apiBaseUrl}/tenants/me`, {
-    credentials: 'include',
-    headers: {
-      Authorization: `Bearer ${session.accessToken}`,
-    },
-  });
-
-  if (response.ok) {
-    return session;
-  }
-
-  const refreshResponse = await fetch(`${apiBaseUrl}/tenants/refresh`, {
-    credentials: 'include',
-    headers: {
-      'X-CSRF-Token': session.csrfToken,
-    },
-    method: 'POST',
-  });
-
-  if (!refreshResponse.ok) {
-    throw new Error('tenant_refresh_failed');
-  }
-
-  const payload = (await refreshResponse.json()) as TenantPayload;
-  return {
-    accessToken: payload.accessToken,
-    csrfToken: payload.csrfToken,
-    tenant: payload.tenant,
-  } satisfies StoredTenantSession;
-}
-
-export async function logoutTenant(session: StoredTenantSession) {
-  const response = await fetch(`${apiBaseUrl}/tenants/logout`, {
-    credentials: 'include',
-    headers: {
-      Authorization: `Bearer ${session.accessToken}`,
-      'X-CSRF-Token': session.csrfToken,
-    },
-    method: 'POST',
-  });
-
-  if (!response.ok) {
-    throw new Error('tenant_logout_failed');
-  }
-}
-
-export function getTenantOnboardingSummary(session: StoredTenantSession) {
-  return request<any>('/v2/tenant/onboarding', session);
 }
 
 export type TenantOnboardingStepKey =
