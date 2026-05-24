@@ -205,6 +205,23 @@ export type UploadTenantOnboardingDocumentInput = {
   expiresAt?: string;
 };
 
+/* -----------------------------------------------------------------------
+ * LEGACY: authenticated-session ("me") onboarding helpers.
+ *
+ * The CANONICAL onboarding flow is the state-token flow — the URL carries
+ * an encrypted `stateToken` and the matching `*ByStateToken` helpers below
+ * are the preferred path. These session-bearing variants are kept only as
+ * a fallback for already-authenticated tenants who reach onboarding pages
+ * without a fresh state token (e.g. legacy bookmarks or the waiting
+ * screen polling for revision notes). Do not introduce new call sites.
+ *
+ * Remove when:
+ *  1. `useTenantOnboardingWorkspace` stops falling back to session calls.
+ *  2. `TenantWaitingScreen` switches to `*ByStateToken` for revision-note
+ *     fetching.
+ * -------------------------------------------------------------------- */
+
+/** @deprecated Use `getTenantOnboardingWorkspaceByStateToken` instead. */
 export function getTenantOnboardingWorkspace(session: StoredTenantSession) {
   return request<TenantOnboardingWorkspace>('/v2/tenant/onboarding/me', session);
 }
@@ -308,6 +325,7 @@ export type TenantOnboardingStepDraftResponse = {
   data: unknown;
 };
 
+/** @deprecated Use `patchTenantOnboardingStepByStateToken` instead. */
 export function patchTenantOnboardingStep(
   session: StoredTenantSession,
   step: Exclude<TenantOnboardingStepKey, 'documents' | 'final_review'>,
@@ -366,6 +384,7 @@ export async function patchTenantOnboardingStepByStateToken(
   return (await response.json()) as TenantOnboardingStepDraftResponse;
 }
 
+/** @deprecated Use `completeTenantOnboardingStepByStateToken` instead. */
 export function completeTenantOnboardingStep(
   session: StoredTenantSession,
   step: TenantOnboardingStepKey,
@@ -398,6 +417,7 @@ export async function completeTenantOnboardingStepByStateToken(
   return (await response.json()) as Omit<TenantOnboardingStepDraftResponse, 'data'>;
 }
 
+/** @deprecated Use `uploadTenantOnboardingDocumentByStateToken` instead. */
 export function uploadTenantOnboardingDocument(
   session: StoredTenantSession,
   file: File,
@@ -456,6 +476,7 @@ export async function uploadTenantOnboardingDocumentByStateToken(
   };
 }
 
+/** @deprecated Use `submitTenantOnboardingByStateToken` instead. */
 export function submitTenantOnboarding(session: StoredTenantSession) {
   return request<{ application: TenantOnboardingWorkspace['application']; workspace: TenantOnboardingWorkspace }>(
     '/v2/tenant/onboarding/me/submit',

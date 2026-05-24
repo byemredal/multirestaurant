@@ -14,94 +14,27 @@ import { EmailService } from '../notification/email.service';
 import * as Dto from './dto';
 import {
   tenantOnboardingStepKeys,
-  TenantOnboardingApplication,
   TenantOnboardingApplicationStatus,
   TenantOnboardingStepKey,
 } from './entities/tenant-onboarding.entity';
 import { TenantOnboardingStore } from './tenant-onboarding.store';
 import { CryptoUtil } from '../../common/utility/crypto-util';
+import {
+  ONBOARDING_STATUS_TRANSITIONS,
+  assertOnboardingTransition,
+} from './tenant-onboarding.state';
+import {
+  buildStateToken,
+  currentStepFromSteps,
+  nextStepAfter,
+  validateStateTokenPayload,
+  workflowSlugFromBackendStep,
+} from './tenant-onboarding.tokens';
 
-function currentStepFromSteps(steps: Array<{ stepKey: TenantOnboardingStepKey; status: string }>) {
-  const next = steps.find((step) => step.status !== 'completed');
-  return next?.stepKey ?? 'final_review';
-}
-
-function nextStepAfter(stepKey: TenantOnboardingStepKey) {
-  const index = tenantOnboardingStepKeys.indexOf(stepKey);
-  return tenantOnboardingStepKeys[index + 1] ?? null;
-}
-
-function workflowSlugFromBackendStep(stepKey: TenantOnboardingStepKey) {
-  const workflowSlugs: Record<TenantOnboardingStepKey, string> = {
-    business_info: 'location',
-    legal_tax_info: 'business-details',
-    owner_contact_info: 'business-details',
-    operations_info: 'plan-selection',
-    documents: 'verification',
-    final_review: 'review',
-  };
-
-  return workflowSlugs[stepKey];
-}
-
-function buildStateToken(
-  application: TenantOnboardingApplication,
-  currentStep: string,
-) {
-  if (!application.tokenSalt) {
-    return '';
-  }
-
-  return CryptoUtil.encryptStateToken({
-    applicationId: application.id,
-    tenantAccountId: application.tenantAccountId,
-    status: application.status,
-    currentStep,
-    tokenSalt: application.tokenSalt,
-    issuedAt: new Date().toISOString(),
-  });
-}
-
-function validateStateTokenPayload(payload: Record<string, unknown>) {
-  if (
-    typeof payload.applicationId !== 'string' ||
-    typeof payload.tenantAccountId !== 'string' ||
-    typeof payload.status !== 'string' ||
-    typeof payload.currentStep !== 'string' ||
-    typeof payload.tokenSalt !== 'string'
-  ) {
-    throw new Error('Invalid state token payload.');
-  }
-  return {
-    applicationId: payload.applicationId,
-    tenantAccountId: payload.tenantAccountId,
-    status: payload.status,
-    currentStep: payload.currentStep,
-    tokenSalt: payload.tokenSalt,
-  };
-}
-
-/*
- * Bu, ortak onboarding lifecycle için tek gerçek kaynaktır. 
- * Her status değişimi - tenant-driven (submit / resubmit) ve admin-driven (review decisions, activation, suspension) - 
- * bu haritaya karşı doğrulanır, böylece uygulama tutarsız bir duruma asla ulaşamaz.
- * 
- * Not: ortak onboarding lifecycle (bu harita) kasıtlı olarak kaba tenant yönlendirme 
- * durumundan (`toTenantStatus`) ve tenant account management flags (`isActive` / `verificationStatus`) farklıdır.
- */
-export const ONBOARDING_STATUS_TRANSITIONS: Record<
-  TenantOnboardingApplicationStatus,
-  TenantOnboardingApplicationStatus[]
-> = {
-  draft: ['submitted'],
-  submitted: ['under_review', 'revision_required', 'approved', 'rejected'],
-  under_review: ['revision_required', 'approved', 'rejected'],
-  revision_required: ['submitted', 'rejected'],
-  approved: ['active', 'under_review', 'suspended'],
-  rejected: ['under_review'],
-  active: ['suspended'],
-  suspended: ['active', 'under_review'],
-};
+// Re-export the status-transition map so existing importers (and any
+// future onboarding-adjacent module) keep working without changing their
+// import path. The definition lives in tenant-onboarding.state.ts.
+export { ONBOARDING_STATUS_TRANSITIONS };
 
 type EditableStepKey = Exclude<TenantOnboardingStepKey, 'final_review'>;
 type TenantFacingStepStatus = 'not_started' | 'in_progress' | 'completed' | 'needs_revision';
@@ -1417,10 +1350,6 @@ export class TenantOnboardingService {
     currentStatus: TenantOnboardingApplicationStatus,
     targetStatus: TenantOnboardingApplicationStatus,
   ) {
-    if (!ONBOARDING_STATUS_TRANSITIONS[currentStatus].includes(targetStatus)) {
-      throw new BadRequestException(
-        `Application cannot transition from ${currentStatus} to ${targetStatus}.`,
-      );
-    }
+    assertOnboardingTransition(currentStatus, targetStatus);
   }
 }

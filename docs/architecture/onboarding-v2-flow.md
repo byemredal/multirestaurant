@@ -240,8 +240,39 @@ keeps it commented out. Therefore the following routes are GONE:
 - `POST /api/v1/tenant/onboarding/me/:step/complete`
 - `POST /api/v1/tenant/onboarding/me/documents` (and `/upload`)
 
-Tenant frontend does not call any of these; the `getTenantOnboardingSummary`
-helper in `tenant-onboarding-client.ts` calls `/v2/tenant/onboarding`.
+Tenant frontend does not call the v1 paths; the canonical state-token
+client functions in `tenant-onboarding-client.ts` call
+`/v2/tenant/onboarding/:stateToken/...`.
+
+---
+
+## State-token vs. session/`me` client functions
+
+The state-token flow is the canonical onboarding interface. The session/`me`
+client functions and routes are kept as a fallback for already-authenticated
+tenants and are explicitly marked `@deprecated` in
+`apps/tenant/src/lib/tenant-onboarding-client.ts`.
+
+| Concern             | Canonical (state-token)                                 | Legacy (session / `me`) — marked `@deprecated` |
+| ------------------- | ------------------------------------------------------- | ---------------------------------------------- |
+| Load workspace      | `getTenantOnboardingWorkspaceByStateToken(stateToken)`  | `getTenantOnboardingWorkspace(session)`        |
+| Patch step draft    | `patchTenantOnboardingStepByStateToken(...)`            | `patchTenantOnboardingStep(...)`               |
+| Complete step       | `completeTenantOnboardingStepByStateToken(...)`         | `completeTenantOnboardingStep(...)`            |
+| Upload document     | `uploadTenantOnboardingDocumentByStateToken(...)`       | `uploadTenantOnboardingDocument(...)`          |
+| Submit for review   | `submitTenantOnboardingByStateToken(stateToken)`        | `submitTenantOnboarding(session)`              |
+| HTTP path shape     | `/v2/tenant/onboarding/:stateToken/...`                 | `/v2/tenant/onboarding/me/...`                 |
+
+Current legacy consumers (the reason the deprecated helpers are still
+exported, not deleted):
+
+- `useTenantOnboardingWorkspace` falls back to the session variant when
+  no `stateToken` prop is passed — i.e. when the hook runs on a route
+  that does not own a state token in the URL.
+- `TenantWaitingScreen` uses `getTenantOnboardingWorkspace(session)` to
+  fetch revision notes for `rejected` / `suspended` applications.
+
+Both call sites are flagged in the source. The deprecated helpers can be
+deleted once those two consumers switch to state-token equivalents.
 
 ---
 
@@ -251,7 +282,9 @@ helper in `tenant-onboarding-client.ts` calls `/v2/tenant/onboarding`.
 apps/api/src/modules/tenant-onboarding/
 ├── tenant-onboarding.module.ts
 ├── tenant-onboarding.controller.ts        # @Controller('v2/tenant/onboarding')
-├── tenant-onboarding.service.ts           # ~1300 LOC — single source of truth
+├── tenant-onboarding.service.ts           # orchestrates the lifecycle (~1300 LOC)
+├── tenant-onboarding.state.ts             # ONBOARDING_STATUS_TRANSITIONS + assertOnboardingTransition
+├── tenant-onboarding.tokens.ts            # buildStateToken / validateStateTokenPayload / step helpers
 ├── tenant-onboarding.store.ts             # All DB IO for onboarding entities
 ├── entities/tenant-onboarding.entity.ts   # Status + step + document types
 └── dto/                                   # patch / update / upload DTOs
@@ -283,6 +316,68 @@ apps/tenant/src/components/tenant/onboarding/
 
 ---
 
+## Developer Trace — "When I click Continue on a step…"
+
+The reader's mental model often needs *one* concrete request walked through
+end-to-end. This is what happens when a tenant on
+`/onboarding/<stateToken>/business-details` types a tax id and clicks
+**Continue**.
+
+1. **UI click** —
+   `apps/tenant/src/components/tenant/onboarding/TenantOnboardingStepPanel.tsx`
+   handles the form submit. It calls the workspace hook:
+   `apps/tenant/src/components/tenant/onboarding/useTenantOnboardingWorkspace.ts`
+   → `saveDraft(stepKey, payload)`.
+
+2. **State-token branch** — Because the hook received a `stateToken` from
+   the route layout (`app/onboarding/[stateToken]/layout.tsx`), it picks
+   the canonical helper:
+   `patchTenantOnboardingStepByStateToken(currentStateTokenRef.current, step, payload)`
+   in `apps/tenant/src/lib/tenant-onboarding-client.ts`.
+
+3. **HTTP request** —
+   `PATCH /api/v1/v2/tenant/onboarding/<stateToken>/steps/legal_tax_info`
+   with the DTO body.
+
+4. **Controller** —
+   `apps/api/src/modules/tenant-onboarding/tenant-onboarding.controller.ts`
+   → `patchStepByStateToken` (decorated `@Public()` because the state
+   token *is* the credential).
+
+5. **Service** —
+   `apps/api/src/modules/tenant-onboarding/tenant-onboarding.service.ts`
+   → `saveStepDraftByStateToken` →
+   - `resolveApplicationFromStateToken(stateToken)` — calls
+     `CryptoUtil.decryptStateToken` (`apps/api/src/common/utility/crypto-util.ts`)
+     and `validateStateTokenPayload`
+     (`apps/api/src/modules/tenant-onboarding/tenant-onboarding.tokens.ts`),
+     then loads the application row by id from
+     `tenant-onboarding.store.ts`.
+   - `saveStepDraft(application.tenantAccountId, step, input)` — runs
+     `class-validator` over the DTO, calls
+     `store.upsertLegalDetail(applicationId, ...)`, and marks the step
+     `in_progress` via `store.upsertStepProgress`.
+
+6. **State-token rotation** — A fresh `stateToken` is built via
+   `buildStateToken(application, currentStep)`
+   (`tenant-onboarding.tokens.ts`) so the URL the tenant carries always
+   reflects the new `currentStep` and `tokenSalt`.
+
+7. **Response** — `{ stepKey, status: 'in_progress', nextStepKey,
+   stateToken, data }` flows back through the same chain.
+
+8. **UI commit** — The hook calls `getTenantOnboardingWorkspaceByStateToken`
+   to refetch the full workspace, updates `workspaceCache`, sets the new
+   state token on the URL via `writeOnboardingStateToken`, and the
+   `TenantOnboardingStepPanel` re-renders with the next step.
+
+No status transition ran during this trace — `saveStepDraft` only moves
+step *progress*, not the application status. Status transitions
+(`draft → submitted`, `submitted → approved`, etc.) go through
+`assertOnboardingTransition` in `tenant-onboarding.state.ts`.
+
+---
+
 ## Open items
 
 - `notification/EmailService` is log-only — phone verification codes and
@@ -292,3 +387,22 @@ apps/tenant/src/components/tenant/onboarding/
   compatibility with already-deployed tenant frontend builds. Dropping the
   `/v2` segment is a coordinated frontend+backend change and is deliberately
   out of scope for the stabilization slice.
+- Two consumers still call the legacy session/`me` helpers
+  (`useTenantOnboardingWorkspace` fallback branch + `TenantWaitingScreen`
+  revision-note fetch). Once they switch to the state-token equivalents,
+  the `@deprecated` helpers and the matching `me/*` controller routes
+  can be removed.
+- `TenantOnboardingStepPanel.tsx` is ~1450 LOC and renders every workflow
+  step inline. Proposed split (deferred to a focused frontend slice — not
+  this one — because the file's local state is shared across panels):
+    - `panels/PhoneVerificationPanel.tsx`
+    - `panels/BusinessIntroPanel.tsx`
+    - `panels/LocationPanel.tsx`
+    - `panels/BusinessDetailsPanel.tsx`
+    - `panels/BankDetailsPanel.tsx`
+    - `panels/PlanSelectionPanel.tsx`
+    - `panels/ReviewPanel.tsx`
+    - `panels/VerificationPanel.tsx`
+    - `panels/WaitingPanel.tsx`
+  Each takes the same `{ workspace, saveDraft, completeStep, ... }` props
+  the parent currently passes inline.

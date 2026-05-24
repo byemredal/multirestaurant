@@ -83,3 +83,4 @@ Rules:
   - `docs:`
   - `test:`
 - If a task grows beyond the original issue, stop and propose a new issue.
+- If GitHub issue creation fails because `gh` is unavailable, stop and provide a manual issue template. Do not mark the slice as issue-tracked.
