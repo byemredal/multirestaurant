@@ -33,6 +33,7 @@ import {
   updateTenantOptionGroup,
   updateTenantOptionItem,
   updateTenantStore,
+  apiBaseUrl,
 } from '@/lib/tenant-client';
 import type { StoredTenantSession } from '@/lib/storage/tenant-session';
 import type { SystemCurrency } from '@/lib/tenant-client';
@@ -179,9 +180,6 @@ const STORE_CATEGORIES = [
   'kebab',
   'grocery',
 ];
-
-const apiBaseUrl =
-  process.env.NEXT_PUBLIC_API_BASE_URL ?? 'http://localhost:4000/api/v1';
 
 function buildDefaultHours() {
   return weekDays.map((dayOfWeek) => ({

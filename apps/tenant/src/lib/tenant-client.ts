@@ -1,62 +1,13 @@
 import type { StoredTenantSession } from '@/lib/storage/tenant-session';
+import { apiBaseUrl, tenantRequest as request } from '@/lib/http/tenant-http';
 
-export const apiBaseUrl =
-  process.env.NEXT_PUBLIC_API_BASE_URL ?? 'http://localhost:4000/api/v1';
+export { apiBaseUrl };
 
 type TenantPayload = {
   accessToken: string;
   csrfToken: string;
   tenant: StoredTenantSession['tenant'];
 };
-
-async function request<T>(
-  path: string,
-  session: StoredTenantSession,
-  init?: RequestInit,
-) {
-  const response = await fetch(`${apiBaseUrl}${path}`, {
-    ...init,
-    credentials: 'include',
-    headers: {
-      Authorization: `Bearer ${session.accessToken}`,
-      ...(
-        init?.body && !(init.body instanceof FormData)
-          ? { 'Content-Type': 'application/json' }
-          : {}
-      ),
-      ...(init?.headers ?? {}),
-    },
-  });
-
-  if (!response.ok) {
-    let errorMessage = `tenant_request_failed_${response.status}`;
-
-    try {
-      const payload = await response.json();
-      if (Array.isArray(payload?.errors) && payload.errors.length > 0) {
-        errorMessage = payload.errors.join(', ');
-      } else if (Array.isArray(payload?.missingFields) && payload.missingFields.length > 0) {
-        errorMessage = `Missing fields: ${payload.missingFields.join(', ')}`;
-      } else if (Array.isArray(payload?.message) && payload.message.length > 0) {
-        errorMessage = payload.message.join(', ');
-      } else if (typeof payload?.message === 'string' && payload.message.length > 0) {
-        errorMessage = payload.message;
-      } else if (typeof payload?.error === 'string' && payload.error.length > 0) {
-        errorMessage = payload.error;
-      }
-    } catch {
-      // Use the status-based fallback when the error body is not JSON.
-    }
-
-    throw new Error(errorMessage);
-  }
-
-  if (response.status === 204) {
-    return null as T;
-  }
-
-  return (await response.json()) as T;
-}
 
 export async function loginTenant(email: string, password: string) {
   const response = await fetch(`${apiBaseUrl}/tenants/login`, {
