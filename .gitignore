@@ -55,7 +55,7 @@ desktop.ini
 .claude/settings.local.json
 # Claude Code CLI Artifacts
 .claude/
-CLAUDE.md
 
-# docs
-docs/
+# docs (ignore everything except the architecture reference tree)
+docs/*
+!docs/architecture/
