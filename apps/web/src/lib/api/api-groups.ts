@@ -178,6 +178,21 @@ export const apiGroups: ApiGroup[] = [
         pathParams: [{ key: 'stateToken', label: 'State token' }],
       },
       {
+        id: 'getTenantOnboardingConsents',
+        method: 'GET',
+        path: '/v2/tenant/onboarding/:stateToken/consents',
+        pathParams: [{ key: 'stateToken', label: 'State token' }],
+      },
+      {
+        id: 'saveTenantOnboardingConsents',
+        method: 'POST',
+        path: '/v2/tenant/onboarding/:stateToken/consents',
+        pathParams: [{ key: 'stateToken', label: 'State token' }],
+        bodyFields: [
+          { key: 'acceptedConsentKeys', label: 'acceptedConsentKeys (JSON array)' },
+        ],
+      },
+      {
         id: 'submitTenantOnboardingReview',
         method: 'POST',
         path: '/v2/tenant/onboarding/:stateToken/submit',

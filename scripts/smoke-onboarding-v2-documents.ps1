@@ -1,10 +1,18 @@
 param(
-  [string]$ApiBase = 'http://127.0.0.1:4000/api/v1/v2/tenant/onboarding',
-  [string]$TenantBase = 'http://127.0.0.1:3060',
+  [int]$ApiPort = 4001,
+  [int]$TenantPort = 3061,
+  [string]$ApiBase = '',
+  [string]$TenantBase = '',
   [int]$CdpPort = 9234
 )
 
 $ErrorActionPreference = 'Stop'
+if ($ApiBase.Trim() -eq '') {
+  $ApiBase = "http://127.0.0.1:$ApiPort/api/v1/v2/tenant/onboarding"
+}
+if ($TenantBase.Trim() -eq '') {
+  $TenantBase = "http://127.0.0.1:$TenantPort"
+}
 $repoRoot = (Resolve-Path (Join-Path $PSScriptRoot '..')).Path
 $apiDirectory = Join-Path $repoRoot 'apps\api'
 $tenantDirectory = Join-Path $repoRoot 'apps\tenant'
@@ -39,22 +47,44 @@ function Post-Json([string]$Uri, [object]$Payload) {
   return Invoke-RestMethod -Method Post -Uri $Uri -ContentType 'application/json' -Body ($Payload | ConvertTo-Json -Depth 6) -TimeoutSec 10
 }
 
-try {
-  $ports = @(4000, 3060, $CdpPort)
-  $occupied = Get-NetTCPConnection -State Listen -LocalPort $ports -ErrorAction SilentlyContinue
-  if ($occupied) {
-    throw "Smoke ports must be free before starting: $($occupied.LocalPort -join ', ')."
-  }
+function Wait-PortsFree([int[]]$Ports, [int]$TimeoutSeconds) {
+  $deadline = (Get-Date).AddSeconds($TimeoutSeconds)
+  do {
+    $occupied = foreach ($port in $Ports) {
+      Get-NetTCPConnection -State Listen -LocalPort $port -ErrorAction SilentlyContinue
+    }
+    if (-not $occupied) {
+      return
+    }
+    Start-Sleep -Milliseconds 300
+  } while ((Get-Date) -lt $deadline)
 
+  $busyPorts = $occupied | Select-Object -ExpandProperty LocalPort -Unique
+  throw "Smoke ports must be free before starting: $($busyPorts -join ', ')."
+}
+
+try {
+  $ports = @($ApiPort, $TenantPort, $CdpPort)
+  Wait-PortsFree -Ports $ports -TimeoutSeconds 10
+
+  $previousPort = $env:PORT
+  $previousCorsOrigins = $env:CORS_ORIGINS
+  $env:PORT = [string]$ApiPort
+  $env:CORS_ORIGINS = "http://127.0.0.1:$TenantPort,http://localhost:$TenantPort"
   $apiProcess = Start-Process -FilePath 'cmd.exe' -ArgumentList '/c', 'node dist/main.js' `
     -WorkingDirectory $apiDirectory -RedirectStandardOutput $apiLog -RedirectStandardError $apiErrorLog `
     -WindowStyle Hidden -PassThru
-  Wait-Port -Port 4000 -TimeoutSeconds 15
+  $env:PORT = $previousPort
+  $env:CORS_ORIGINS = $previousCorsOrigins
+  Wait-Port -Port $ApiPort -TimeoutSeconds 15
 
-  $tenantProcess = Start-Process -FilePath 'cmd.exe' -ArgumentList '/c', 'npm run dev -- --port 3060' `
+  $previousApiBase = $env:NEXT_PUBLIC_API_BASE_URL
+  $env:NEXT_PUBLIC_API_BASE_URL = "http://127.0.0.1:$ApiPort/api/v1"
+  $tenantProcess = Start-Process -FilePath 'cmd.exe' -ArgumentList '/c', "npm run dev -- --port $TenantPort" `
     -WorkingDirectory $tenantDirectory -RedirectStandardOutput $tenantLog -RedirectStandardError $tenantErrorLog `
     -WindowStyle Hidden -PassThru
-  Wait-Port -Port 3060 -TimeoutSeconds 35
+  $env:NEXT_PUBLIC_API_BASE_URL = $previousApiBase
+  Wait-Port -Port $TenantPort -TimeoutSeconds 35
 
   $stamp = (Get-Date).ToString('yyyyMMddHHmmss')
   $start = Post-Json "$ApiBase/start" @{
@@ -149,7 +179,7 @@ try {
   $env:SLICE101_CDP_PORT = [string]$CdpPort
   @'
 const delay = ms => new Promise(resolve => setTimeout(resolve, ms));
-async function waitForValue(send, expression, predicate, timeoutMs = 15000) {
+async function waitForValue(send, expression, predicate, timeoutMs = 45000) {
   const deadline = Date.now() + timeoutMs;
   let value;
   while (Date.now() < deadline) {
@@ -211,9 +241,9 @@ async function openTab(url) {
   const verification = await waitForValue(
     send,
     '({ path: location.pathname, search: location.search, text: document.body.innerText })',
-    value => value && value.path.endsWith('/verification') && value.search === '?returnTo=review' && value.text.includes('Documents and verification'),
+    value => value && value.path.endsWith('/verification') && value.search === '?returnTo=review' && value.text.includes('Documents and verification') && value.text.includes('Country-pack document guidance'),
   );
-  if (!verification.path.endsWith('/verification') || verification.search !== '?returnTo=review' || !verification.text.includes('Documents and verification')) {
+  if (!verification.path.endsWith('/verification') || verification.search !== '?returnTo=review' || !verification.text.includes('Documents and verification') || !verification.text.includes('Country-pack document guidance')) {
     throw new Error(`Custom verification route did not render with returnTo=review. Last state: ${JSON.stringify(verification)}`);
   }
 
@@ -235,7 +265,7 @@ async function openTab(url) {
   const reviewAfterUpload = await waitForValue(
     send,
     '({ path: location.pathname, text: document.body.innerText })',
-    value => value && value.path.endsWith('/review') && value.text.includes('Submit application') && !value.text.includes('Required documents\nMissing'),
+    value => value && value.path.endsWith('/review') && value.text.includes('Submit application') && value.text.includes('Acknowledgements and consent') && !value.text.includes('Required documents\nMissing'),
   );
   if (!reviewAfterUpload.path.endsWith('/review') || !reviewAfterUpload.text.includes('Submit application') || reviewAfterUpload.text.includes('Required documents,') || reviewAfterUpload.text.includes('Required documents\nMissing')) {
     throw new Error('Upload did not return to a complete review screen.');
@@ -264,6 +294,35 @@ async function openTab(url) {
     send,
     '({ path: location.pathname, text: document.body.innerText })',
     value => value && value.path.endsWith('/review') && value.text.includes('Submit application'),
+  );
+  const submitBlockedBeforeConsents = await send('Runtime.evaluate', {
+    expression: `(() => {
+      const button = Array.from(document.querySelectorAll('button')).find(x => x.innerText.includes('Submit application'));
+      return Boolean(button && button.disabled);
+    })()`,
+    returnByValue: true,
+  });
+  if (!submitBlockedBeforeConsents.result.result.value) throw new Error('Submit was not blocked before required acknowledgements.');
+  const selectedConsents = await send('Runtime.evaluate', {
+    expression: `(() => {
+      const section = Array.from(document.querySelectorAll('section')).find(x => x.querySelector('h3')?.innerText === 'Acknowledgements and consent');
+      const boxes = section ? Array.from(section.querySelectorAll('input[type="checkbox"]')) : [];
+      boxes.filter(box => !box.checked && !box.disabled).forEach(box => box.click());
+      const save = section && Array.from(section.querySelectorAll('button')).find(x => x.innerText.includes('Save acknowledgements'));
+      if (!save || save.disabled) return false;
+      save.click();
+      return true;
+    })()`,
+    returnByValue: true,
+  });
+  if (!selectedConsents.result.result.value) throw new Error('Required acknowledgement save action was unavailable.');
+  await waitForValue(
+    send,
+    `(() => {
+      const button = Array.from(document.querySelectorAll('button')).find(x => x.innerText.includes('Submit application'));
+      return { enabled: Boolean(button && !button.disabled), text: document.body.innerText };
+    })()`,
+    value => value && value.enabled && value.text.includes('Accepted and saved'),
   );
   const submitClicked = await send('Runtime.evaluate', {
     expression: `(() => {
@@ -297,14 +356,18 @@ async function openTab(url) {
   await delay(2200);
   const result = {
     reviewMissingInitially: true,
+    countryPackDocumentGuidanceRendered: true,
     verificationReturnToReview: true,
     repeatedVerificationEdit: true,
     uploadReturnedToReview: true,
+    submitBlockedBeforeConsents: true,
+    consentsSavedBeforeSubmit: true,
     submittedRendered: true,
     waitingRedirectedToSubmitted: true,
     sessionRequests: requests.filter(url => url.includes('/session?step=')).length,
     reviewRequests: requests.filter(url => url.includes('/review')).length,
     uploadRequests: requests.filter(url => url.includes('/documents/upload')).length,
+    consentRequests: requests.filter(url => url.includes('/consents')).length,
     workspaceRequests: requests.filter(url => url.includes('/workspace')).length,
     lateRequests: requests.length - settledAt,
   };

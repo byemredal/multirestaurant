@@ -37,7 +37,7 @@ The workspace redirect guard resets once the pathname changes, so revisiting the
 
 ## Consents and country packs
 
-This slice does not invent consent persistence or finalized legal requirements. Document category and consent wording are placeholder copy ready for later country/language pack expansion, including reviewed Switzerland-specific requirements.
+Slice 10.2 adds application-scoped consent snapshot persistence and review checkboxes. Document category and consent wording remain placeholder copy ready for later country/language pack expansion, including reviewed Switzerland-specific requirements.
 
 ## Bounded smoke procedure
 
@@ -45,7 +45,7 @@ Run the bounded smoke script from the repository root:
 
 `powershell -ExecutionPolicy Bypass -File .\scripts\smoke-onboarding-v2-documents.ps1`
 
-The script uses clean local API and tenant ports, with browser automation profiles stored under the operating-system temporary directory:
+The script uses isolated API/tenant ports (`4001`/`3061` by default), with browser automation profiles stored under the operating-system temporary directory:
 
 1. Prepare an editable application through `plan-selection` and `operations`.
 2. Open `/review`, assert Required documents is missing, and follow its edit action to `/verification?returnTo=review`.
@@ -57,7 +57,7 @@ The script uses clean local API and tenant ports, with browser automation profil
 
 Any temporary browser profiles and test upload files must be removed after the bounded smoke run.
 
-Latest bounded run result: the complete review -> verification -> upload -> review -> repeated edit -> submit -> submitted -> waiting alias sequence passed with `lateRequests: 0`.
+Latest bounded run result: the complete review -> verification -> upload -> review -> repeated edit -> required acknowledgement save -> submit -> submitted -> waiting alias sequence passed with `lateRequests: 0`.
 
 ## Remaining cleanup
 

@@ -205,6 +205,22 @@ export interface TenantDocumentReview {
   createdAt: Date;
 }
 
+export interface TenantOnboardingConsentSnapshot {
+  id: string;
+  applicationId: string;
+  consentKey: string;
+  consentLabelSnapshot: string;
+  documentCode: string;
+  documentVersion: string;
+  language: string;
+  accepted: boolean;
+  acceptedAt: Date;
+  ipAddress: string | null;
+  userAgent: string | null;
+  createdAt: Date;
+  updatedAt: Date;
+}
+
 export interface TenantApplicationReview {
   id: string;
   applicationId: string;

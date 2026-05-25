@@ -22,6 +22,7 @@ import {
   TenantOnboardingApplicationStatus,
   TenantOnboardingBankDetail,
   TenantOnboardingBillingAddress,
+  TenantOnboardingConsentSnapshot,
   TenantOnboardingLocationSelection,
   TenantOnboardingPlanSelection,
   TenantOnboardingPhoneVerification,
@@ -652,6 +653,72 @@ export class TenantOnboardingStore {
     return rows.map((row) => this.mapDocument(row));
   }
 
+  async listConsentSnapshots(applicationId: string) {
+    const rows = await this.databaseService.prepare(
+      `SELECT * FROM "TenantOnboardingConsentSnapshot"
+       WHERE "applicationId" = $applicationId
+       ORDER BY "acceptedAt" DESC`,
+    ).all({ $applicationId: applicationId }) as ConsentSnapshotRow[];
+    return rows.map((row) => this.mapConsentSnapshot(row));
+  }
+
+  async upsertConsentSnapshot(
+    applicationId: string,
+    input: Omit<TenantOnboardingConsentSnapshot, 'id' | 'applicationId' | 'createdAt' | 'updatedAt'>,
+  ) {
+    const existing = await this.databaseService.prepare(
+      `SELECT * FROM "TenantOnboardingConsentSnapshot"
+       WHERE "applicationId" = $applicationId
+         AND "consentKey" = $consentKey
+         AND "documentVersion" = $documentVersion`,
+    ).get({
+      $applicationId: applicationId,
+      $consentKey: input.consentKey,
+      $documentVersion: input.documentVersion,
+    }) as ConsentSnapshotRow | undefined;
+    const now = new Date();
+
+    if (existing?.accepted) {
+      return this.mapConsentSnapshot(existing);
+    }
+
+    if (!existing) {
+      const created: TenantOnboardingConsentSnapshot = {
+        id: randomUUID(),
+        applicationId,
+        ...input,
+        createdAt: now,
+        updatedAt: now,
+      };
+      await this.databaseService.prepare(
+        `INSERT INTO "TenantOnboardingConsentSnapshot" (
+          "id","applicationId","consentKey","consentLabelSnapshot","documentCode",
+          "documentVersion","language","accepted","acceptedAt","ipAddress",
+          "userAgent","createdAt","updatedAt"
+        ) VALUES (
+          $id,$applicationId,$consentKey,$consentLabelSnapshot,$documentCode,
+          $documentVersion,$language,$accepted,$acceptedAt,$ipAddress,
+          $userAgent,$createdAt,$updatedAt
+        )`,
+      ).run(this.consentSnapshotParams(created));
+      return created;
+    }
+
+    const updated: TenantOnboardingConsentSnapshot = {
+      ...this.mapConsentSnapshot(existing),
+      ...input,
+      updatedAt: now,
+    };
+    await this.databaseService.prepare(
+      `UPDATE "TenantOnboardingConsentSnapshot"
+       SET "consentLabelSnapshot" = $consentLabelSnapshot, "documentCode" = $documentCode,
+           "language" = $language, "accepted" = $accepted, "acceptedAt" = $acceptedAt,
+           "ipAddress" = $ipAddress, "userAgent" = $userAgent, "updatedAt" = $updatedAt
+       WHERE "id" = $id`,
+    ).run(this.consentSnapshotParams(updated));
+    return updated;
+  }
+
   async listAllCurrentDocuments() {
     const rows = await this.databaseService.prepare(
       `SELECT d.* FROM "TenantDocument" d
@@ -1108,6 +1175,34 @@ export class TenantOnboardingStore {
       updatedAt: new Date(row.updatedAt),
     };
   }
+
+  private mapConsentSnapshot(row: ConsentSnapshotRow): TenantOnboardingConsentSnapshot {
+    return {
+      ...row,
+      accepted: Boolean(row.accepted),
+      acceptedAt: new Date(row.acceptedAt),
+      createdAt: new Date(row.createdAt),
+      updatedAt: new Date(row.updatedAt),
+    };
+  }
+
+  private consentSnapshotParams(snapshot: TenantOnboardingConsentSnapshot) {
+    return {
+      $id: snapshot.id,
+      $applicationId: snapshot.applicationId,
+      $consentKey: snapshot.consentKey,
+      $consentLabelSnapshot: snapshot.consentLabelSnapshot,
+      $documentCode: snapshot.documentCode,
+      $documentVersion: snapshot.documentVersion,
+      $language: snapshot.language,
+      $accepted: snapshot.accepted,
+      $acceptedAt: snapshot.acceptedAt.toISOString(),
+      $ipAddress: snapshot.ipAddress,
+      $userAgent: snapshot.userAgent,
+      $createdAt: snapshot.createdAt.toISOString(),
+      $updatedAt: snapshot.updatedAt.toISOString(),
+    };
+  }
 }
 
 interface ApplicationRow { id: string; tenantAccountId: string; status: string; submittedAt: string | null; reviewStartedAt: string | null; approvedAt: string | null; rejectedAt: string | null; revisionRequestedAt: string | null; activatedAt: string | null; suspendedAt: string | null; lastSubmittedAt: string | null; currentRevisionNumber: number; createdAt: string; updatedAt: string; tokenSalt: string | null; }
@@ -1122,6 +1217,7 @@ interface PhoneVerificationRow { id: string; applicationId: string; phoneNumber:
 interface LocationSelectionRow { id: string; applicationId: string; locationLabel: string; rawInput: string; country: string; city: string | null; postalCode: string | null; latitude: number | null; longitude: number | null; createdAt: string; updatedAt: string; }
 interface OperationsRow { id: string; applicationId: string; primaryCity: string; primaryPostalCode: string; deliveryModel: string; supportsPickup: boolean; openingHoursSummary: string | null; estimatedGoLiveDate: string | null; createdAt: string; updatedAt: string; }
 interface DocumentRow { id: string; applicationId: string; fileAssetId: string; type: string; status: string; isRequired: boolean; version: number; isCurrent: boolean; uploadedAt: string; reviewedAt: string | null; reviewedByAdminId: string | null; rejectionReason: string | null; expiresAt: string | null; createdAt: string; updatedAt: string; }
+interface ConsentSnapshotRow { id: string; applicationId: string; consentKey: string; consentLabelSnapshot: string; documentCode: string; documentVersion: string; language: string; accepted: boolean; acceptedAt: string; ipAddress: string | null; userAgent: string | null; createdAt: string; updatedAt: string; }
 interface ApplicationReviewRow { id: string; applicationId: string; adminId: string; decision: string; internalNote: string | null; tenantVisibleNote: string | null; createdAt: string; }
 interface DocumentReviewRow { id: string; documentId: string; adminId: string; decision: string; note: string | null; createdAt: string; }
 interface AdminNoteRow { id: string; applicationId: string; adminId: string; scope: string; body: string; createdAt: string; }

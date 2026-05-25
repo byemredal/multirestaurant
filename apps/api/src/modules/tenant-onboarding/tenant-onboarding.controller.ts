@@ -263,6 +263,23 @@ export class TenantOnboardingController {
   }
 
   @Public()
+  @Get(':stateToken/consents')
+  @ApiOperation({ summary: 'Get country-pack document guidance and onboarding consent definitions.' })
+  getConsents(@Param('stateToken') stateToken: string) {
+    return this.onboardingService.getConsentsByStateToken(stateToken);
+  }
+
+  @Public()
+  @Post(':stateToken/consents')
+  @ApiOperation({ summary: 'Persist accepted onboarding consent snapshots before submission.' })
+  saveConsents(
+    @Param('stateToken') stateToken: string,
+    @Body() dto: Dto.SaveTenantOnboardingConsentsDto,
+  ) {
+    return this.onboardingService.saveConsentsByStateToken(stateToken, dto);
+  }
+
+  @Public()
   @Patch(':stateToken/steps/:stepKey')
   @ApiOperation({ summary: 'Save a tenant onboarding step draft by state token.' })
   patchStepByStateToken(

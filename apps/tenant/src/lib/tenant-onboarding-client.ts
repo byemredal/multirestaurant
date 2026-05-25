@@ -206,6 +206,48 @@ export type TenantOnboardingCountryPack = {
   currency: string;
 };
 
+export type TenantOnboardingDocumentRequirement = {
+  type: string;
+  label: string;
+  required: boolean;
+  description: string;
+  acceptedFormats: string[];
+  guidanceOnly: boolean;
+};
+
+export type TenantOnboardingConsentDefinition = {
+  consentKey: string;
+  label: string;
+  description: string;
+  documentCode: string;
+  documentVersion: string;
+  required: boolean;
+  language: string;
+};
+
+export type TenantOnboardingConsentStatus = TenantOnboardingConsentDefinition & {
+  accepted: boolean;
+  acceptedAt: string | null;
+};
+
+export type TenantOnboardingComplianceResult = {
+  stateToken: string;
+  status: TenantOnboardingApplicationStatus;
+  redirectStep: TenantOnboardingSessionStepKey | null;
+  countryPack: TenantOnboardingCountryPack;
+  documentRequirements: {
+    definitions: TenantOnboardingDocumentRequirement[];
+    validationPolicy: {
+      mode: 'minimum_current_required_document';
+      minimumRequiredDocuments: number;
+      note: string;
+    };
+  } | null;
+  consentDefinitions: TenantOnboardingConsentDefinition[];
+  acceptedConsents: TenantOnboardingConsentStatus[];
+  missingRequiredConsentKeys: string[];
+};
+
 export type TenantOnboardingResolvedSession = {
   stateToken: string;
   applicationId: string;
@@ -358,7 +400,8 @@ export type TenantOnboardingReviewBlockKey =
   | 'billing-address'
   | 'plan-selection'
   | 'operations-info'
-  | 'documents';
+  | 'documents'
+  | 'consents';
 
 export type TenantOnboardingReviewSummary = {
   phoneVerification: {
@@ -419,6 +462,7 @@ export type TenantOnboardingReviewSummary = {
       version: number | null;
     }>;
   };
+  compliance: Omit<TenantOnboardingComplianceResult, 'stateToken' | 'status' | 'redirectStep' | 'countryPack'>;
 };
 
 export type TenantOnboardingReviewResult = {
@@ -907,6 +951,49 @@ export async function getTenantOnboardingReview(stateToken: string) {
   }
 
   return (await response.json()) as TenantOnboardingReviewResult;
+}
+
+export async function getTenantOnboardingConsents(stateToken: string) {
+  const response = await fetch(
+    `${apiBaseUrl}/v2/tenant/onboarding/${encodeURIComponent(stateToken)}/consents`,
+    { credentials: 'include' },
+  );
+
+  if (!response.ok) {
+    throw new Error(`tenant_onboarding_consents_failed_${response.status}`);
+  }
+
+  return (await response.json()) as TenantOnboardingComplianceResult;
+}
+
+export async function saveTenantOnboardingConsents(
+  stateToken: string,
+  acceptedConsentKeys: string[],
+) {
+  const response = await fetch(
+    `${apiBaseUrl}/v2/tenant/onboarding/${encodeURIComponent(stateToken)}/consents`,
+    {
+      body: JSON.stringify({ acceptedConsentKeys }),
+      credentials: 'include',
+      headers: { 'Content-Type': 'application/json' },
+      method: 'POST',
+    },
+  );
+
+  if (!response.ok) {
+    let message = `tenant_onboarding_consents_save_failed_${response.status}`;
+    try {
+      const payload = await response.json();
+      if (typeof payload?.message === 'string' && payload.message) {
+        message = payload.message;
+      }
+    } catch {
+      // Keep fallback.
+    }
+    throw new Error(message);
+  }
+
+  return (await response.json()) as TenantOnboardingComplianceResult;
 }
 
 export type TenantPhoneVerificationChallenge = {

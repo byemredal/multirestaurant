@@ -42,7 +42,7 @@ Required documents remain enforced by the existing submit lifecycle. Slice 10.1 
 
 ## Lifecycle and country packs
 
-Review submission continues to call the existing safe `POST /v2/tenant/onboarding/:stateToken/submit` endpoint; no alternate submit lifecycle was introduced. Copy on operations and completion pages is placeholder wording suitable for later country/language pack expansion and makes no reviewed legal or commercial promise.
+Review submission continues to call the existing safe `POST /v2/tenant/onboarding/:stateToken/submit` endpoint; no alternate submit lifecycle was introduced. Slice 10.2 additionally requires persisted onboarding acknowledgement snapshots before this existing endpoint can submit. Copy on operations, consent, and completion pages is placeholder wording suitable for later country/language pack expansion and makes no reviewed legal or commercial promise.
 
 ## Remaining work
 

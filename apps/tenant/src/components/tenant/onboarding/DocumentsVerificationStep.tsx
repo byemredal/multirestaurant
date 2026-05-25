@@ -1,10 +1,12 @@
 'use client';
 
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { useSearchParams } from 'next/navigation';
 import { Button, Card, FileDropzone, Input } from '@lieferzonen/ui';
 import {
+  getTenantOnboardingConsents,
   uploadTenantOnboardingDocumentByStateToken,
+  type TenantOnboardingComplianceResult,
   type TenantOnboardingDocument,
   type TenantOnboardingResolvedSession,
   type TenantOnboardingWorkspace,
@@ -21,14 +23,6 @@ type DocumentsVerificationStepProps = {
   onWorkspaceResolved: (workspace: TenantOnboardingWorkspace) => void;
   onNavigate: (url: string) => void;
 };
-
-const DOCUMENT_TYPE_OPTIONS = [
-  { value: 'business_license', label: 'Commercial register or business licence document' },
-  { value: 'tax_certificate', label: 'Tax or registration certificate' },
-  { value: 'identity_document', label: 'Authorized representative identification' },
-  { value: 'bank_statement', label: 'Bank account evidence' },
-  { value: 'food_safety_certificate', label: 'Food safety certificate' },
-] as const;
 
 const DOCUMENT_STATUS_COPY: Record<TenantOnboardingDocument['status'], { label: string; className: string }> = {
   pending: { label: 'Uploaded / pending review', className: 'bg-primary-50 text-primary-700' },
@@ -61,10 +55,13 @@ export function DocumentsVerificationStep({
   const searchParams = useSearchParams();
   const returnToReview = searchParams.get('returnTo') === 'review';
   const [file, setFile] = useState<File | null>(null);
-  const [documentType, setDocumentType] = useState<string>('business_license');
+  const [documentType, setDocumentType] = useState<string>('');
   const [expiresAt, setExpiresAt] = useState('');
   const [uploading, setUploading] = useState(false);
+  const [loadingRequirements, setLoadingRequirements] = useState(true);
+  const [requirements, setRequirements] = useState<TenantOnboardingComplianceResult | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const requestSequenceRef = useRef(0);
   const runOnce = useOnboardingActionGuard();
   const copy = useMemo(
     () => getDocumentsVerificationCopy(resolvedSession?.countryPack),
@@ -73,6 +70,36 @@ export function DocumentsVerificationStep({
   const documents = useMemo(() => currentDocuments(workspace), [workspace]);
   const documentsSatisfied = useMemo(() => requiredDocumentsSatisfied(documents), [documents]);
   const status = workspace.steps.find((step) => step.stepKey === 'documents')?.status ?? 'in_progress';
+  const documentDefinitions = requirements?.documentRequirements?.definitions ?? [];
+
+  useEffect(() => {
+    const requestSequence = requestSequenceRef.current + 1;
+    requestSequenceRef.current = requestSequence;
+    setLoadingRequirements(true);
+    setError(null);
+
+    void getTenantOnboardingConsents(workspace.stateToken)
+      .then((result) => {
+        if (requestSequence !== requestSequenceRef.current) {
+          return;
+        }
+        setRequirements(result);
+        const firstType = result.documentRequirements?.definitions[0]?.type;
+        if (firstType) {
+          setDocumentType((current) => current || firstType);
+        }
+      })
+      .catch((caught: unknown) => {
+        if (requestSequence === requestSequenceRef.current) {
+          setError(caught instanceof Error ? caught.message : 'Document requirements could not be loaded.');
+        }
+      })
+      .finally(() => {
+        if (requestSequence === requestSequenceRef.current) {
+          setLoadingRequirements(false);
+        }
+      });
+  }, [workspace.stateToken]);
 
   async function uploadDocument() {
     if (!file) {
@@ -122,7 +149,9 @@ export function DocumentsVerificationStep({
           <div className="flex flex-wrap items-center justify-between gap-3">
             <div>
               <h3 className="text-[15px] font-bold text-ink-900">Required documents</h3>
-              <p className="mt-1 text-[13px] text-ink-500">{copy.requirement}</p>
+              <p className="mt-1 text-[13px] text-ink-500">
+                {requirements?.documentRequirements?.validationPolicy.note ?? copy.requirement}
+              </p>
             </div>
             <span className={`rounded-full px-2.5 py-1 text-[11px] font-semibold ${
               documentsSatisfied ? 'bg-success-50 text-success-700' : 'bg-amber-50 text-amber-700'
@@ -133,6 +162,37 @@ export function DocumentsVerificationStep({
           <p className="mt-3 rounded-[8px] bg-ink-50 px-3 py-2 text-[12px] leading-5 text-ink-600">
             {copy.reviewNote}
           </p>
+        </section>
+
+        <section className="rounded-[8px] border border-ink-200 bg-white p-4">
+          <h3 className="text-[15px] font-bold text-ink-900">Country-pack document guidance</h3>
+          <p className="mt-2 text-[12px] leading-5 text-ink-500">
+            These placeholder categories guide upload selection only. They are not yet enforced as a final country-specific document set.
+          </p>
+          {loadingRequirements ? (
+            <p className="mt-4 text-[13px] text-ink-500">Loading document guidance...</p>
+          ) : (
+            <div className="mt-4 grid gap-3">
+              {documentDefinitions.map((definition) => {
+                const uploaded = documents.some((document) => document.type === definition.type);
+                return (
+                  <div key={definition.type} className="rounded-[8px] border border-ink-100 bg-ink-50 px-4 py-3">
+                    <div className="flex flex-wrap items-start justify-between gap-3">
+                      <div>
+                        <p className="text-[13px] font-semibold text-ink-800">{definition.label}</p>
+                        <p className="mt-1 text-[12px] text-ink-500">{definition.description}</p>
+                      </div>
+                      <span className={`rounded-full px-2.5 py-1 text-[11px] font-semibold ${
+                        uploaded ? 'bg-success-50 text-success-700' : 'bg-ink-100 text-ink-600'
+                      }`}>
+                        {uploaded ? 'Uploaded' : 'Guidance'}
+                      </span>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          )}
         </section>
 
         {error ? (
@@ -152,8 +212,8 @@ export function DocumentsVerificationStep({
                 disabled={uploading}
                 className="h-11 w-full rounded-[8px] border border-ink-200 bg-white px-3 text-[14px] text-ink-800 outline-none focus:border-primary"
               >
-                {DOCUMENT_TYPE_OPTIONS.map((option) => (
-                  <option key={option.value} value={option.value}>{option.label}</option>
+                {documentDefinitions.map((option) => (
+                  <option key={option.type} value={option.type}>{option.label}</option>
                 ))}
               </select>
             </label>
@@ -179,7 +239,7 @@ export function DocumentsVerificationStep({
             <Button
               type="button"
               onClick={() => void uploadDocument()}
-              disabled={uploading || !file || Boolean(resolvedSession?.redirectStep)}
+              disabled={uploading || loadingRequirements || !documentType || !file || Boolean(resolvedSession?.redirectStep)}
               className="rounded-[8px] bg-primary px-5 py-2.5 text-[14px] font-semibold text-white disabled:opacity-60"
             >
               {uploading ? 'Uploading...' : 'Upload document'}

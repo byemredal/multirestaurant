@@ -1,9 +1,10 @@
 'use client';
 
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Button, Card } from '@lieferzonen/ui';
 import {
   getTenantOnboardingReview,
+  saveTenantOnboardingConsents,
   submitTenantOnboardingByStateToken,
   type TenantOnboardingResolvedSession,
   type TenantOnboardingReviewBlockKey,
@@ -45,6 +46,7 @@ const MISSING_LABELS: Partial<Record<TenantOnboardingReviewBlockKey, string>> = 
   'plan-selection': 'Plan selection',
   'operations-info': 'Legacy operations information',
   documents: 'Required documents',
+  consents: 'Required acknowledgements',
 };
 
 function valueOrMissing(value: unknown) {
@@ -197,6 +199,8 @@ export function ReviewStep({
   const [review, setReview] = useState<TenantOnboardingReviewResult | null>(null);
   const [loadingReview, setLoadingReview] = useState(true);
   const [submitting, setSubmitting] = useState(false);
+  const [savingConsents, setSavingConsents] = useState(false);
+  const [selectedConsentKeys, setSelectedConsentKeys] = useState<string[]>([]);
   const [error, setError] = useState<string | null>(null);
   const runOnce = useOnboardingActionGuard();
   const copy = useMemo(() => getReviewCopy(resolvedSession?.countryPack), [resolvedSession?.countryPack]);
@@ -211,13 +215,13 @@ export function ReviewStep({
     navigateRef.current = onNavigate;
   }, [onNavigate]);
 
-  useEffect(() => {
+  const loadReview = useCallback(async () => {
     const requestSequence = requestSequenceRef.current + 1;
     requestSequenceRef.current = requestSequence;
     setLoadingReview(true);
     setError(null);
 
-    void getTenantOnboardingReview(workspace.stateToken)
+    await getTenantOnboardingReview(workspace.stateToken)
       .then((result) => {
         if (requestSequence !== requestSequenceRef.current) {
           return;
@@ -227,6 +231,11 @@ export function ReviewStep({
           return;
         }
         setReview(result);
+        setSelectedConsentKeys(
+          result.summary?.compliance.acceptedConsents
+            .filter((consent) => consent.accepted)
+            .map((consent) => consent.consentKey) ?? [],
+        );
       })
       .catch((caught: unknown) => {
         if (requestSequence === requestSequenceRef.current) {
@@ -239,6 +248,10 @@ export function ReviewStep({
         }
       });
   }, [workspace.stateToken]);
+
+  useEffect(() => {
+    void loadReview();
+  }, [loadReview]);
 
   function editStep(step?: TenantOnboardingSessionStepKey, returnToReview?: boolean) {
     if (step) {
@@ -262,6 +275,35 @@ export function ReviewStep({
       }
     });
   }
+
+  function toggleConsent(consentKey: string, checked: boolean) {
+    setSelectedConsentKeys((current) => (
+      checked
+        ? Array.from(new Set([...current, consentKey]))
+        : current.filter((key) => key !== consentKey)
+    ));
+  }
+
+  async function saveConsents() {
+    await runOnce(async () => {
+      setSavingConsents(true);
+      setError(null);
+      try {
+        await saveTenantOnboardingConsents(workspace.stateToken, selectedConsentKeys);
+        await loadReview();
+      } catch (caught) {
+        setError(caught instanceof Error ? caught.message : 'Acknowledgements could not be saved.');
+      } finally {
+        setSavingConsents(false);
+      }
+    });
+  }
+
+  const consentDefinitions = review?.summary?.compliance.acceptedConsents ?? [];
+  const requiredConsentKeys = consentDefinitions
+    .filter((consent) => consent.required)
+    .map((consent) => consent.consentKey);
+  const allRequiredConsentsSelected = requiredConsentKeys.every((key) => selectedConsentKeys.includes(key));
 
   return (
     <Card className="border-0 bg-white p-0 shadow-none">
@@ -302,6 +344,62 @@ export function ReviewStep({
                 ) : null}
               </div>
             ) : null}
+
+            <section className="rounded-[8px] border border-ink-200 bg-white p-4">
+              <div className="flex flex-wrap items-start justify-between gap-3">
+                <div>
+                  <h3 className="text-[15px] font-bold text-ink-900">Acknowledgements and consent</h3>
+                  <p className="mt-1 text-[12px] leading-5 text-ink-500">
+                    Placeholder wording for onboarding foundation only. Reviewed country-specific legal text will replace it before production use.
+                  </p>
+                </div>
+                <span className={`rounded-full px-2.5 py-1 text-[11px] font-semibold ${
+                  review?.missingRequiredBlocks.includes('consents')
+                    ? 'bg-amber-50 text-amber-700'
+                    : 'bg-success-50 text-success-700'
+                }`}>
+                  {review?.missingRequiredBlocks.includes('consents') ? 'Missing' : 'Complete'}
+                </span>
+              </div>
+              <div className="mt-4 grid gap-3">
+                {consentDefinitions.map((consent) => {
+                  const stored = consent.accepted;
+                  const checked = stored || selectedConsentKeys.includes(consent.consentKey);
+                  return (
+                    <label key={consent.consentKey} className="flex gap-3 rounded-[8px] border border-ink-100 bg-ink-50 px-4 py-3">
+                      <input
+                        type="checkbox"
+                        checked={checked}
+                        disabled={stored || savingConsents || submitting}
+                        onChange={(event) => toggleConsent(consent.consentKey, event.target.checked)}
+                        className="mt-1 h-4 w-4 accent-primary"
+                      />
+                      <span className="min-w-0">
+                        <span className="block text-[13px] font-semibold text-ink-800">{consent.label}</span>
+                        <span className="mt-1 block text-[12px] leading-5 text-ink-500">{consent.description}</span>
+                        {stored ? (
+                          <span className="mt-2 inline-flex rounded-full bg-success-50 px-2 py-0.5 text-[11px] font-semibold text-success-700">
+                            Accepted and saved
+                          </span>
+                        ) : null}
+                      </span>
+                    </label>
+                  );
+                })}
+              </div>
+              {review?.missingRequiredBlocks.includes('consents') ? (
+                <div className="mt-4 flex justify-end">
+                  <Button
+                    type="button"
+                    onClick={() => void saveConsents()}
+                    disabled={!allRequiredConsentsSelected || savingConsents || submitting}
+                    className="rounded-[8px] bg-primary px-5 py-2.5 text-[13px] font-semibold text-white disabled:opacity-60"
+                  >
+                    {savingConsents ? 'Saving...' : 'Save acknowledgements'}
+                  </Button>
+                </div>
+              ) : null}
+            </section>
 
             <div className="grid gap-4 md:grid-cols-2">
               {blocks.map((block) => {
@@ -352,6 +450,7 @@ export function ReviewStep({
         onPrimary={() => void submitApplication()}
         primaryDisabled={
           submitting ||
+          savingConsents ||
           loadingReview ||
           !review?.canSubmitForReview ||
           Boolean(resolvedSession?.redirectStep)

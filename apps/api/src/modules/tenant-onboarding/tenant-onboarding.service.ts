@@ -19,6 +19,7 @@ import {
   TenantOnboardingStepKey,
 } from './entities/tenant-onboarding.entity';
 import { TenantOnboardingStore } from './tenant-onboarding.store';
+import { getTenantOnboardingComplianceCatalog } from './tenant-onboarding-compliance-catalog';
 import { getTenantOnboardingPlanCatalog } from './tenant-onboarding-plan-catalog';
 import { CryptoUtil } from '../../common/utility/crypto-util';
 import {
@@ -837,6 +838,76 @@ export class TenantOnboardingService {
     };
   }
 
+  async getConsentsByStateToken(stateToken: string) {
+    const application = await this.resolveApplicationFromStateToken(stateToken);
+    const workspace = await this.getWorkspace(application.tenantAccountId);
+    const accessible = this.isWorkspaceStepCompleted(workspace, 'membership_plan');
+
+    if (!accessible) {
+      return {
+        stateToken: workspace.stateToken,
+        status: workspace.application.status,
+        redirectStep: this.getCurrentSessionStep(workspace),
+        countryPack: this.getCountryPackSnapshot(workspace),
+        documentRequirements: null,
+        consentDefinitions: [],
+        acceptedConsents: [],
+        missingRequiredConsentKeys: [],
+      };
+    }
+
+    return {
+      stateToken: workspace.stateToken,
+      status: workspace.application.status,
+      redirectStep: null,
+      countryPack: this.getCountryPackSnapshot(workspace),
+      ...(await this.buildComplianceSnapshot(workspace)),
+    };
+  }
+
+  async saveConsentsByStateToken(
+    stateToken: string,
+    input: Dto.SaveTenantOnboardingConsentsDto,
+  ) {
+    const application = await this.resolveApplicationFromStateToken(stateToken);
+    this.assertPhoneVerificationEditable(application.status);
+    const workspace = await this.getWorkspace(application.tenantAccountId);
+    if (!this.isWorkspaceStepCompleted(workspace, 'membership_plan')) {
+      return {
+        ...(await this.getConsentsByStateToken(workspace.stateToken)),
+        redirectStep: this.getCurrentSessionStep(workspace),
+      };
+    }
+
+    const dto = this.validateDto(Dto.SaveTenantOnboardingConsentsDto, input);
+    const countryPack = this.getCountryPackSnapshot(workspace);
+    const catalog = getTenantOnboardingComplianceCatalog(countryPack.country, countryPack.language);
+    const knownDefinitions = new Map(catalog.consents.map((definition) => [definition.consentKey, definition]));
+    const unknownKeys = dto.acceptedConsentKeys.filter((key) => !knownDefinitions.has(key));
+    if (unknownKeys.length > 0) {
+      throw new BadRequestException(`Unsupported onboarding consent: ${unknownKeys.join(', ')}.`);
+    }
+
+    await Promise.all(
+      dto.acceptedConsentKeys.map((key) => {
+        const definition = knownDefinitions.get(key)!;
+        return this.store.upsertConsentSnapshot(application.id, {
+          consentKey: definition.consentKey,
+          consentLabelSnapshot: definition.label,
+          documentCode: definition.documentCode,
+          documentVersion: definition.documentVersion,
+          language: definition.language,
+          accepted: true,
+          acceptedAt: new Date(),
+          ipAddress: null,
+          userAgent: null,
+        });
+      }),
+    );
+
+    return this.getConsentsByStateToken(workspace.stateToken);
+  }
+
   async getReviewByStateToken(stateToken: string) {
     const application = await this.resolveApplicationFromStateToken(stateToken);
     const workspace = await this.getWorkspace(application.tenantAccountId);
@@ -875,6 +946,8 @@ export class TenantOnboardingService {
     const operationComplete = this.isWorkspaceStepCompleted(workspace, 'operations_info');
     const documentsComplete =
       this.isWorkspaceStepCompleted(workspace, 'documents') && requiredDocuments.length > 0;
+    const compliance = await this.buildComplianceSnapshot(workspace);
+    const consentsComplete = compliance.missingRequiredConsentKeys.length === 0;
     const missingRequiredBlocks: string[] = [];
     const requireBlock = (ready: boolean, block: string) => {
       if (!ready) {
@@ -892,6 +965,7 @@ export class TenantOnboardingService {
     requireBlock(this.isWorkspaceStepCompleted(workspace, 'membership_plan'), 'plan-selection');
     requireBlock(operationComplete, 'operations-info');
     requireBlock(documentsComplete, 'documents');
+    requireBlock(consentsComplete, 'consents');
 
     return {
       stateToken: workspace.stateToken,
@@ -942,6 +1016,7 @@ export class TenantOnboardingService {
             version: document.version ?? null,
           })),
         },
+        compliance,
       },
     };
   }
@@ -1206,6 +1281,39 @@ export class TenantOnboardingService {
       country,
       language: country === 'CH' ? 'de-CH' : 'de-CH',
       currency: country === 'CH' ? 'CHF' : 'CHF',
+    };
+  }
+
+  private async buildComplianceSnapshot(
+    workspace: Awaited<ReturnType<TenantOnboardingService['getWorkspace']>>,
+  ) {
+    const countryPack = this.getCountryPackSnapshot(workspace);
+    const catalog = getTenantOnboardingComplianceCatalog(countryPack.country, countryPack.language);
+    const snapshots = await this.store.listConsentSnapshots(workspace.application.id);
+    const acceptedConsents = catalog.consents.map((definition) => {
+      const snapshot = snapshots.find(
+        (entry) =>
+          entry.consentKey === definition.consentKey &&
+          entry.documentVersion === definition.documentVersion &&
+          entry.accepted,
+      );
+      return {
+        ...definition,
+        accepted: Boolean(snapshot),
+        acceptedAt: snapshot?.acceptedAt ?? null,
+      };
+    });
+
+    return {
+      documentRequirements: {
+        definitions: catalog.documents,
+        validationPolicy: catalog.documentValidationPolicy,
+      },
+      consentDefinitions: catalog.consents,
+      acceptedConsents,
+      missingRequiredConsentKeys: acceptedConsents
+        .filter((consent) => consent.required && !consent.accepted)
+        .map((consent) => consent.consentKey),
     };
   }
 
@@ -2418,6 +2526,23 @@ export class TenantOnboardingService {
     const currentRequiredDocuments = documents.filter((document) => document.isCurrent && document.isRequired);
     if (currentRequiredDocuments.length === 0) {
       throw new BadRequestException('At least one required current document must be uploaded before submission.');
+    }
+    const businessInfo = await this.store.getBusinessDetail(applicationId);
+    const country = businessInfo?.country?.trim().toUpperCase() || 'CH';
+    const catalog = getTenantOnboardingComplianceCatalog(country, country === 'CH' ? 'de-CH' : 'de-CH');
+    const snapshots = await this.store.listConsentSnapshots(applicationId);
+    const missingRequiredConsent = catalog.consents.some(
+      (definition) =>
+        definition.required &&
+        !snapshots.some(
+          (snapshot) =>
+            snapshot.consentKey === definition.consentKey &&
+            snapshot.documentVersion === definition.documentVersion &&
+            snapshot.accepted,
+        ),
+    );
+    if (missingRequiredConsent) {
+      throw new BadRequestException('All required onboarding acknowledgements must be accepted before submission.');
     }
   }
 
