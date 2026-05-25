@@ -158,6 +158,20 @@ export const apiGroups: ApiGroup[] = [
         bodyFields: [{ key: 'planKey', label: 'planKey' }],
       },
       {
+        id: 'saveTenantOnboardingOperations',
+        method: 'POST',
+        path: '/v2/tenant/onboarding/:stateToken/operations',
+        pathParams: [{ key: 'stateToken', label: 'State token' }],
+        bodyFields: [
+          { key: 'primaryCity', label: 'primaryCity' },
+          { key: 'primaryPostalCode', label: 'primaryPostalCode' },
+          { key: 'deliveryModel', label: 'deliveryModel' },
+          { key: 'supportsPickup', label: 'supportsPickup (boolean)' },
+          { key: 'openingHoursSummary', label: 'openingHoursSummary (optional)' },
+          { key: 'estimatedGoLiveDate', label: 'estimatedGoLiveDate (optional ISO date)' },
+        ],
+      },
+      {
         id: 'getTenantOnboardingReview',
         method: 'GET',
         path: '/v2/tenant/onboarding/:stateToken/review',

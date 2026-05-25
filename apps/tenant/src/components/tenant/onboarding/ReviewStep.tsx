@@ -156,17 +156,25 @@ function buildBlocks(result: TenantOnboardingReviewResult): ReviewBlock[] {
       ],
     },
     {
-      key: 'remaining-requirements',
-      title: 'Documents and remaining requirements',
-      editStep: result.editSteps.documents,
-      missingKeys: ['operations-info', 'documents'],
+      key: 'operations-info',
+      title: 'Operational setup',
+      editStep: result.editSteps.operations,
+      missingKeys: ['operations-info'],
       rows: [
         {
-          label: 'Legacy operations information',
+          label: 'Operations information',
           value: summary.legacyRequirements.operationsComplete ? 'Complete' : null,
         },
+      ],
+    },
+    {
+      key: 'documents',
+      title: 'Required documents',
+      editStep: result.editSteps.documents,
+      missingKeys: ['documents'],
+      rows: [
         {
-          label: 'Required documents',
+          label: 'Current required files',
           value: summary.legacyRequirements.documentsComplete
             ? `${summary.legacyRequirements.requiredDocuments.length} uploaded`
             : null,
@@ -286,7 +294,7 @@ export function ReviewStep({
                 <p className="mt-1">{missingLabels.join(', ')}</p>
                 {review?.missingRequiredBlocks.includes('operations-info') ? (
                   <p className="mt-2">
-                    Legacy operations information is still enforced by the existing submission lifecycle and has not yet been migrated into a V2 custom page.
+                    Add operational setup information before submission.
                   </p>
                 ) : null}
               </div>

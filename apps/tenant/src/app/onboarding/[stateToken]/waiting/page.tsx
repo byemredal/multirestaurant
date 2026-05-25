@@ -11,7 +11,6 @@ import {
 import { getTenantOnboardingResumeUrl } from '@/components/tenant/onboarding/onboarding-routing';
 import {
   clearOnboardingStateToken,
-  writeOnboardingStateToken,
 } from '@/lib/storage/tenant-session';
 
 type WaitingCopy = {
@@ -73,13 +72,22 @@ export default function TenantOnboardingWaitingPage() {
         if (cancelled) {
           return;
         }
-        writeOnboardingStateToken(nextWorkspace.stateToken);
-        const resumeUrl = getTenantOnboardingResumeUrl(nextWorkspace);
+        // This compatibility alias is read-only. Keep the route token stable
+        // instead of persisting a refreshed token from a workspace read.
+        const stableWorkspace = {
+          ...nextWorkspace,
+          stateToken,
+          application: {
+            ...nextWorkspace.application,
+            stateToken,
+          },
+        };
+        const resumeUrl = getTenantOnboardingResumeUrl(stableWorkspace);
         if (!resumeUrl.endsWith('/waiting')) {
           router.replace(resumeUrl);
           return;
         }
-        setWorkspace(nextWorkspace);
+        setWorkspace(stableWorkspace);
       })
       .catch(() => {
         if (!cancelled) {

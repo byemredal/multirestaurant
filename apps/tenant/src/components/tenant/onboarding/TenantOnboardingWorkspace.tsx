@@ -11,9 +11,11 @@ import { BillingAddressStep } from '@/components/tenant/onboarding/BillingAddres
 import { BusinessDetailsStep } from '@/components/tenant/onboarding/BusinessDetailsStep';
 import { LocationSearchStep } from '@/components/tenant/onboarding/LocationSearchStep';
 import { OtpVerificationStep } from '@/components/tenant/onboarding/OtpVerificationStep';
+import { OperationsStep } from '@/components/tenant/onboarding/OperationsStep';
 import { PhoneVerificationStep } from '@/components/tenant/onboarding/PhoneVerificationStep';
 import { PlanSelectionStep } from '@/components/tenant/onboarding/PlanSelectionStep';
 import { ReviewStep } from '@/components/tenant/onboarding/ReviewStep';
+import { SubmittedStep } from '@/components/tenant/onboarding/SubmittedStep';
 import { TenantContinuationBanner } from '@/components/tenant/onboarding/TenantContinuationBanner';
 import { TenantOnboardingStepPanel } from '@/components/tenant/onboarding/TenantOnboardingStepPanel';
 import { WelcomeStep } from '@/components/tenant/onboarding/WelcomeStep';
@@ -31,13 +33,6 @@ import {
   tenantOnboardingWorkflowSteps,
   type TenantOnboardingWorkflowStepKey,
 } from './onboarding-routing';
-
-function getLegacyRenderableStep(
-  step: TenantOnboardingWorkflowStepKey,
-): TenantOnboardingWorkflowStepKey {
-  if (step === 'submitted') return 'waiting';
-  return step;
-}
 
 export default function TenantOnboardingWorkspace({
   initialStep,
@@ -78,7 +73,7 @@ export default function TenantOnboardingWorkspace({
       'phone-verification',
     [initialStep, requestedStep, resolvedSession?.requestedStep],
   );
-  const activeStep = useMemo(() => getLegacyRenderableStep(requestedWorkflowStep), [requestedWorkflowStep]);
+  const activeStep = requestedWorkflowStep;
 
   const replaceRoute = useCallback((url: string) => {
     if (pathname === url || lastRedirectTargetRef.current === url) {
@@ -109,7 +104,7 @@ export default function TenantOnboardingWorkspace({
     }
 
     const resumeUrl = getTenantOnboardingResumeUrl(workspace);
-    if (resumeUrl === '/dashboard' || resumeUrl.endsWith('/waiting')) {
+    if (resumeUrl === '/dashboard' || resumeUrl.endsWith('/submitted')) {
       replaceRoute(resumeUrl);
     }
   }, [replaceRoute, workspace]);
@@ -186,7 +181,7 @@ export default function TenantOnboardingWorkspace({
     {
       title: 'Isletme detaylari',
       description: 'Konum, isletme, banka ve paket bilgileri.',
-      steps: ['location', 'address', 'business-details', 'authorized-person', 'bank-details', 'billing-address', 'plan-selection'],
+      steps: ['location', 'address', 'business-details', 'authorized-person', 'bank-details', 'billing-address', 'plan-selection', 'operations'],
     },
     {
       title: 'Isletme dogrulama',
@@ -226,7 +221,7 @@ export default function TenantOnboardingWorkspace({
     return { completed, total: steps.length };
   };
 
-  if (loading || resolvedSession?.redirectStep || activeStep === 'waiting') {
+  if (loading || resolvedSession?.redirectStep) {
     return (
       <div className="flex min-h-screen items-center justify-center bg-primary-50">
         <span className="h-8 w-8 animate-spin rounded-full border-2 border-primary border-t-transparent" />
@@ -553,12 +548,24 @@ export default function TenantOnboardingWorkspace({
                     onNavigate={navigateToUrl}
                     onWorkspaceResolved={applyMutationWorkspace}
                   />
+                ) : requestedWorkflowStep === 'operations' ? (
+                  <OperationsStep
+                    resolvedSession={resolvedSession}
+                    workspace={workspace}
+                    onNavigate={navigateToUrl}
+                    onWorkspaceResolved={applyMutationWorkspace}
+                  />
                 ) : requestedWorkflowStep === 'review' ? (
                   <ReviewStep
                     resolvedSession={resolvedSession}
                     workspace={workspace}
                     onNavigate={navigateToUrl}
                     onWorkspaceResolved={applyMutationWorkspace}
+                  />
+                ) : requestedWorkflowStep === 'submitted' ? (
+                  <SubmittedStep
+                    resolvedSession={resolvedSession}
+                    workspace={workspace}
                   />
                 ) : (
                   <TenantOnboardingStepPanel

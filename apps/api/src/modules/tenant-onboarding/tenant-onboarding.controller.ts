@@ -246,6 +246,16 @@ export class TenantOnboardingController {
   }
 
   @Public()
+  @Post(':stateToken/operations')
+  @ApiOperation({ summary: 'Save and complete the V2 onboarding operations requirements step.' })
+  saveOperations(
+    @Param('stateToken') stateToken: string,
+    @Body() dto: Dto.UpdateTenantOperationsInfoDto,
+  ) {
+    return this.onboardingService.saveOperationsByStateToken(stateToken, dto);
+  }
+
+  @Public()
   @Get(':stateToken/review')
   @ApiOperation({ summary: 'Get the V2 onboarding review summary before submission.' })
   getReview(@Param('stateToken') stateToken: string) {

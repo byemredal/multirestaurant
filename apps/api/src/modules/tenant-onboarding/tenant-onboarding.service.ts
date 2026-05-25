@@ -58,6 +58,7 @@ type OnboardingSessionStepKey =
   | 'bank-details'
   | 'billing-address'
   | 'plan-selection'
+  | 'operations'
   | 'verification'
   | 'review'
   | 'submitted';
@@ -73,6 +74,7 @@ const ONBOARDING_SESSION_STEP_ORDER: OnboardingSessionStepKey[] = [
   'bank-details',
   'billing-address',
   'plan-selection',
+  'operations',
   'verification',
   'review',
   'submitted',
@@ -89,6 +91,7 @@ const ONBOARDING_SESSION_STEP_ALIASES: Record<string, OnboardingSessionStepKey> 
   'bank-details': 'bank-details',
   'billing-address': 'billing-address',
   'plan-selection': 'plan-selection',
+  operations: 'operations',
   verification: 'verification',
   review: 'review',
   submitted: 'submitted',
@@ -96,7 +99,7 @@ const ONBOARDING_SESSION_STEP_ALIASES: Record<string, OnboardingSessionStepKey> 
   'business-info': 'location',
   'legal-tax-info': 'business-details',
   'owner-contact-info': 'authorized-person',
-  'operations-info': 'plan-selection',
+  'operations-info': 'operations',
   documents: 'verification',
   'final-review': 'review',
 };
@@ -793,6 +796,47 @@ export class TenantOnboardingService {
     };
   }
 
+  async saveOperationsByStateToken(
+    stateToken: string,
+    input: Dto.UpdateTenantOperationsInfoDto,
+  ) {
+    const application = await this.resolveApplicationFromStateToken(stateToken);
+    this.assertPhoneVerificationEditable(application.status);
+    const workspaceBefore = await this.getWorkspace(application.tenantAccountId);
+    if (!this.isWorkspaceStepCompleted(workspaceBefore, 'membership_plan')) {
+      const redirectStep = this.getCurrentSessionStep(workspaceBefore);
+      return {
+        stateToken: workspaceBefore.stateToken,
+        nextStep: redirectStep,
+        redirectStep,
+        session: await this.resolveSessionByStateToken(workspaceBefore.stateToken, 'operations'),
+        workspace: workspaceBefore,
+      };
+    }
+
+    const dto = this.validateDto(Dto.UpdateTenantOperationsInfoDto, input);
+    await this.store.upsertOperationsProfile(application.id, {
+      primaryCity: dto.primaryCity.trim(),
+      primaryPostalCode: dto.primaryPostalCode.trim(),
+      deliveryModel: dto.deliveryModel.trim(),
+      supportsPickup: dto.supportsPickup,
+      openingHoursSummary: dto.openingHoursSummary?.trim() || null,
+      estimatedGoLiveDate: dto.estimatedGoLiveDate ? new Date(dto.estimatedGoLiveDate) : null,
+    });
+    await this.assertStepReadyForCompletion(application.id, 'operations_info');
+    await this.store.upsertStepProgress(application.id, 'operations_info', 'completed');
+
+    const workspace = await this.getWorkspace(application.tenantAccountId);
+    const nextStep = this.isWorkspaceStepCompleted(workspace, 'documents') ? 'review' : 'verification';
+    return {
+      stateToken: workspace.stateToken,
+      nextStep,
+      redirectStep: null,
+      session: await this.resolveSessionByStateToken(workspace.stateToken, nextStep),
+      workspace,
+    };
+  }
+
   async getReviewByStateToken(stateToken: string) {
     const application = await this.resolveApplicationFromStateToken(stateToken);
     const workspace = await this.getWorkspace(application.tenantAccountId);
@@ -865,6 +909,7 @@ export class TenantOnboardingService {
         bankDetails: 'bank-details',
         billingAddress: 'billing-address',
         planSelection: 'plan-selection',
+        operations: 'operations',
         documents: 'verification',
       },
       summary: {
@@ -1065,6 +1110,10 @@ export class TenantOnboardingService {
       allowed.add('plan-selection');
     }
 
+    if (this.isWorkspaceStepCompleted(workspace, 'membership_plan')) {
+      allowed.add('operations');
+    }
+
     if (
       this.isWorkspaceStepCompleted(workspace, 'operations_info') ||
       this.isWorkspaceStepCompleted(workspace, 'membership_plan')
@@ -1119,6 +1168,10 @@ export class TenantOnboardingService {
       completed.add('plan-selection');
     }
 
+    if (this.isWorkspaceStepCompleted(workspace, 'operations_info')) {
+      completed.add('operations');
+    }
+
     if (this.isWorkspaceStepCompleted(workspace, 'documents')) {
       completed.add('verification');
     }
@@ -1168,6 +1221,7 @@ export class TenantOnboardingService {
       'bank-details': 'bank_details',
       'billing-address': 'billing_address',
       'plan-selection': 'membership_plan',
+      operations: 'operations_info',
       verification: 'documents',
       review: 'final_review',
     };

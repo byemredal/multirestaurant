@@ -199,3 +199,29 @@ export function getReviewCopy(countryPack?: TenantOnboardingCountryPack) {
         : 'Legal wording is placeholder copy pending country review.',
   };
 }
+
+export function getOperationsCopy(countryPack?: TenantOnboardingCountryPack) {
+  const country = countryPack?.country ?? 'CH';
+
+  return {
+    title: 'Operational setup',
+    helperText: 'Add the minimum operating details required before documents and final submission.',
+    note:
+      country === 'CH'
+        ? 'Operational requirements are placeholder configuration for Switzerland onboarding and will be refined with the country pack.'
+        : 'Operational requirements will be refined by the selected country pack.',
+    deliveryModels: [
+      { value: 'platform_fleet', label: 'Marketplace delivery support' },
+      { value: 'own_fleet', label: 'Own delivery operation' },
+      { value: 'pickup_only', label: 'Pickup only' },
+    ],
+  };
+}
+
+export function getSubmittedCopy() {
+  return {
+    title: 'Application submitted',
+    body: 'Your application has been received and is ready for review. We will update you when its status changes.',
+    note: 'Review timing and any follow-up requirements depend on the application review process.',
+  };
+}

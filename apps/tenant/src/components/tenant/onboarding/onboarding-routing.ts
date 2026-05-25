@@ -14,6 +14,7 @@ export type TenantOnboardingCanonicalStepKey =
   | 'bank-details'
   | 'billing-address'
   | 'plan-selection'
+  | 'operations'
   | 'review'
   | 'submitted';
 
@@ -48,6 +49,7 @@ export const tenantOnboardingCanonicalSteps = [
   'bank-details',
   'billing-address',
   'plan-selection',
+  'operations',
   'review',
   'submitted',
 ] as const satisfies readonly TenantOnboardingCanonicalStepKey[];
@@ -117,6 +119,12 @@ export const tenantOnboardingWorkflowSteps: readonly TenantOnboardingWorkflowSte
     title: 'Paket secimi',
     description: 'Baslangic paketini secin.',
     backendStep: 'membership_plan',
+  },
+  {
+    key: 'operations',
+    title: 'Operasyon',
+    description: 'Teslimat ve faaliyete baslama detaylari.',
+    backendStep: 'operations_info',
   },
   {
     key: 'verification',
@@ -189,7 +197,7 @@ export function getTenantOnboardingAccessibleStepKeys(workspace: TenantOnboardin
       return true;
     }
 
-    if (stepKey === 'review') {
+    if (stepKey === 'operations' || stepKey === 'verification' || stepKey === 'review') {
       return isBackendStepCompleted(workspace, 'membership_plan');
     }
 
@@ -242,7 +250,7 @@ const workflowStepByBackendStep: Partial<
   bank_details: 'bank-details',
   billing_address: 'billing-address',
   membership_plan: 'plan-selection',
-  operations_info: 'plan-selection',
+  operations_info: 'operations',
   documents: 'verification',
   final_review: 'review',
 };
@@ -262,6 +270,7 @@ export const tenantOnboardingWorkflowStepBySlug: Record<
   'bank-details': 'bank-details',
   'billing-address': 'billing-address',
   'plan-selection': 'plan-selection',
+  operations: 'operations',
   review: 'review',
   submitted: 'submitted',
   waiting: 'waiting',
@@ -269,7 +278,7 @@ export const tenantOnboardingWorkflowStepBySlug: Record<
   'business-info': 'location',
   'legal-tax-info': 'business-details',
   'owner-contact-info': 'authorized-person',
-  'operations-info': 'plan-selection',
+  'operations-info': 'operations',
   documents: 'verification',
   'final-review': 'review',
 };
@@ -305,11 +314,7 @@ export function getTenantOnboardingStepUrl(
   stateToken: string,
   stepKey: TenantOnboardingWorkflowStepKey | string,
 ) {
-  // `submitted` is the V2 canonical terminal step. The legacy route that
-  // renders the waiting/status page is still `/waiting`; keep the URL bridge
-  // here until the custom submitted page lands.
-  const urlStep = stepKey === 'submitted' ? 'waiting' : stepKey;
-  return `/onboarding/${encodeURIComponent(stateToken)}/${urlStep}`;
+  return `/onboarding/${encodeURIComponent(stateToken)}/${stepKey}`;
 }
 
 export function getNextTenantOnboardingStepKey(stepKey: TenantOnboardingWorkflowStepKey) {
@@ -330,7 +335,7 @@ export function getTenantOnboardingResumeUrl(workspace: TenantOnboardingWorkspac
   }
 
   if (status === 'submitted' || status === 'under_review' || status === 'rejected' || status === 'suspended') {
-    return `/onboarding/${encodeURIComponent(workspace.stateToken)}/waiting`;
+    return getTenantOnboardingStepUrl(workspace.stateToken, 'submitted');
   }
 
   return getTenantOnboardingStepUrl(

@@ -195,6 +195,7 @@ export type TenantOnboardingSessionStepKey =
   | 'bank-details'
   | 'billing-address'
   | 'plan-selection'
+  | 'operations'
   | 'verification'
   | 'review'
   | 'submitted';
@@ -838,6 +839,44 @@ export async function saveTenantOnboardingPlanSelection(
       if (Array.isArray(payload?.errors) && payload.errors.length > 0) {
         message = payload.errors.join(', ');
       } else if (Array.isArray(payload?.message) && payload.message.length > 0) {
+        message = payload.message.join(', ');
+      } else if (typeof payload?.message === 'string' && payload.message.length > 0) {
+        message = payload.message;
+      }
+    } catch {
+      // Keep fallback.
+    }
+    throw new Error(message);
+  }
+
+  return (await response.json()) as {
+    stateToken: string;
+    nextStep: TenantOnboardingSessionStepKey;
+    redirectStep: TenantOnboardingSessionStepKey | null;
+    session?: TenantOnboardingResolvedSession;
+    workspace: TenantOnboardingWorkspace;
+  };
+}
+
+export async function saveTenantOnboardingOperations(
+  stateToken: string,
+  input: TenantOperationsInfoInput,
+) {
+  const response = await fetch(
+    `${apiBaseUrl}/v2/tenant/onboarding/${encodeURIComponent(stateToken)}/operations`,
+    {
+      body: JSON.stringify(input),
+      credentials: 'include',
+      headers: { 'Content-Type': 'application/json' },
+      method: 'POST',
+    },
+  );
+
+  if (!response.ok) {
+    let message = `tenant_onboarding_operations_failed_${response.status}`;
+    try {
+      const payload = await response.json();
+      if (Array.isArray(payload?.message) && payload.message.length > 0) {
         message = payload.message.join(', ');
       } else if (typeof payload?.message === 'string' && payload.message.length > 0) {
         message = payload.message;
