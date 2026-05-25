@@ -29,6 +29,7 @@ type ReviewBlock = {
   key: TenantOnboardingReviewBlockKey | 'remaining-requirements';
   title: string;
   editStep?: TenantOnboardingSessionStepKey;
+  returnToReview?: boolean;
   missingKeys: TenantOnboardingReviewBlockKey[];
   rows: ReviewRow[];
 };
@@ -171,6 +172,7 @@ function buildBlocks(result: TenantOnboardingReviewResult): ReviewBlock[] {
       key: 'documents',
       title: 'Required documents',
       editStep: result.editSteps.documents,
+      returnToReview: true,
       missingKeys: ['documents'],
       rows: [
         {
@@ -238,9 +240,10 @@ export function ReviewStep({
       });
   }, [workspace.stateToken]);
 
-  function editStep(step?: TenantOnboardingSessionStepKey) {
+  function editStep(step?: TenantOnboardingSessionStepKey, returnToReview?: boolean) {
     if (step) {
-      onNavigate(getTenantOnboardingStepUrl(workspace.stateToken, step));
+      const url = getTenantOnboardingStepUrl(workspace.stateToken, step);
+      onNavigate(returnToReview ? `${url}?returnTo=review` : url);
     }
   }
 
@@ -318,7 +321,7 @@ export function ReviewStep({
                         <Button
                           type="button"
                           variant="outline"
-                          onClick={() => editStep(block.editStep)}
+                          onClick={() => editStep(block.editStep, block.returnToReview)}
                           disabled={submitting}
                           className="rounded-[8px] px-3 py-2 text-[12px] font-semibold"
                         >

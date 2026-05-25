@@ -22,13 +22,12 @@ The V2 flow now exposes `/onboarding/:stateToken/operations` as a custom page:
 
 ## Documents decision
 
-Required documents remain enforced by the existing submit lifecycle. This slice keeps the working `verification` upload path as a deliberate legacy bridge:
+Required documents remain enforced by the existing submit lifecycle. Slice 10.1 replaces the canonical legacy panel rendering with the custom `DocumentsVerificationStep` on `/verification`, while reusing the existing `TenantDocument` persistence and upload endpoint.
 
 - Review displays missing required documents explicitly.
-- The Documents edit action routes to `/verification`.
+- The Documents edit action routes to `/verification?returnTo=review`.
 - Session access permits `/verification` after plan selection, without completing or bypassing documents.
-
-A dedicated V2 document page remains a future migration.
+- Old aliases may still normalize to the canonical verification route, but canonical verification no longer renders through `TenantOnboardingStepPanel`.
 
 ## Submitted route
 
@@ -47,6 +46,6 @@ Review submission continues to call the existing safe `POST /v2/tenant/onboardin
 
 ## Remaining work
 
-- Replace the legacy `verification` document bridge with a V2 custom upload page when its document policy is finalized.
+- Define reviewed country-specific document and consent requirements; this slice does not create consent persistence.
 - Expand country packs with reviewed operational and completion copy.
-- Add end-to-end browser coverage for complete submit and revision lifecycles.
+- Extend the bounded submit smoke to cover revision-requested and resubmission lifecycles.

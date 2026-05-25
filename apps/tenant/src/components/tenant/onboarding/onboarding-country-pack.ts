@@ -225,3 +225,19 @@ export function getSubmittedCopy() {
     note: 'Review timing and any follow-up requirements depend on the application review process.',
   };
 }
+
+export function getDocumentsVerificationCopy(countryPack?: TenantOnboardingCountryPack) {
+  const country = countryPack?.country ?? 'CH';
+
+  return {
+    title: 'Documents and verification',
+    helperText: 'Upload at least one current required document so the application can be submitted for review.',
+    countryNote:
+      country === 'CH'
+        ? 'Document categories and consent wording are placeholder configuration pending Switzerland-specific review.'
+        : 'Document categories and consent wording will be configured by the selected country pack.',
+    requirement: 'At least one current required document',
+    reviewNote:
+      'Uploaded documents remain subject to review. Formal consent capture is not introduced in this slice.',
+  };
+}

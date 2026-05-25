@@ -9,6 +9,7 @@ import { AuthorizedPersonStep } from '@/components/tenant/onboarding/AuthorizedP
 import { BankDetailsStep } from '@/components/tenant/onboarding/BankDetailsStep';
 import { BillingAddressStep } from '@/components/tenant/onboarding/BillingAddressStep';
 import { BusinessDetailsStep } from '@/components/tenant/onboarding/BusinessDetailsStep';
+import { DocumentsVerificationStep } from '@/components/tenant/onboarding/DocumentsVerificationStep';
 import { LocationSearchStep } from '@/components/tenant/onboarding/LocationSearchStep';
 import { OtpVerificationStep } from '@/components/tenant/onboarding/OtpVerificationStep';
 import { OperationsStep } from '@/components/tenant/onboarding/OperationsStep';
@@ -84,9 +85,7 @@ export default function TenantOnboardingWorkspace({
   }, [pathname, router]);
 
   useEffect(() => {
-    if (lastRedirectTargetRef.current === pathname) {
-      lastRedirectTargetRef.current = null;
-    }
+    lastRedirectTargetRef.current = null;
   }, [pathname]);
 
   useEffect(() => {
@@ -550,6 +549,13 @@ export default function TenantOnboardingWorkspace({
                   />
                 ) : requestedWorkflowStep === 'operations' ? (
                   <OperationsStep
+                    resolvedSession={resolvedSession}
+                    workspace={workspace}
+                    onNavigate={navigateToUrl}
+                    onWorkspaceResolved={applyMutationWorkspace}
+                  />
+                ) : requestedWorkflowStep === 'verification' ? (
+                  <DocumentsVerificationStep
                     resolvedSession={resolvedSession}
                     workspace={workspace}
                     onNavigate={navigateToUrl}
