@@ -1,5 +1,6 @@
 import { ConflictException, Injectable, NotFoundException } from '@nestjs/common';
 import { randomUUID } from 'crypto';
+import { assertStoreAccess } from '../../common/security/store-scope';
 import { DatabaseService } from '../../database/database.service';
 import { DeliveryCoverageSyncService } from '../discovery/delivery-coverage-sync.service';
 import {
@@ -212,6 +213,16 @@ export class StoresService {
     if (!store) {
       throw new NotFoundException('Store could not be found for this tenant.');
     }
+    // The controller is currently @AuthTypes('tenant'), so findOwnedStore
+    // already enforces tenant ownership via its WHERE clause. The explicit
+    // assertStoreAccess call below makes the security contract visible at
+    // the service-layer seam and is ready for the next slice that opens
+    // store-scoped writes to staff identities — see common/security/store-scope.
+    assertStoreAccess({
+      user: { id: ownerTenantId, email: '', type: 'tenant' },
+      ownerTenantId: store.ownerTenantId,
+      storeId,
+    });
 
     const nextSlug =
       dto.slug && dto.slug !== store.slug

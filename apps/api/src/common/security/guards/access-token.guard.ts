@@ -9,6 +9,7 @@ import { Reflector } from '@nestjs/core';
 import { Request } from 'express';
 import { AuthService } from '../../../modules/auth/auth.service';
 import { AdminAuthService } from '../../../modules/admin-auth/admin-auth.service';
+import { StaffAuthService } from '../../../modules/staff-auth/staff-auth.service';
 import { TenantsService } from '../../../modules/tenants/tenants.service';
 import { AuthenticatedRequest } from '../../types/authenticated-request.interface';
 import { AuthSubjectType } from '../auth-subject.type';
@@ -24,6 +25,7 @@ export class AccessTokenGuard implements CanActivate {
     private readonly authService: AuthService,
     private readonly adminAuthService: AdminAuthService,
     private readonly tenantsService: TenantsService,
+    private readonly staffAuthService: StaffAuthService,
     private readonly securityLogger: SecurityLoggerService,
   ) {}
 
@@ -113,18 +115,30 @@ export class AccessTokenGuard implements CanActivate {
     }
 
     if (payload.type === 'staff') {
-      // Staff is structurally a first-class subject after MR-ARCH-02 (see
-      // auth-subject.type.ts), but the staff login controller + validator
-      // lands in a follow-up slice. Fail closed for now so no token
-      // accidentally satisfies a route while staff auth is unimplemented.
-      this.securityLogger.logUnauthorized({
-        path: request.originalUrl,
-        method: request.method,
-        ip: request.ip,
-        tokenType: payload.type,
-        reason: 'staff_auth_not_yet_wired',
-      });
-      throw new UnauthorizedException('Staff authentication is not yet available.');
+      const session = await this.staffAuthService.validateStaff(payload.sub);
+      if (!session) {
+        this.securityLogger.logUnauthorized({
+          path: request.originalUrl,
+          method: request.method,
+          ip: request.ip,
+          tokenType: payload.type,
+          reason: 'inactive_or_missing_staff_or_membership',
+        });
+        throw new UnauthorizedException('Authenticated account is inactive or missing.');
+      }
+
+      // staffStoreScope is derived server-side from active StaffMembership
+      // rows. The JWT may carry a `storeScope` claim, but the guard ALWAYS
+      // overrides it with the live DB value so a stolen or stale token cannot
+      // widen scope. This is what makes membership revocation effective on
+      // the very next request, not on the next access-token rotation.
+      request.user = {
+        id: session.account.id,
+        email: session.account.email,
+        type: 'staff',
+        staffStoreScope: [...session.storeScope],
+      };
+      return true;
     }
 
     const admin = await this.adminAuthService.validateAdmin(payload.sub);
