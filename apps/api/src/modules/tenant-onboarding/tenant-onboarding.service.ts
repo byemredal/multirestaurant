@@ -793,6 +793,114 @@ export class TenantOnboardingService {
     };
   }
 
+  async getReviewByStateToken(stateToken: string) {
+    const application = await this.resolveApplicationFromStateToken(stateToken);
+    const workspace = await this.getWorkspace(application.tenantAccountId);
+    const countryPack = this.getCountryPackSnapshot(workspace);
+    const accessible = this.isWorkspaceStepCompleted(workspace, 'membership_plan');
+    const redirectStep = accessible ? null : this.getCurrentSessionStep(workspace);
+
+    if (!accessible) {
+      return {
+        stateToken: workspace.stateToken,
+        status: workspace.application.status,
+        redirectStep,
+        countryPack,
+        canSubmitForReview: false,
+        missingRequiredBlocks: ['plan-selection'],
+        editSteps: {},
+        summary: null,
+      };
+    }
+
+    const businessInfo = this.getWorkspaceStepData(workspace, 'business_info');
+    const legalTaxInfo = this.getWorkspaceStepData(workspace, 'legal_tax_info');
+    const ownerContactInfo = this.getWorkspaceStepData(workspace, 'owner_contact_info');
+    const bankDetails = this.getWorkspaceStepData(workspace, 'bank_details');
+    const billingAddress = this.getWorkspaceStepData(workspace, 'billing_address');
+    const planSelection = this.getWorkspaceStepData(workspace, 'membership_plan');
+    const operationsInfo = this.getWorkspaceStepData(workspace, 'operations_info');
+    const documents = (workspace.steps.find((step) => step.stepKey === 'documents')?.data ?? []) as Array<{
+      type?: string;
+      status?: string;
+      isRequired?: boolean;
+      isCurrent?: boolean;
+      version?: number;
+    }>;
+    const requiredDocuments = documents.filter((document) => document.isCurrent && document.isRequired);
+    const operationComplete = this.isWorkspaceStepCompleted(workspace, 'operations_info');
+    const documentsComplete =
+      this.isWorkspaceStepCompleted(workspace, 'documents') && requiredDocuments.length > 0;
+    const missingRequiredBlocks: string[] = [];
+    const requireBlock = (ready: boolean, block: string) => {
+      if (!ready) {
+        missingRequiredBlocks.push(block);
+      }
+    };
+
+    requireBlock(Boolean(workspace.phoneVerification?.verified), 'phone-verification');
+    requireBlock(Boolean(workspace.locationSelection?.locationLabel?.trim()), 'location');
+    requireBlock(this.isWorkspaceStepCompleted(workspace, 'business_info'), 'address');
+    requireBlock(this.isWorkspaceStepCompleted(workspace, 'legal_tax_info'), 'business-details');
+    requireBlock(this.isWorkspaceStepCompleted(workspace, 'owner_contact_info'), 'authorized-person');
+    requireBlock(this.isWorkspaceStepCompleted(workspace, 'bank_details'), 'bank-details');
+    requireBlock(this.isWorkspaceStepCompleted(workspace, 'billing_address'), 'billing-address');
+    requireBlock(this.isWorkspaceStepCompleted(workspace, 'membership_plan'), 'plan-selection');
+    requireBlock(operationComplete, 'operations-info');
+    requireBlock(documentsComplete, 'documents');
+
+    return {
+      stateToken: workspace.stateToken,
+      status: workspace.application.status,
+      redirectStep: null,
+      countryPack,
+      canSubmitForReview: workspace.canSubmitForReview,
+      missingRequiredBlocks,
+      editSteps: {
+        phone: 'phone-verification',
+        location: 'location',
+        address: 'address',
+        businessDetails: 'business-details',
+        authorizedPerson: 'authorized-person',
+        bankDetails: 'bank-details',
+        billingAddress: 'billing-address',
+        planSelection: 'plan-selection',
+        documents: 'verification',
+      },
+      summary: {
+        phoneVerification: {
+          verified: Boolean(workspace.phoneVerification?.verified),
+          maskedPhoneNumber: workspace.phoneVerification?.maskedPhoneNumber ?? null,
+          verifiedAt: workspace.phoneVerification?.verifiedAt ?? null,
+        },
+        locationSelection: workspace.locationSelection ?? null,
+        businessInfo,
+        legalTaxInfo,
+        ownerContactInfo,
+        bankDetails: bankDetails
+          ? {
+              bankName: bankDetails.bankName ?? null,
+              accountHolderName: bankDetails.accountHolderName ?? null,
+              maskedIban: this.maskIbanForReview(String(bankDetails.iban ?? '')),
+              currency: bankDetails.currency ?? null,
+            }
+          : null,
+        billingAddress,
+        planSelection,
+        legacyRequirements: {
+          operationsComplete: operationComplete,
+          operationsInfo,
+          documentsComplete,
+          requiredDocuments: requiredDocuments.map((document) => ({
+            type: document.type ?? null,
+            status: document.status ?? null,
+            version: document.version ?? null,
+          })),
+        },
+      },
+    };
+  }
+
   async sendContinueLinkByStateToken(stateToken: string) {
     const workspace = await this.resolveStateToken(stateToken);
     const tenant = await this.tenantAccountsStore.findById(workspace.application.tenantAccountId);
@@ -957,7 +1065,10 @@ export class TenantOnboardingService {
       allowed.add('plan-selection');
     }
 
-    if (this.isWorkspaceStepCompleted(workspace, 'operations_info')) {
+    if (
+      this.isWorkspaceStepCompleted(workspace, 'operations_info') ||
+      this.isWorkspaceStepCompleted(workspace, 'membership_plan')
+    ) {
       allowed.add('verification');
     }
 
@@ -1080,6 +1191,24 @@ export class TenantOnboardingService {
     return backendStep
       ? workspace.steps.find((entry) => entry.stepKey === backendStep)?.data ?? null
       : null;
+  }
+
+  private getWorkspaceStepData(
+    workspace: Awaited<ReturnType<TenantOnboardingService['getWorkspace']>>,
+    stepKey: TenantOnboardingStepKey,
+  ) {
+    return (workspace.steps.find((entry) => entry.stepKey === stepKey)?.data ?? null) as
+      | Record<string, unknown>
+      | null;
+  }
+
+  private maskIbanForReview(iban: string) {
+    const normalized = iban.replace(/\s+/g, '').toUpperCase();
+    if (normalized.length <= 4) {
+      return normalized || null;
+    }
+
+    return `${normalized.slice(0, 4)} ${'*'.repeat(Math.max(normalized.length - 8, 4))} ${normalized.slice(-4)}`;
   }
 
   private hasLocationSelection(

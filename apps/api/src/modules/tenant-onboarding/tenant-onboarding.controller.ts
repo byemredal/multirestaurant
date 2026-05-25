@@ -246,6 +246,13 @@ export class TenantOnboardingController {
   }
 
   @Public()
+  @Get(':stateToken/review')
+  @ApiOperation({ summary: 'Get the V2 onboarding review summary before submission.' })
+  getReview(@Param('stateToken') stateToken: string) {
+    return this.onboardingService.getReviewByStateToken(stateToken);
+  }
+
+  @Public()
   @Patch(':stateToken/steps/:stepKey')
   @ApiOperation({ summary: 'Save a tenant onboarding step draft by state token.' })
   patchStepByStateToken(

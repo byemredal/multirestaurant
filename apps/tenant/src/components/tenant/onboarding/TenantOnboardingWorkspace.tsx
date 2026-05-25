@@ -13,6 +13,7 @@ import { LocationSearchStep } from '@/components/tenant/onboarding/LocationSearc
 import { OtpVerificationStep } from '@/components/tenant/onboarding/OtpVerificationStep';
 import { PhoneVerificationStep } from '@/components/tenant/onboarding/PhoneVerificationStep';
 import { PlanSelectionStep } from '@/components/tenant/onboarding/PlanSelectionStep';
+import { ReviewStep } from '@/components/tenant/onboarding/ReviewStep';
 import { TenantContinuationBanner } from '@/components/tenant/onboarding/TenantContinuationBanner';
 import { TenantOnboardingStepPanel } from '@/components/tenant/onboarding/TenantOnboardingStepPanel';
 import { WelcomeStep } from '@/components/tenant/onboarding/WelcomeStep';
@@ -547,6 +548,13 @@ export default function TenantOnboardingWorkspace({
                   />
                 ) : requestedWorkflowStep === 'plan-selection' ? (
                   <PlanSelectionStep
+                    resolvedSession={resolvedSession}
+                    workspace={workspace}
+                    onNavigate={navigateToUrl}
+                    onWorkspaceResolved={applyMutationWorkspace}
+                  />
+                ) : requestedWorkflowStep === 'review' ? (
+                  <ReviewStep
                     resolvedSession={resolvedSession}
                     workspace={workspace}
                     onNavigate={navigateToUrl}

@@ -347,6 +347,90 @@ export type TenantPlanSelectionInput = {
   planKey: string;
 };
 
+export type TenantOnboardingReviewBlockKey =
+  | 'phone-verification'
+  | 'location'
+  | 'address'
+  | 'business-details'
+  | 'authorized-person'
+  | 'bank-details'
+  | 'billing-address'
+  | 'plan-selection'
+  | 'operations-info'
+  | 'documents';
+
+export type TenantOnboardingReviewSummary = {
+  phoneVerification: {
+    verified: boolean;
+    maskedPhoneNumber: string | null;
+    verifiedAt: string | null;
+  };
+  locationSelection: TenantLocationSelection | null;
+  businessInfo: {
+    businessName?: string | null;
+    businessType?: string | null;
+    addressLine1?: string | null;
+    addressLine2?: string | null;
+    city?: string | null;
+    postalCode?: string | null;
+    country?: string | null;
+  } | null;
+  legalTaxInfo: {
+    legalEntityName?: string | null;
+    taxId?: string | null;
+    vatId?: string | null;
+    registrationCountry?: string | null;
+    registeredAddress?: string | null;
+  } | null;
+  ownerContactInfo: {
+    fullName?: string | null;
+    email?: string | null;
+    phoneNumber?: string | null;
+    roleTitle?: string | null;
+  } | null;
+  bankDetails: {
+    bankName: string | null;
+    accountHolderName: string | null;
+    maskedIban: string | null;
+    currency: string | null;
+  } | null;
+  billingAddress: {
+    billingName?: string | null;
+    country?: string | null;
+    city?: string | null;
+    postalCode?: string | null;
+    addressLine1?: string | null;
+    addressLine2?: string | null;
+  } | null;
+  planSelection: {
+    planKey?: string | null;
+    planNameSnapshot?: string | null;
+    commissionSummarySnapshot?: string | null;
+    currency?: string | null;
+  } | null;
+  legacyRequirements: {
+    operationsComplete: boolean;
+    documentsComplete: boolean;
+    operationsInfo: Record<string, unknown> | null;
+    requiredDocuments: Array<{
+      type: string | null;
+      status: string | null;
+      version: number | null;
+    }>;
+  };
+};
+
+export type TenantOnboardingReviewResult = {
+  stateToken: string;
+  status: TenantOnboardingApplicationStatus;
+  redirectStep: TenantOnboardingSessionStepKey | null;
+  countryPack: TenantOnboardingCountryPack;
+  canSubmitForReview: boolean;
+  missingRequiredBlocks: TenantOnboardingReviewBlockKey[];
+  editSteps: Partial<Record<string, TenantOnboardingSessionStepKey>>;
+  summary: TenantOnboardingReviewSummary | null;
+};
+
 /* -----------------------------------------------------------------------
  * LEGACY: authenticated-session ("me") onboarding helpers.
  *
@@ -771,6 +855,19 @@ export async function saveTenantOnboardingPlanSelection(
     session?: TenantOnboardingResolvedSession;
     workspace: TenantOnboardingWorkspace;
   };
+}
+
+export async function getTenantOnboardingReview(stateToken: string) {
+  const response = await fetch(
+    `${apiBaseUrl}/v2/tenant/onboarding/${encodeURIComponent(stateToken)}/review`,
+    { credentials: 'include' },
+  );
+
+  if (!response.ok) {
+    throw new Error(`tenant_onboarding_review_failed_${response.status}`);
+  }
+
+  return (await response.json()) as TenantOnboardingReviewResult;
 }
 
 export type TenantPhoneVerificationChallenge = {

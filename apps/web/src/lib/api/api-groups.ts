@@ -157,6 +157,18 @@ export const apiGroups: ApiGroup[] = [
         pathParams: [{ key: 'stateToken', label: 'State token' }],
         bodyFields: [{ key: 'planKey', label: 'planKey' }],
       },
+      {
+        id: 'getTenantOnboardingReview',
+        method: 'GET',
+        path: '/v2/tenant/onboarding/:stateToken/review',
+        pathParams: [{ key: 'stateToken', label: 'State token' }],
+      },
+      {
+        id: 'submitTenantOnboardingReview',
+        method: 'POST',
+        path: '/v2/tenant/onboarding/:stateToken/submit',
+        pathParams: [{ key: 'stateToken', label: 'State token' }],
+      },
     ],
   },
   {

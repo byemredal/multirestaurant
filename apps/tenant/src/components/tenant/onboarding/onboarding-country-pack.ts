@@ -184,3 +184,18 @@ export function getPlanSelectionCopy(countryPack?: TenantOnboardingCountryPack) 
     currency,
   };
 }
+
+export function getReviewCopy(countryPack?: TenantOnboardingCountryPack) {
+  const country = countryPack?.country ?? 'CH';
+
+  return {
+    title: 'Review your application',
+    helperText: 'Check your saved information before sending the application for review.',
+    submitLabel: 'Submit application',
+    missingText: 'Complete the remaining required items before submitting.',
+    countryNote:
+      country === 'CH'
+        ? 'Country-specific legal wording is placeholder copy pending review.'
+        : 'Legal wording is placeholder copy pending country review.',
+  };
+}
