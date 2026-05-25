@@ -28,6 +28,7 @@ import { RateLimit } from '../../common/security/decorators/rate-limit.decorator
 import { CsrfGuard } from '../../common/security/guards/csrf.guard';
 import { RateLimitGuard } from '../../common/security/guards/rate-limit.guard';
 import { AuthenticatedRequest } from '../../common/types/authenticated-request.interface';
+import { AcceptStaffInviteDto } from './dto/accept-invite.dto';
 import { LoginStaffDto } from './dto/login-staff.dto';
 import { StaffAuthService } from './staff-auth.service';
 
@@ -39,6 +40,45 @@ export class StaffAuthController {
     private readonly staffAuthService: StaffAuthService,
     private readonly authCookieService: AuthCookieService,
   ) {}
+
+  @Post('accept-invite')
+  @Public()
+  @UseGuards(RateLimitGuard)
+  @RateLimit({ key: 'staff-accept-invite', limit: 5, ttlMs: 60_000 })
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({
+    summary: 'Accept a staff invite and set initial password.',
+    description:
+      'Exchanges a single-use invite token for an active staff session. ' +
+      'The token is hashed before lookup, must be unused and unexpired, ' +
+      'and is atomically marked used so it cannot be replayed.',
+  })
+  @ApiBody({ type: AcceptStaffInviteDto })
+  @ApiOkResponse({ description: 'Returns a staff access token and rotates the refresh cookie.' })
+  @ApiUnauthorizedResponse({ description: 'Invite token is invalid, expired, used, or the staff is inactive.' })
+  async acceptInvite(
+    @Body() dto: AcceptStaffInviteDto,
+    @Req() request: Request,
+    @Res({ passthrough: true }) response: Response,
+  ) {
+    const session = await this.staffAuthService.acceptInvite(
+      { token: dto.token, password: dto.password },
+      {
+        ip: request.ip,
+        userAgent: request.headers['user-agent'],
+      },
+    );
+    const csrfToken = this.authCookieService.issueRefreshCookies(
+      response,
+      session.refreshToken,
+    );
+
+    return {
+      accessToken: session.accessToken,
+      csrfToken,
+      staff: session.staff,
+    };
+  }
 
   @Post('login')
   @Public()

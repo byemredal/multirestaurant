@@ -28,6 +28,7 @@ import { StoreSettingsModule } from './modules/store-settings/store-settings.mod
 import { ReviewsModule } from './modules/reviews/reviews.module';
 import { SetupModule } from './modules/setup/setup.module';
 import { StaffAuthModule } from './modules/staff-auth/staff-auth.module';
+import { TenantStaffModule } from './modules/tenant-staff/tenant-staff.module';
 import { SharedFileStorageModule } from './modules/shared-file-storage/shared-file-storage.module';
 import { SystemTaxonomyModule } from './modules/system-taxonomy/system-taxonomy.module';
 
@@ -53,6 +54,7 @@ import { SystemTaxonomyModule } from './modules/system-taxonomy/system-taxonomy.
     StaffAuthModule,
     CartModule,
     TenantsModule,
+    TenantStaffModule,
     StoresModule,
     StoreSettingsModule,
     MenuModule,

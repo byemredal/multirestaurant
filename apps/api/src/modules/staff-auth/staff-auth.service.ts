@@ -1,4 +1,5 @@
 import {
+  BadRequestException,
   Injectable,
   NotFoundException,
   UnauthorizedException,
@@ -12,6 +13,13 @@ import {
   StaffSessionView,
 } from './entities/staff-account.entity';
 import { StaffAuthStore } from './staff-auth.store';
+import { StaffInviteTokenStore } from './staff-invite-token.store';
+
+/** Input for accept-invite — kept inline because StaffAuth owns the flow. */
+export interface AcceptStaffInviteInput {
+  token: string;
+  password: string;
+}
 
 /**
  * Staff authentication service. Mirrors `TenantsService` / `AdminAuthService`
@@ -28,10 +36,119 @@ import { StaffAuthStore } from './staff-auth.store';
 export class StaffAuthService {
   constructor(
     private readonly staffAuthStore: StaffAuthStore,
+    private readonly staffInviteTokenStore: StaffInviteTokenStore,
     private readonly passwordService: PasswordService,
     private readonly sessionTokenService: SessionTokenService,
     private readonly securityLogger: SecurityLoggerService,
   ) {}
+
+  /**
+   * Single-use invite acceptance.
+   *
+   * Validates that `token` matches an unused, unexpired StaffInviteToken,
+   * sets the staff's password hash via PasswordService, marks the token as
+   * used in the same transaction, and immediately issues a normal staff
+   * session so the new hire is logged in.
+   *
+   * Failure modes (each fails closed with UnauthorizedException):
+   *   • Token does not match any stored hash.
+   *   • Token has been used already (replay attempt).
+   *   • Token has expired.
+   *   • Staff is no longer active or has no active membership.
+   *
+   * Password rule: minimum length is enforced by the controller DTO; this
+   * service additionally rejects empty / whitespace-only passwords as a
+   * defensive belt.
+   */
+  async acceptInvite(
+    input: AcceptStaffInviteInput,
+    context: Record<string, unknown> = {},
+  ) {
+    if (!input.password || input.password.trim().length === 0) {
+      throw new BadRequestException('Password is required.');
+    }
+
+    const token = await this.staffInviteTokenStore.findByRawToken(input.token);
+    if (!token) {
+      this.securityLogger.logLoginFailure('staff', {
+        reason: 'invite_token_unknown',
+        ...context,
+      });
+      throw new UnauthorizedException('Invite token is invalid or expired.');
+    }
+
+    if (token.usedAt) {
+      this.securityLogger.logLoginFailure('staff', {
+        reason: 'invite_token_replayed',
+        staffAccountId: token.staffAccountId,
+        ...context,
+      });
+      throw new UnauthorizedException('Invite token has already been used.');
+    }
+
+    if (token.expiresAt.getTime() <= Date.now()) {
+      this.securityLogger.logLoginFailure('staff', {
+        reason: 'invite_token_expired',
+        staffAccountId: token.staffAccountId,
+        ...context,
+      });
+      throw new UnauthorizedException('Invite token has expired.');
+    }
+
+    const account = await this.staffAuthStore.findById(token.staffAccountId);
+    if (!account || !account.isActive) {
+      this.securityLogger.logLoginFailure('staff', {
+        reason: 'invite_target_inactive',
+        staffAccountId: token.staffAccountId,
+        ...context,
+      });
+      throw new UnauthorizedException('Invite cannot be accepted.');
+    }
+
+    // Mark the token used FIRST. The UPDATE includes `usedAt IS NULL` in its
+    // WHERE clause, so a concurrent accept attempt that lost the race will
+    // see `false` here and bail out without setting a second password.
+    const marked = await this.staffInviteTokenStore.markUsed(token.id);
+    if (!marked) {
+      this.securityLogger.logLoginFailure('staff', {
+        reason: 'invite_token_race',
+        staffAccountId: token.staffAccountId,
+        ...context,
+      });
+      throw new UnauthorizedException('Invite token has already been used.');
+    }
+
+    const passwordHash = await this.passwordService.hash(input.password);
+    await this.staffAuthStore.setPasswordHash(account.id, passwordHash);
+
+    // Re-read the now-active account + scope for the session response.
+    const refreshed = await this.staffAuthStore.findById(account.id);
+    if (!refreshed) {
+      throw new NotFoundException('Staff account could not be found after accept.');
+    }
+    const storeScope = await this.requireActiveStoreScope(refreshed, context);
+
+    const tokens = await this.sessionTokenService.issueSession({
+      id: refreshed.id,
+      email: refreshed.email,
+      type: 'staff',
+      claims: {
+        tenantId: refreshed.tenantId,
+        storeScope: [...storeScope],
+      },
+    });
+    this.securityLogger.logLoginSuccess('staff', refreshed.id, {
+      email: refreshed.email,
+      reason: 'invite_accepted',
+      ...context,
+    });
+    await this.staffAuthStore.touchLastLogin(refreshed.id);
+
+    return {
+      ...tokens,
+      staff: this.toPublicAccount(refreshed, storeScope),
+    };
+  }
 
   async login(dto: LoginStaffDto, context: Record<string, unknown> = {}) {
     const account = await this.staffAuthStore.findByEmail(dto.email);

@@ -144,6 +144,35 @@ CREATE TABLE IF NOT EXISTS "StaffAccount" (
 CREATE INDEX IF NOT EXISTS "IDX_StaffAccount_tenantId" ON "StaffAccount" ("tenantId");
 
 -- ===========================================================================
+-- Staff invite tokens (single-use, expiring, hashed-at-rest)
+-- ===========================================================================
+-- The tenant-staff invite flow creates a StaffAccount with passwordHash=NULL
+-- and employmentStatus='invited', plus one row here carrying the SHA-256
+-- hash of the single-use invite URL token. The raw token is returned to the
+-- inviter exactly once at invite time; it is NEVER stored or returned again.
+-- POST /staff/accept-invite hashes the presented token and looks for an
+-- unused, unexpired row. Setting passwordHash atomically marks the token as
+-- used so it cannot be replayed.
+
+CREATE TABLE IF NOT EXISTS "StaffInviteToken" (
+  "id" UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  "staffAccountId" UUID NOT NULL REFERENCES "StaffAccount"("id") ON DELETE CASCADE,
+  "tokenHash" TEXT NOT NULL UNIQUE,
+  "expiresAt" TIMESTAMPTZ NOT NULL,
+  "usedAt" TIMESTAMPTZ,
+  "createdByTenantAccountId" UUID REFERENCES "TenantAccount"("id") ON DELETE SET NULL,
+  "metadataJson" JSONB NOT NULL DEFAULT '{}'::jsonb,
+  "createdAt" TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  "updatedAt" TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS "IDX_StaffInviteToken_staff_active"
+  ON "StaffInviteToken" ("staffAccountId")
+  WHERE "usedAt" IS NULL;
+CREATE INDEX IF NOT EXISTS "IDX_StaffInviteToken_expiresAt"
+  ON "StaffInviteToken" ("expiresAt");
+
+-- ===========================================================================
 -- Memberships — bind identities to business / scope / role contexts
 -- ===========================================================================
 -- AdminMembership : platform admin roles + optional structured scope JSON

@@ -1,10 +1,16 @@
-import { UnauthorizedException, NotFoundException } from '@nestjs/common';
+import {
+  BadRequestException,
+  NotFoundException,
+  UnauthorizedException,
+} from '@nestjs/common';
 import { PasswordService } from '../../common/security/password.service';
 import { SecurityLoggerService } from '../../common/security/security-logger.service';
 import { SessionTokenService } from '../../common/security/session-token.service';
 import { StaffAuthService } from './staff-auth.service';
 import { StaffAuthStore } from './staff-auth.store';
+import { StaffInviteTokenStore } from './staff-invite-token.store';
 import { StaffAccount } from './entities/staff-account.entity';
+import { StaffInviteToken } from './entities/staff-invite-token.entity';
 
 /**
  * Unit-level coverage of the StaffAuth state machine. The store, password
@@ -31,17 +37,28 @@ describe('StaffAuthService', () => {
     updatedAt: new Date('2025-01-01'),
   };
 
-  function makeService(staffStoreOverrides: Partial<StaffAuthStore> = {}) {
+  function makeService(
+    staffStoreOverrides: Partial<StaffAuthStore> = {},
+    inviteTokenOverrides: Partial<StaffInviteTokenStore> = {},
+  ) {
     const staffStore = {
       findByEmail: jest.fn().mockResolvedValue(activeStaff),
       findById: jest.fn().mockResolvedValue(activeStaff),
       listActiveStoreScope: jest.fn().mockResolvedValue(['store-1', 'store-2']),
       listMemberships: jest.fn(),
       touchLastLogin: jest.fn().mockResolvedValue(undefined),
+      setPasswordHash: jest.fn().mockResolvedValue(undefined),
       ...staffStoreOverrides,
     } as unknown as StaffAuthStore;
 
+    const inviteTokenStore = {
+      findByRawToken: jest.fn(),
+      markUsed: jest.fn().mockResolvedValue(true),
+      ...inviteTokenOverrides,
+    } as unknown as StaffInviteTokenStore;
+
     const passwordService = {
+      hash: jest.fn().mockResolvedValue('hashed-new'),
       matches: jest.fn().mockResolvedValue(true),
     } as unknown as PasswordService;
 
@@ -73,11 +90,34 @@ describe('StaffAuthService', () => {
 
     const service = new StaffAuthService(
       staffStore,
+      inviteTokenStore,
       passwordService,
       sessionTokenService,
       securityLogger,
     );
-    return { service, staffStore, passwordService, sessionTokenService, securityLogger };
+    return {
+      service,
+      staffStore,
+      inviteTokenStore,
+      passwordService,
+      sessionTokenService,
+      securityLogger,
+    };
+  }
+
+  function makeToken(over: Partial<StaffInviteToken> = {}): StaffInviteToken {
+    return {
+      id: 'token-1',
+      staffAccountId: 'staff-1',
+      tokenHash: 'hash-1',
+      expiresAt: new Date(Date.now() + 60_000),
+      usedAt: null,
+      createdByTenantAccountId: 'tenant-A',
+      metadata: {},
+      createdAt: new Date(),
+      updatedAt: new Date(),
+      ...over,
+    };
   }
 
   describe('login', () => {
@@ -266,6 +306,132 @@ describe('StaffAuthService', () => {
         'refresh-1',
         'staff',
       );
+    });
+  });
+
+  describe('acceptInvite', () => {
+    const invitedStaff: StaffAccount = {
+      ...activeStaff,
+      passwordHash: null,
+      employmentStatus: 'invited',
+      isVerified: false,
+    };
+
+    it('exchanges a valid token for an active session + sets the password', async () => {
+      const { service, staffStore, inviteTokenStore, passwordService } = makeService(
+        {
+          // findById is called twice: first for the token target (still
+          // invited, then for the newly-active account after setPasswordHash).
+          findById: jest
+            .fn()
+            .mockResolvedValueOnce(invitedStaff)
+            .mockResolvedValueOnce({ ...activeStaff, isActive: true }),
+          listActiveStoreScope: jest.fn().mockResolvedValue(['store-1']),
+        },
+        {
+          findByRawToken: jest.fn().mockResolvedValue(makeToken()),
+          markUsed: jest.fn().mockResolvedValue(true),
+        },
+      );
+
+      const result = await service.acceptInvite(
+        { token: 'raw-token', password: 'StaffPass123' },
+        {},
+      );
+
+      expect(inviteTokenStore.markUsed).toHaveBeenCalledWith('token-1');
+      expect(passwordService.hash).toHaveBeenCalledWith('StaffPass123');
+      expect(staffStore.setPasswordHash).toHaveBeenCalledWith('staff-1', 'hashed-new');
+      expect(result.accessToken).toBe('access-1');
+      expect(result.staff.storeScope).toEqual(['store-1']);
+    });
+
+    it('rejects an unknown token', async () => {
+      const { service } = makeService(
+        {},
+        { findByRawToken: jest.fn().mockResolvedValue(null) },
+      );
+      await expect(
+        service.acceptInvite({ token: 'bad', password: 'StaffPass123' }, {}),
+      ).rejects.toThrow(/invalid or expired/);
+    });
+
+    it('rejects an already-used token (replay attempt)', async () => {
+      const { service } = makeService(
+        {},
+        {
+          findByRawToken: jest
+            .fn()
+            .mockResolvedValue(makeToken({ usedAt: new Date() })),
+        },
+      );
+      await expect(
+        service.acceptInvite({ token: 'raw', password: 'StaffPass123' }, {}),
+      ).rejects.toThrow(/already been used/);
+    });
+
+    it('rejects an expired token', async () => {
+      const { service } = makeService(
+        {},
+        {
+          findByRawToken: jest
+            .fn()
+            .mockResolvedValue(makeToken({ expiresAt: new Date(Date.now() - 1000) })),
+        },
+      );
+      await expect(
+        service.acceptInvite({ token: 'raw', password: 'StaffPass123' }, {}),
+      ).rejects.toThrow(/expired/);
+    });
+
+    it('rejects when the staff target is inactive', async () => {
+      const { service } = makeService(
+        {
+          findById: jest.fn().mockResolvedValueOnce({ ...invitedStaff, isActive: false }),
+        },
+        { findByRawToken: jest.fn().mockResolvedValue(makeToken()) },
+      );
+      await expect(
+        service.acceptInvite({ token: 'raw', password: 'StaffPass123' }, {}),
+      ).rejects.toThrow(/cannot be accepted/);
+    });
+
+    it('rejects when the markUsed race-loses (another caller used the token)', async () => {
+      const { service } = makeService(
+        {
+          findById: jest.fn().mockResolvedValue(invitedStaff),
+        },
+        {
+          findByRawToken: jest.fn().mockResolvedValue(makeToken()),
+          markUsed: jest.fn().mockResolvedValue(false),
+        },
+      );
+      await expect(
+        service.acceptInvite({ token: 'raw', password: 'StaffPass123' }, {}),
+      ).rejects.toThrow(/already been used/);
+    });
+
+    it('rejects empty / whitespace-only password', async () => {
+      const { service } = makeService();
+      await expect(
+        service.acceptInvite({ token: 'raw', password: '   ' }, {}),
+      ).rejects.toThrow(BadRequestException);
+    });
+
+    it('rejects when staff has no active membership after accept', async () => {
+      const { service } = makeService(
+        {
+          findById: jest
+            .fn()
+            .mockResolvedValueOnce(invitedStaff)
+            .mockResolvedValueOnce({ ...activeStaff, isActive: true }),
+          listActiveStoreScope: jest.fn().mockResolvedValue([]),
+        },
+        { findByRawToken: jest.fn().mockResolvedValue(makeToken()) },
+      );
+      await expect(
+        service.acceptInvite({ token: 'raw', password: 'StaffPass123' }, {}),
+      ).rejects.toThrow(/no active store assignment/);
     });
   });
 });
