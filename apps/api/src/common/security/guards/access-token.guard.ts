@@ -112,6 +112,21 @@ export class AccessTokenGuard implements CanActivate {
       return true;
     }
 
+    if (payload.type === 'staff') {
+      // Staff is structurally a first-class subject after MR-ARCH-02 (see
+      // auth-subject.type.ts), but the staff login controller + validator
+      // lands in a follow-up slice. Fail closed for now so no token
+      // accidentally satisfies a route while staff auth is unimplemented.
+      this.securityLogger.logUnauthorized({
+        path: request.originalUrl,
+        method: request.method,
+        ip: request.ip,
+        tokenType: payload.type,
+        reason: 'staff_auth_not_yet_wired',
+      });
+      throw new UnauthorizedException('Staff authentication is not yet available.');
+    }
+
     const admin = await this.adminAuthService.validateAdmin(payload.sub);
     if (!admin) {
       this.securityLogger.logUnauthorized({
@@ -134,25 +149,27 @@ export class AccessTokenGuard implements CanActivate {
   }
 
   private async verifyToken(token: string, request: Request) {
-    try {
-      return await this.sessionTokenService.verifyAccessToken(token, 'customer');
-    } catch {
+    // Try each surface in turn — verifyAccessToken refuses to honor a token
+    // whose `type` does not match the requested subject, which is the
+    // structural guarantee that surfaces cannot cross-contaminate. The
+    // downstream switch on `payload.type` then routes the (already-bound)
+    // claim through the matching account-validator branch.
+    const subjects: AuthSubjectType[] = ['customer', 'tenant', 'staff', 'admin'];
+    for (const subjectType of subjects) {
       try {
-        return await this.sessionTokenService.verifyAccessToken(token, 'tenant');
+        return await this.sessionTokenService.verifyAccessToken(token, subjectType);
       } catch {
-        try {
-          return await this.sessionTokenService.verifyAccessToken(token, 'admin');
-        } catch {
-          this.securityLogger.logUnauthorized({
-            path: request.originalUrl,
-            method: request.method,
-            ip: request.ip,
-            reason: 'invalid_access_token',
-          });
-          throw new UnauthorizedException('Access token is invalid or expired.');
-        }
+        // try next subject
       }
     }
+
+    this.securityLogger.logUnauthorized({
+      path: request.originalUrl,
+      method: request.method,
+      ip: request.ip,
+      reason: 'invalid_access_token',
+    });
+    throw new UnauthorizedException('Access token is invalid or expired.');
   }
 
   private extractBearerToken(authorizationHeader?: string) {

@@ -251,28 +251,45 @@ CREATE INDEX IF NOT EXISTS "IDX_DiscoveryLog_area"
   ON "DiscoveryLog" ("countryCode", "postalCode");
 
 -- ===========================================================================
--- Staff + device records (tenant-scoped, optionally store-scoped)
+-- Staff cross-store membership + per-staff sub-tables
 -- ===========================================================================
+-- StaffAccount itself lives in 0002 (it is an identity). Here we add:
+--   • the FK from StaffAccount.defaultStoreId to Store (could not be declared
+--     in 0002 because Store does not exist yet — this is the one allowed
+--     constraint-ordering ALTER in the baseline)
+--   • StaffMembership, which scopes a staff identity to specific stores
+--   • per-staff settings + kitchen profile (one row per staff)
 
-CREATE TABLE IF NOT EXISTS "StaffAccount" (
+ALTER TABLE "StaffAccount"
+  ADD CONSTRAINT "StaffAccount_defaultStoreId_fkey"
+    FOREIGN KEY ("defaultStoreId") REFERENCES "Store"("id") ON DELETE SET NULL;
+
+CREATE INDEX IF NOT EXISTS "IDX_StaffAccount_defaultStoreId"
+  ON "StaffAccount" ("defaultStoreId");
+
+CREATE TABLE IF NOT EXISTS "StaffMembership" (
   "id" UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  "staffAccountId" UUID NOT NULL REFERENCES "StaffAccount"("id") ON DELETE CASCADE,
   "tenantId" UUID NOT NULL REFERENCES "TenantAccount"("id") ON DELETE CASCADE,
-  "storeId" UUID REFERENCES "Store"("id") ON DELETE CASCADE,
-  "email" VARCHAR(255),
-  "fullName" VARCHAR(255) NOT NULL,
-  "phoneNumber" VARCHAR(40),
-  "staffType" VARCHAR(32) NOT NULL,
-  "employmentStatus" VARCHAR(32) NOT NULL DEFAULT 'active',
+  "storeId" UUID NOT NULL REFERENCES "Store"("id") ON DELETE CASCADE,
+  "role" TEXT NOT NULL DEFAULT 'cashier',
+  "status" TEXT NOT NULL DEFAULT 'active',
   "createdAt" TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   "updatedAt" TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-  CONSTRAINT "CHK_StaffAccount_staffType"
-    CHECK ("staffType" IN ('cashier', 'delivery_admin', 'kitchen', 'manager', 'host', 'other')),
-  CONSTRAINT "CHK_StaffAccount_employmentStatus"
-    CHECK ("employmentStatus" IN ('active', 'invited', 'suspended'))
+  CONSTRAINT "UQ_StaffMembership_staff_store"
+    UNIQUE ("staffAccountId", "storeId"),
+  CONSTRAINT "CHK_StaffMembership_role"
+    CHECK ("role" IN ('cashier', 'delivery_admin', 'kitchen', 'manager', 'host', 'other')),
+  CONSTRAINT "CHK_StaffMembership_status"
+    CHECK ("status" IN ('active', 'suspended'))
 );
 
-CREATE INDEX IF NOT EXISTS "IDX_StaffAccount_tenantId" ON "StaffAccount" ("tenantId");
-CREATE INDEX IF NOT EXISTS "IDX_StaffAccount_storeId" ON "StaffAccount" ("storeId");
+CREATE INDEX IF NOT EXISTS "IDX_StaffMembership_tenant_status"
+  ON "StaffMembership" ("tenantId", "status");
+CREATE INDEX IF NOT EXISTS "IDX_StaffMembership_store_status"
+  ON "StaffMembership" ("storeId", "status");
+CREATE INDEX IF NOT EXISTS "IDX_StaffMembership_staff"
+  ON "StaffMembership" ("staffAccountId");
 
 CREATE TABLE IF NOT EXISTS "StaffSetting" (
   "id" UUID PRIMARY KEY DEFAULT gen_random_uuid(),

@@ -1,6 +1,6 @@
 import { ApiProperty } from '@nestjs/swagger';
 import { IsEmail, IsEnum, IsNotEmpty, IsString, Length, Matches } from 'class-validator';
-import { DeliveryModel, TenantType } from '../../tenants/entities/tenant-account.entity';
+import { DeliveryModel, TenantType } from '../../tenants/entities/tenant-business.entity';
 
 export class StartTenantOnboardingDto {
   @ApiProperty({ example: 'Aylin' })

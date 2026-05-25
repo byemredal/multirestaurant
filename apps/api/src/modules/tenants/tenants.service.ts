@@ -14,7 +14,7 @@ import { LoginTenantDto } from './dto/login-tenant.dto';
 import { RegisterTenantDto } from './dto/register-tenant.dto';
 import { StartOnboardingDto } from './dto/start-onboarding.dto';
 import { TenantAccount } from './entities/tenant-account.entity';
-import { TenantAccountsStore } from './tenants.store';
+import { TenantAccountView, TenantAccountsStore } from './tenants.store';
 import { toTenantStatus } from './tenant-status';
 import { TenantStatusEventsService } from './tenant-status-events.service';
 
@@ -34,7 +34,7 @@ export class TenantsService {
       throw new ConflictException('Tenant account already exists for this email.');
     }
 
-    const account = await this.tenantAccountsStore.create({
+    const view = await this.tenantAccountsStore.create({
       email: dto.email.trim().toLowerCase(),
       passwordHash: await this.passwordService.hash(dto.password),
       firstName: dto.firstName,
@@ -51,20 +51,10 @@ export class TenantsService {
       lastLoginAt: null,
     });
 
-    const tokens = await this.sessionTokenService.issueSession({
-      id: account.id,
-      email: account.email,
-      type: 'tenant',
-      claims: {
-        tenantType: account.tenantType,
-        onboardingStatus: account.onboardingStatus,
-        verificationStatus: account.verificationStatus,
-      },
-    });
-
+    const tokens = await this.issueViewSession(view);
     return {
       ...tokens,
-      tenant: this.toPublicAccount(account),
+      tenant: this.toPublicAccount(view),
     };
   }
 
@@ -83,15 +73,15 @@ export class TenantsService {
       // A passwordless account still mid-onboarding is allowed to re-enter the
       // flow (idempotent restart). Everything else is a genuine conflict.
       const resumable =
-        existing.passwordHash === '' &&
-        ['draft', 'revision_required'].includes(existing.onboardingStatus);
+        existing.account.passwordHash === '' &&
+        ['draft', 'revision_required'].includes(existing.business.onboardingStatus);
       if (!resumable) {
         throw new ConflictException('Tenant account already exists for this email.');
       }
       return this.issueOnboardingSession(existing);
     }
 
-    const account = await this.tenantAccountsStore.create({
+    const view = await this.tenantAccountsStore.create({
       email,
       passwordHash: '',
       firstName: dto.firstName,
@@ -108,7 +98,7 @@ export class TenantsService {
       lastLoginAt: null,
     });
 
-    return this.issueOnboardingSession(account);
+    return this.issueOnboardingSession(view);
   }
 
   /**
@@ -124,12 +114,12 @@ export class TenantsService {
       throw new UnauthorizedException('Onboarding continuation link is invalid or expired.');
     }
 
-    const account = await this.tenantAccountsStore.findById(payload.sub);
-    if (!account || !account.isActive) {
+    const view = await this.tenantAccountsStore.findById(payload.sub);
+    if (!view || !view.account.isActive) {
       throw new UnauthorizedException('Onboarding continuation link is no longer valid.');
     }
 
-    return this.issueOnboardingSession(account);
+    return this.issueOnboardingSession(view);
   }
 
   /**
@@ -138,41 +128,45 @@ export class TenantsService {
    * with email + password from then on.
    */
   async setPassword(tenantId: string, password: string) {
-    const account = await this.tenantAccountsStore.findById(tenantId);
-    if (!account) {
+    const view = await this.tenantAccountsStore.findById(tenantId);
+    if (!view) {
       throw new NotFoundException('Tenant account could not be found.');
     }
 
     const passwordHash = await this.passwordService.hash(password);
-    const updated = await this.tenantAccountsStore.updatePasswordHash(account.id, passwordHash);
+    const updated = await this.tenantAccountsStore.updatePasswordHash(view.account.id, passwordHash);
     return this.toPublicAccount(updated);
   }
 
-  private async issueOnboardingSession(account: TenantAccount) {
-    const tokens = await this.sessionTokenService.issueSession({
-      id: account.id,
-      email: account.email,
-      type: 'tenant',
-      claims: {
-        tenantType: account.tenantType,
-        onboardingStatus: account.onboardingStatus,
-        verificationStatus: account.verificationStatus,
-      },
-    });
+  private async issueOnboardingSession(view: TenantAccountView) {
+    const tokens = await this.issueViewSession(view);
     const continuationToken = await this.sessionTokenService.issueOnboardingToken(
-      account.id,
+      view.account.id,
     );
 
     return {
       ...tokens,
       continuationToken,
-      tenant: this.toPublicAccount(account),
+      tenant: this.toPublicAccount(view),
     };
   }
 
+  private async issueViewSession(view: TenantAccountView) {
+    return this.sessionTokenService.issueSession({
+      id: view.account.id,
+      email: view.account.email,
+      type: 'tenant',
+      claims: {
+        tenantType: view.business.tenantType,
+        onboardingStatus: view.business.onboardingStatus,
+        verificationStatus: view.business.verificationStatus,
+      },
+    });
+  }
+
   async login(dto: LoginTenantDto, context: Record<string, unknown> = {}) {
-    const account = await this.tenantAccountsStore.findByEmail(dto.email);
-    if (!account || !account.isActive) {
+    const view = await this.tenantAccountsStore.findByEmail(dto.email);
+    if (!view || !view.account.isActive) {
       this.securityLogger.logLoginFailure('tenant', {
         email: dto.email.trim().toLowerCase(),
         ...context,
@@ -183,32 +177,23 @@ export class TenantsService {
     // Accounts created through passwordless onboarding have no password yet —
     // they must set one (post-approval) before email + password sign-in works.
     const passwordMatches =
-      account.passwordHash !== '' &&
-      (await this.passwordService.matches(dto.password, account.passwordHash));
+      view.account.passwordHash !== '' &&
+      (await this.passwordService.matches(dto.password, view.account.passwordHash));
 
     if (!passwordMatches) {
       this.securityLogger.logLoginFailure('tenant', {
-        email: account.email,
-        accountId: account.id,
+        email: view.account.email,
+        accountId: view.account.id,
         reason: 'invalid_password',
         ...context,
       });
       throw new UnauthorizedException('Invalid tenant credentials.');
     }
 
-    const updated = await this.tenantAccountsStore.touchLastLogin(account.id);
-    const tokens = await this.sessionTokenService.issueSession({
-      id: updated.id,
-      email: updated.email,
-      type: 'tenant',
-      claims: {
-        tenantType: updated.tenantType,
-        onboardingStatus: updated.onboardingStatus,
-        verificationStatus: updated.verificationStatus,
-      },
-    });
-    this.securityLogger.logLoginSuccess('tenant', updated.id, {
-      email: updated.email,
+    const updated = await this.tenantAccountsStore.touchLastLogin(view.account.id);
+    const tokens = await this.issueViewSession(updated);
+    this.securityLogger.logLoginSuccess('tenant', updated.account.id, {
+      email: updated.account.email,
       ...context,
     });
 
@@ -223,9 +208,9 @@ export class TenantsService {
       refreshToken,
       'tenant',
     );
-    const account = await this.tenantAccountsStore.findById(payload.sub);
+    const view = await this.tenantAccountsStore.findById(payload.sub);
 
-    if (!account || !account.isActive) {
+    if (!view || !view.account.isActive) {
       this.securityLogger.logRefreshFailure('tenant', {
         subjectId: payload.sub,
         reason: 'inactive_or_missing_account',
@@ -235,23 +220,23 @@ export class TenantsService {
     }
 
     const tokens = await this.sessionTokenService.rotateRefreshToken(refreshToken, {
-      id: account.id,
-      email: account.email,
+      id: view.account.id,
+      email: view.account.email,
       type: 'tenant',
       claims: {
-        tenantType: account.tenantType,
-        onboardingStatus: account.onboardingStatus,
-        verificationStatus: account.verificationStatus,
+        tenantType: view.business.tenantType,
+        onboardingStatus: view.business.onboardingStatus,
+        verificationStatus: view.business.verificationStatus,
       },
     });
-    this.securityLogger.logRefreshSuccess('tenant', account.id, {
-      email: account.email,
+    this.securityLogger.logRefreshSuccess('tenant', view.account.id, {
+      email: view.account.email,
       ...context,
     });
 
     return {
       ...tokens,
-      tenant: this.toPublicAccount(account),
+      tenant: this.toPublicAccount(view),
     };
   }
 
@@ -268,12 +253,12 @@ export class TenantsService {
   }
 
   async getProfile(tenantId: string) {
-    const account = await this.tenantAccountsStore.findById(tenantId);
-    if (!account) {
+    const view = await this.tenantAccountsStore.findById(tenantId);
+    if (!view) {
       throw new NotFoundException('Tenant account could not be found.');
     }
 
-    return this.toPublicAccount(account);
+    return this.toPublicAccount(view);
   }
 
   /**
@@ -304,29 +289,38 @@ export class TenantsService {
     );
   }
 
+  /**
+   * Returns the identity-only TenantAccount used by the AccessTokenGuard.
+   * Kept thin: guards do not need business profile data.
+   */
   async validateTenant(tenantId: string): Promise<TenantAccount | null> {
-    const account = await this.tenantAccountsStore.findById(tenantId);
-    if (!account || !account.isActive) {
+    const view = await this.tenantAccountsStore.findById(tenantId);
+    if (!view || !view.account.isActive) {
       return null;
     }
-
-    return account;
+    return view.account;
   }
 
-  private toPublicAccount(account: TenantAccount) {
+  /** Returns the joined view for callers that need the business profile. */
+  async findView(tenantId: string): Promise<TenantAccountView | null> {
+    return this.tenantAccountsStore.findById(tenantId);
+  }
+
+  private toPublicAccount(view: TenantAccountView) {
+    const { account, business } = view;
     return {
       id: account.id,
       email: account.email,
       firstName: account.firstName,
       lastName: account.lastName,
       phoneNumber: account.phoneNumber,
-      companyName: account.companyName,
-      companyAddress: account.companyAddress,
-      tenantType: account.tenantType,
-      deliveryModel: account.deliveryModel,
-      status: toTenantStatus(account.onboardingStatus),
-      onboardingStatus: account.onboardingStatus,
-      verificationStatus: account.verificationStatus,
+      companyName: business.companyName,
+      companyAddress: business.companyAddress,
+      tenantType: business.tenantType,
+      deliveryModel: business.deliveryModel,
+      status: toTenantStatus(business.onboardingStatus),
+      onboardingStatus: business.onboardingStatus,
+      verificationStatus: business.verificationStatus,
       isActive: account.isActive,
       isVerified: account.isVerified,
       /** False for accounts still in the passwordless onboarding flow. */

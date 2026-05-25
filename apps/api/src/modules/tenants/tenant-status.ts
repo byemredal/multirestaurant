@@ -1,4 +1,4 @@
-import { TenantOnboardingStatus } from './entities/tenant-account.entity';
+import { TenantOnboardingStatus } from './entities/tenant-business.entity';
 
 /**
  * The coarse, routing-relevant tenant lifecycle state exposed to the tenant

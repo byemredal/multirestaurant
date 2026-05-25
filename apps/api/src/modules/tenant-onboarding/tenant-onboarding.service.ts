@@ -127,14 +127,14 @@ export class TenantOnboardingService {
 
     if (existing) {
       const resumable =
-        existing.passwordHash === '' &&
-        ['draft', 'revision_required'].includes(existing.onboardingStatus);
+        existing.account.passwordHash === '' &&
+        ['draft', 'revision_required'].includes(existing.business.onboardingStatus);
 
       if (!resumable) {
         throw new ConflictException('Tenant account already exists for this email.');
       }
 
-      const workspace = await this.getWorkspace(existing.id);
+      const workspace = await this.getWorkspace(existing.account.id);
       const currentStepKey = currentStepFromSteps(
         workspace.steps as Array<{ stepKey: TenantOnboardingStepKey; status: string }>,
       );
@@ -164,10 +164,10 @@ export class TenantOnboardingService {
       lastLoginAt: null,
     });
 
-    const application = await this.getOrCreateApplication(tenant.id);
+    const application = await this.getOrCreateApplication(tenant.account.id);
     await this.seedApplicationFromStart(application.id, dto);
 
-    const workspace = await this.getWorkspace(tenant.id);
+    const workspace = await this.getWorkspace(tenant.account.id);
     const currentStepKey = currentStepFromSteps(
       workspace.steps as Array<{ stepKey: TenantOnboardingStepKey; status: string }>,
     );
@@ -324,7 +324,7 @@ export class TenantOnboardingService {
 
     const ownerContact = await this.store.getOwnerContact(application.id);
     const normalizedPhoneNumber = this.normalizePhoneNumber(
-      phoneNumber ?? existingVerification?.phoneNumber ?? ownerContact?.phoneNumber ?? tenant.phoneNumber,
+      phoneNumber ?? existingVerification?.phoneNumber ?? ownerContact?.phoneNumber ?? tenant.account.phoneNumber,
     );
     if (normalizedPhoneNumber.length < 7) {
       throw new BadRequestException('Phone number is required before sending a verification code.');
@@ -340,7 +340,7 @@ export class TenantOnboardingService {
     });
 
     await this.emailService.send({
-      to: tenant.email,
+      to: tenant.account.email,
       subject: 'Lieferzonen telefon doğrulama kodunuz',
       text: `Telefon doğrulama kodunuz: ${code}. Bu kod 10 dakika geçerlidir.`,
     });
@@ -959,7 +959,7 @@ export class TenantOnboardingService {
     const appBaseUrl = process.env.TENANT_APP_URL ?? 'http://localhost:3001';
     const continueUrl = `${appBaseUrl}/onboarding/${encodeURIComponent(workspace.stateToken)}/${workflowSlugFromBackendStep(nextStep?.stepKey ?? 'final_review')}`;
     await this.emailService.send({
-      to: tenant.email,
+      to: tenant.account.email,
       subject: 'Lieferzonen başvurunuza devam edin',
       text: `Başvurunuza buradan devam edebilirsiniz: ${continueUrl}`,
       html: `<p>Başvurunuza devam etmek için <a href="${continueUrl}">bu bağlantıyı</a> kullanın.</p>`,
@@ -1895,9 +1895,11 @@ export class TenantOnboardingService {
       throw new NotFoundException('Tenant onboarding application not found.');
     }
 
+    // Admin view: keep the flat shape (account + business merged in one
+    // object) by reading through the dedicated lookup that joins both halves.
     const [tenantAccount, steps, businessInfo, legalTaxInfo, ownerContactInfo, operationsInfo, documents, applicationReviews, documentReviews, notes] =
       await Promise.all([
-        this.tenantAccountsStore.findById(application.tenantAccountId),
+        this.store.findTenantAccountByApplicationId(application.id),
         this.store.listStepProgress(application.id),
         this.store.getBusinessDetail(application.id),
         this.store.getLegalDetail(application.id),

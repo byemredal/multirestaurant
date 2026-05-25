@@ -10,11 +10,12 @@ INSERT INTO "Currency" ("code", "displayName", "symbol", "numericCode", "decimal
 VALUES ('CHF', 'Swiss Franc', 'CHF', '756', 2, 5)
 ON CONFLICT ("code") DO NOTHING;
 
--- Demo tenant account (owner of all demo stores)
+-- Demo tenant account (owner of all demo stores).
+-- After MR-ARCH-02, identity columns live on TenantAccount and business /
+-- verification / onboarding columns live on TenantBusiness (1:1). The
+-- TenantMembership row binds owner identity to the business.
 INSERT INTO "TenantAccount" (
-  "id", "email", "passwordHash", "firstName", "lastName",
-  "phoneNumber", "companyName", "companyAddress",
-  "tenantType", "deliveryModel", "verificationStatus", "onboardingStatus",
+  "id", "email", "passwordHash", "firstName", "lastName", "phoneNumber",
   "isActive", "isVerified", "createdAt", "updatedAt"
 ) VALUES (
   'a0000000-0000-4000-8000-000000000001',
@@ -22,13 +23,34 @@ INSERT INTO "TenantAccount" (
   '$2b$10$7QGelyrRGOAvjQwUUPRVKO3tR8jISlcrPa81bI1vUN23lvsCwDomO',
   'Demo', 'Tenant',
   '+41 41 000 00 00',
+  TRUE, TRUE,
+  NOW(), NOW()
+) ON CONFLICT ("id") DO UPDATE SET "passwordHash" = EXCLUDED."passwordHash";
+
+INSERT INTO "TenantBusiness" (
+  "id", "tenantAccountId", "companyName", "companyAddress",
+  "tenantType", "deliveryModel", "verificationStatus", "onboardingStatus",
+  "createdAt", "updatedAt"
+) VALUES (
+  'a1000000-0000-4000-8000-000000000001',
+  'a0000000-0000-4000-8000-000000000001',
   'Demo Stores GmbH',
   'Bahnhofstrasse 1, 6300 Zug',
   'store', 'platform',
   'approved', 'completed',
-  TRUE, TRUE,
   NOW(), NOW()
-) ON CONFLICT ("id") DO UPDATE SET "passwordHash" = EXCLUDED."passwordHash";
+) ON CONFLICT ("tenantAccountId") DO NOTHING;
+
+INSERT INTO "TenantMembership" (
+  "id", "tenantAccountId", "tenantBusinessId", "role", "status",
+  "createdAt", "updatedAt"
+) VALUES (
+  'a2000000-0000-4000-8000-000000000001',
+  'a0000000-0000-4000-8000-000000000001',
+  'a1000000-0000-4000-8000-000000000001',
+  'owner', 'active',
+  NOW(), NOW()
+) ON CONFLICT ("tenantAccountId", "tenantBusinessId") DO NOTHING;
 
 -- ============================================================
 -- STORE 1: Zug Kitchen (Pizza / Italian)
@@ -374,12 +396,11 @@ ON CONFLICT ("email") DO UPDATE SET
   "updatedAt"    = NOW();
 
 -- ── Tenant ─────────────────────────────────────────────────────────────────
+-- Identity + business profile split (MR-ARCH-02): one TenantAccount row +
+-- one TenantBusiness row + one owner TenantMembership row.
 INSERT INTO "TenantAccount" (
   "id", "email", "passwordHash",
   "firstName", "lastName", "phoneNumber",
-  "companyName", "companyAddress",
-  "tenantType", "deliveryModel",
-  "verificationStatus", "onboardingStatus",
   "isActive", "isVerified", "lastLoginAt",
   "createdAt", "updatedAt"
 ) VALUES (
@@ -389,12 +410,6 @@ INSERT INTO "TenantAccount" (
   'Emre',
   'Dal',
   '+905555555555',
-  'Lieferzonen Test Restoran',
-  'Bağdat Cd. No:1, Kadıköy / İstanbul',
-  'food_service',
-  'platform_fleet',
-  'verified',
-  'active',
   TRUE,
   TRUE,
   NULL,
@@ -402,12 +417,45 @@ INSERT INTO "TenantAccount" (
   NOW()
 )
 ON CONFLICT ("email") DO UPDATE SET
-  "passwordHash"       = EXCLUDED."passwordHash",
+  "passwordHash" = EXCLUDED."passwordHash",
+  "isActive"     = TRUE,
+  "isVerified"   = TRUE,
+  "updatedAt"    = NOW();
+
+INSERT INTO "TenantBusiness" (
+  "id", "tenantAccountId",
+  "companyName", "companyAddress",
+  "tenantType", "deliveryModel",
+  "verificationStatus", "onboardingStatus",
+  "createdAt", "updatedAt"
+) VALUES (
+  '22222222-2222-4222-8222-222222222223',
+  '22222222-2222-4222-8222-222222222222',
+  'Lieferzonen Test Restoran',
+  'Bağdat Cd. No:1, Kadıköy / İstanbul',
+  'food_service',
+  'platform_fleet',
+  'verified',
+  'active',
+  NOW(),
+  NOW()
+)
+ON CONFLICT ("tenantAccountId") DO UPDATE SET
   "verificationStatus" = 'verified',
   "onboardingStatus"   = 'active',
-  "isActive"           = TRUE,
-  "isVerified"         = TRUE,
   "updatedAt"          = NOW();
+
+INSERT INTO "TenantMembership" (
+  "id", "tenantAccountId", "tenantBusinessId", "role", "status",
+  "createdAt", "updatedAt"
+) VALUES (
+  '22222222-2222-4222-8222-222222222224',
+  '22222222-2222-4222-8222-222222222222',
+  '22222222-2222-4222-8222-222222222223',
+  'owner', 'active',
+  NOW(), NOW()
+)
+ON CONFLICT ("tenantAccountId", "tenantBusinessId") DO NOTHING;
 
 -- ── Admin ───────────────────────────────────────────────────────────────────
 INSERT INTO "AdminAccount" (

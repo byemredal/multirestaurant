@@ -7,7 +7,7 @@ import {
   Length,
   Matches,
 } from 'class-validator';
-import { DeliveryModel, TenantType } from '../entities/tenant-account.entity';
+import { DeliveryModel, TenantType } from '../entities/tenant-business.entity';
 
 export class RegisterTenantDto {
   @ApiProperty({ example: 'Aylin' })

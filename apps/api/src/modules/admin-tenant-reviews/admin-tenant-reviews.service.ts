@@ -41,11 +41,34 @@ export class AdminTenantReviewsService {
   }
 
   async getTenantBusinessOverview(tenantId: string) {
-    const [tenantAccount, application, stores] = await Promise.all([
+    const [tenantView, application, stores] = await Promise.all([
       this.tenantAccountsStore.findById(tenantId),
       this.onboardingService.findApplicationForTenantAdmin(tenantId),
       this.storesService.listForTenant(tenantId),
     ]);
+
+    // Flatten the {account, business} view into the legacy admin response
+    // shape so the admin frontend does not need to change.
+    const tenantAccount = tenantView
+      ? {
+          id: tenantView.account.id,
+          email: tenantView.account.email,
+          firstName: tenantView.account.firstName,
+          lastName: tenantView.account.lastName,
+          phoneNumber: tenantView.account.phoneNumber,
+          companyName: tenantView.business.companyName,
+          companyAddress: tenantView.business.companyAddress,
+          tenantType: tenantView.business.tenantType,
+          deliveryModel: tenantView.business.deliveryModel,
+          verificationStatus: tenantView.business.verificationStatus,
+          onboardingStatus: tenantView.business.onboardingStatus,
+          isActive: tenantView.account.isActive,
+          isVerified: tenantView.account.isVerified,
+          lastLoginAt: tenantView.account.lastLoginAt,
+          createdAt: tenantView.account.createdAt,
+          updatedAt: tenantView.account.updatedAt,
+        }
+      : null;
 
     const storeOverviews = await Promise.all(
       stores.map(async (store) => {

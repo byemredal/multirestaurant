@@ -22,10 +22,12 @@ export class RefreshSessionsStore {
     await this.databaseService
       .prepare(
         `INSERT INTO "RefreshSession" (
-          "id", "token", "subjectType", "customerAccountId", "tenantAccountId", "adminAccountId",
+          "id", "token", "subjectType",
+          "customerAccountId", "tenantAccountId", "staffAccountId", "adminAccountId",
           "expiresAt", "isRevoked", "createdAt", "revokedAt"
         ) VALUES (
-          $id, $token, $subjectType, $customerAccountId, $tenantAccountId, $adminAccountId,
+          $id, $token, $subjectType,
+          $customerAccountId, $tenantAccountId, $staffAccountId, $adminAccountId,
           $expiresAt, $isRevoked, $createdAt, $revokedAt
         )`,
       )
@@ -37,6 +39,8 @@ export class RefreshSessionsStore {
           session.subjectType === 'customer' ? session.subjectId : null,
         $tenantAccountId:
           session.subjectType === 'tenant' ? session.subjectId : null,
+        $staffAccountId:
+          session.subjectType === 'staff' ? session.subjectId : null,
         $adminAccountId:
           session.subjectType === 'admin' ? session.subjectId : null,
         $expiresAt: session.expiresAt.toISOString(),
@@ -92,7 +96,12 @@ export class RefreshSessionsStore {
     return {
       id: record.id,
       token: '',
-      subjectId: record.customerAccountId ?? record.tenantAccountId ?? record.adminAccountId ?? '',
+      subjectId:
+        record.customerAccountId ??
+        record.tenantAccountId ??
+        record.staffAccountId ??
+        record.adminAccountId ??
+        '',
       subjectType: record.subjectType,
       expiresAt: new Date(record.expiresAt),
       isRevoked: Boolean(record.isRevoked),
@@ -108,6 +117,7 @@ interface RefreshSessionRow {
   subjectType: AuthSubjectType;
   customerAccountId: string | null;
   tenantAccountId: string | null;
+  staffAccountId: string | null;
   adminAccountId: string | null;
   expiresAt: string;
   isRevoked: boolean;

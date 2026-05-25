@@ -54,9 +54,21 @@ export class TenantOnboardingStore {
     return row ? this.mapApplication(row) : null;
   }
 
+  /**
+   * Reads the joined TenantAccount + TenantBusiness row for an application.
+   * Business fields (companyName/companyAddress/tenantType/deliveryModel/
+   * verificationStatus/onboardingStatus) come from TenantBusiness after the
+   * MR-ARCH-02 identity-vs-business split.
+   */
   async findTenantAccountByApplicationId(applicationId: string) {
     const row = await this.databaseService.prepare(
-      `SELECT p.* FROM "TenantAccount" p
+      `SELECT p."id", p."email", p."firstName", p."lastName", p."phoneNumber",
+              b."companyName", b."companyAddress", b."tenantType", b."deliveryModel",
+              b."verificationStatus", b."onboardingStatus",
+              p."isActive", p."isVerified", p."lastLoginAt",
+              p."createdAt", p."updatedAt"
+       FROM "TenantAccount" p
+       INNER JOIN "TenantBusiness" b ON b."tenantAccountId" = p."id"
        INNER JOIN "TenantOnboardingApplication" a ON a."tenantAccountId" = p."id"
        WHERE a."id" = $applicationId`,
     ).get({ $applicationId: applicationId }) as TenantAccountLookupRow | undefined;
@@ -762,10 +774,11 @@ export class TenantOnboardingStore {
 
   async listApplications() {
     const rows = await this.databaseService.prepare(
-      `SELECT a.*, p."email" as "tenantEmail", p."companyName" as "tenantCompanyName",
+      `SELECT a.*, p."email" as "tenantEmail", tb."companyName" as "tenantCompanyName",
               b."city" as "businessCity", b."businessType" as "businessType"
        FROM "TenantOnboardingApplication" a
        INNER JOIN "TenantAccount" p ON p."id" = a."tenantAccountId"
+       INNER JOIN "TenantBusiness" tb ON tb."tenantAccountId" = p."id"
        LEFT JOIN "TenantBusinessDetail" b ON b."applicationId" = a."id"
        ORDER BY a."updatedAt" DESC`,
     ).all() as (ApplicationRow & { tenantEmail: string; tenantCompanyName: string; businessCity: string | null; businessType: string | null })[];

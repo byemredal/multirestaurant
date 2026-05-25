@@ -1,26 +1,11 @@
-export enum TenantType {
-  FOOD_SERVICE = 'food_service',
-  RETAIL = 'retail',
-  OTHER = 'other',
-}
-
-export enum DeliveryModel {
-  OWN_FLEET = 'own_fleet',
-  PLATFORM_FLEET = 'platform_fleet',
-  HYBRID = 'hybrid',
-}
-
-export type TenantVerificationStatus = 'pending' | 'verified' | 'rejected';
-export type TenantOnboardingStatus =
-  | 'draft'
-  | 'submitted'
-  | 'under_review'
-  | 'revision_required'
-  | 'approved'
-  | 'rejected'
-  | 'active'
-  | 'suspended';
-
+/**
+ * TenantAccount carries LOGIN IDENTITY only. The company / verification /
+ * onboarding columns moved to TenantBusiness in MR-ARCH-02.
+ *
+ * The TenantType / DeliveryModel / TenantVerificationStatus / TenantOnboardingStatus
+ * enums and types live in `tenant-business.entity.ts` because they describe
+ * the business profile, not the identity row.
+ */
 export interface TenantAccount {
   id: string;
   email: string;
@@ -28,12 +13,6 @@ export interface TenantAccount {
   firstName: string;
   lastName: string;
   phoneNumber: string;
-  companyName: string;
-  companyAddress: string;
-  tenantType: TenantType;
-  deliveryModel: DeliveryModel;
-  verificationStatus: TenantVerificationStatus;
-  onboardingStatus: TenantOnboardingStatus;
   isActive: boolean;
   isVerified: boolean;
   lastLoginAt: Date | null;
