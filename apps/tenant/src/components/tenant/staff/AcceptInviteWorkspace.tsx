@@ -2,8 +2,9 @@
 
 import { useEffect, useState } from 'react';
 import Link from 'next/link';
-import { useSearchParams } from 'next/navigation';
-import { acceptStaffInvite } from '@/lib/tenant-staff-client';
+import { useRouter, useSearchParams } from 'next/navigation';
+import { acceptStaffInviteSession } from '@/lib/auth/staff-client';
+import { useStaffAuth } from '@/lib/auth/staff-auth-context';
 
 /**
  * Public accept-invite workspace.
@@ -22,6 +23,8 @@ import { acceptStaffInvite } from '@/lib/tenant-staff-client';
  */
 export default function AcceptInviteWorkspace() {
   const searchParams = useSearchParams();
+  const router = useRouter();
+  const { setSession } = useStaffAuth();
   const tokenFromUrl = searchParams.get('token') ?? '';
   const [token, setToken] = useState(tokenFromUrl);
   const [password, setPassword] = useState('');
@@ -55,7 +58,10 @@ export default function AcceptInviteWorkspace() {
 
     setSubmitting(true);
     try {
-      const result = await acceptStaffInvite(token.trim(), password);
+      const result = await acceptStaffInviteSession(token.trim(), password);
+      // Persist into staff session storage so /staff/dashboard renders
+      // immediately without a re-login round-trip.
+      setSession(result);
       setSuccess({
         email: result.staff.email,
         storeScope: result.staff.storeScope.length,
@@ -88,16 +94,24 @@ export default function AcceptInviteWorkspace() {
             ) : null}
           </p>
           <div className="mt-5 rounded-[12px] border border-emerald-200 bg-white p-4 text-left text-[12.5px] leading-5 text-slate-600">
-            <strong className="text-slate-800">Personel çalışma alanı</strong> yakında
-            kullanıma açılacak. Şimdilik sipariş ve menü ekranlarına yalnızca tenant
-            yöneticileri erişebilir.
+            Hesabınız hazır. Çalışma alanınıza geçebilirsiniz — operasyonel araçlar
+            kademeli olarak buraya eklenecek.
           </div>
-          <Link
-            href="/"
-            className="mt-5 inline-flex items-center gap-1.5 rounded-[10px] border border-emerald-300 bg-white px-3.5 py-2 text-[12.5px] font-semibold text-emerald-800 transition hover:bg-emerald-50"
-          >
-            Ana sayfaya dön
-          </Link>
+          <div className="mt-5 flex flex-wrap justify-center gap-2">
+            <button
+              type="button"
+              onClick={() => router.replace('/staff/dashboard')}
+              className="rounded-[10px] bg-[#09479A] px-3.5 py-2 text-[12.5px] font-semibold text-white transition hover:bg-[#06366f]"
+            >
+              Çalışma alanıma git
+            </button>
+            <Link
+              href="/"
+              className="rounded-[10px] border border-emerald-300 bg-white px-3.5 py-2 text-[12.5px] font-semibold text-emerald-800 transition hover:bg-emerald-50"
+            >
+              Ana sayfaya dön
+            </Link>
+          </div>
         </div>
       </div>
     );
