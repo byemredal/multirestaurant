@@ -1,0 +1,282 @@
+-- 0005 — Legal documents.
+--
+-- Canonical pipeline (kept and consolidated):
+--   LegalDocumentType          — system taxonomy (admin-managed codes)
+--   PlatformLegalDocument      — conceptual document header (platform-owned)
+--   PlatformLegalDocumentVersion — IMMUTABLE versioned content
+--   ConsentEvent               — APPEND-ONLY consent log (customer/tenant/anon)
+--   OrderLegalAcceptance       — IMMUTABLE per-order legal proof
+--   MarketingConsent           — APPEND-ONLY marketing channel consent
+--   StoreTermsAddendum         — store-scoped add-on terms
+--
+-- LEGACY (clearly isolated; scheduled for removal in a follow-up sprint):
+--   LegalDocument                   — minimal setup-time table (0016 legacy)
+--   StoreLegalDocument(+Translation) — pre-pipeline per-store legal docs (0007 legacy)
+--   StoreProfileNote(+Translation)   — pre-pipeline per-store marketing copy (0007 legacy)
+--
+-- The legacy tables are still read by store-settings and the setup wizard.
+-- A follow-up sprint must migrate those consumers to the canonical pipeline
+-- before the legacy section can be deleted.
+
+-- ===========================================================================
+-- 1. LegalDocumentType — system taxonomy
+-- ===========================================================================
+
+CREATE TABLE IF NOT EXISTS "LegalDocumentType" (
+  "id" UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  "code" VARCHAR(80) NOT NULL UNIQUE,
+  "displayName" VARCHAR(160) NOT NULL,
+  "sortOrder" INTEGER NOT NULL DEFAULT 0,
+  "isActive" BOOLEAN NOT NULL DEFAULT TRUE,
+  "createdAt" TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  "updatedAt" TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS "IDX_LegalDocumentType_active_sortOrder"
+  ON "LegalDocumentType" ("isActive", "sortOrder");
+
+INSERT INTO "LegalDocumentType" ("code", "displayName", "sortOrder") VALUES
+  ('terms_of_service',          'Kullanım Koşulları',                10),
+  ('privacy_policy',            'Gizlilik Politikası',               20),
+  ('kvkk_disclosure',           'KVKK Aydınlatma Metni',             30),
+  ('cookie_policy',             'Çerez Politikası',                  40),
+  ('distance_sales_contract',   'Mesafeli Satış Sözleşmesi',         50),
+  ('pre_information_form',      'Ön Bilgilendirme Formu',            60),
+  ('tenant_service_agreement',  'Tenant Hizmet Sözleşmesi',          70),
+  ('commission_tariff',         'Komisyon Tarifesi',                 80)
+ON CONFLICT ("code") DO NOTHING;
+
+-- ===========================================================================
+-- 2. PlatformLegalDocument — conceptual header
+-- ===========================================================================
+
+CREATE TABLE IF NOT EXISTS "PlatformLegalDocument" (
+  "id" UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  "typeId" UUID NOT NULL REFERENCES "LegalDocumentType"("id") ON DELETE RESTRICT,
+  "code" VARCHAR(120) NOT NULL UNIQUE,
+  "audience" VARCHAR(20) NOT NULL DEFAULT 'customer',
+  "isRequired" BOOLEAN NOT NULL DEFAULT TRUE,
+  "isActive" BOOLEAN NOT NULL DEFAULT TRUE,
+  "createdAt" TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  "updatedAt" TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  CONSTRAINT "CHK_PlatformLegalDocument_audience"
+    CHECK ("audience" IN ('customer', 'tenant', 'all'))
+);
+
+CREATE INDEX IF NOT EXISTS "IDX_PlatformLegalDocument_audience_active"
+  ON "PlatformLegalDocument" ("audience", "isActive");
+CREATE INDEX IF NOT EXISTS "IDX_PlatformLegalDocument_typeId"
+  ON "PlatformLegalDocument" ("typeId");
+
+-- ===========================================================================
+-- 3. PlatformLegalDocumentVersion — immutable versioned content
+-- ===========================================================================
+
+CREATE TABLE IF NOT EXISTS "PlatformLegalDocumentVersion" (
+  "id" UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  "documentId" UUID NOT NULL REFERENCES "PlatformLegalDocument"("id") ON DELETE RESTRICT,
+  "versionLabel" VARCHAR(64) NOT NULL,
+  "locale" VARCHAR(16) NOT NULL DEFAULT 'tr',
+  "title" VARCHAR(255) NOT NULL,
+  "body" TEXT NOT NULL,
+  "bodyFormat" VARCHAR(20) NOT NULL DEFAULT 'markdown',
+  "contentHashSha256" VARCHAR(64) NOT NULL,
+  "effectiveFrom" TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  "publishedAt" TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  "supersededAt" TIMESTAMPTZ,
+  "createdByAdminId" UUID REFERENCES "AdminAccount"("id") ON DELETE SET NULL,
+  "createdAt" TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  CONSTRAINT "CHK_PlatformLegalDocumentVersion_bodyFormat"
+    CHECK ("bodyFormat" IN ('markdown', 'html', 'plain_text')),
+  CONSTRAINT "UQ_PlatformLegalDocumentVersion_doc_label_locale"
+    UNIQUE ("documentId", "versionLabel", "locale")
+);
+
+CREATE INDEX IF NOT EXISTS "IDX_PlatformLegalDocumentVersion_doc_publishedAt"
+  ON "PlatformLegalDocumentVersion" ("documentId", "publishedAt" DESC);
+CREATE INDEX IF NOT EXISTS "IDX_PlatformLegalDocumentVersion_doc_locale"
+  ON "PlatformLegalDocumentVersion" ("documentId", "locale");
+CREATE INDEX IF NOT EXISTS "IDX_PlatformLegalDocumentVersion_current"
+  ON "PlatformLegalDocumentVersion" ("documentId", "locale")
+  WHERE "supersededAt" IS NULL;
+
+-- ===========================================================================
+-- 4. ConsentEvent — append-only consent log
+-- ===========================================================================
+
+CREATE TABLE IF NOT EXISTS "ConsentEvent" (
+  "id" UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  "subjectType" VARCHAR(20) NOT NULL,
+  "customerAccountId" UUID REFERENCES "CustomerAccount"("id") ON DELETE SET NULL,
+  "tenantAccountId" UUID REFERENCES "TenantAccount"("id") ON DELETE SET NULL,
+  "anonymousIdentifier" VARCHAR(120),
+  "documentVersionId" UUID NOT NULL REFERENCES "PlatformLegalDocumentVersion"("id") ON DELETE RESTRICT,
+  "action" VARCHAR(20) NOT NULL,
+  "ipAddress" INET,
+  "userAgent" VARCHAR(500),
+  "channel" VARCHAR(30) NOT NULL,
+  "contextRef" VARCHAR(160),
+  "acceptedAt" TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  "createdAt" TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  CONSTRAINT "CHK_ConsentEvent_subjectType"
+    CHECK ("subjectType" IN ('customer', 'tenant', 'anonymous')),
+  CONSTRAINT "CHK_ConsentEvent_action"
+    CHECK ("action" IN ('granted', 'revoked', 'renewed')),
+  CONSTRAINT "CHK_ConsentEvent_channel"
+    CHECK ("channel" IN ('web', 'ios', 'android', 'tenant-portal', 'admin-portal', 'in-store', 'api')),
+  CONSTRAINT "CHK_ConsentEvent_subjectXor"
+    CHECK (
+      ("subjectType" = 'customer' AND "customerAccountId" IS NOT NULL
+        AND "tenantAccountId" IS NULL AND "anonymousIdentifier" IS NULL)
+      OR
+      ("subjectType" = 'tenant' AND "tenantAccountId" IS NOT NULL
+        AND "customerAccountId" IS NULL AND "anonymousIdentifier" IS NULL)
+      OR
+      ("subjectType" = 'anonymous' AND "anonymousIdentifier" IS NOT NULL
+        AND "customerAccountId" IS NULL AND "tenantAccountId" IS NULL)
+    )
+);
+
+CREATE INDEX IF NOT EXISTS "IDX_ConsentEvent_documentVersionId"
+  ON "ConsentEvent" ("documentVersionId");
+CREATE INDEX IF NOT EXISTS "IDX_ConsentEvent_customer_acceptedAt"
+  ON "ConsentEvent" ("customerAccountId", "acceptedAt" DESC)
+  WHERE "customerAccountId" IS NOT NULL;
+CREATE INDEX IF NOT EXISTS "IDX_ConsentEvent_tenant_acceptedAt"
+  ON "ConsentEvent" ("tenantAccountId", "acceptedAt" DESC)
+  WHERE "tenantAccountId" IS NOT NULL;
+CREATE INDEX IF NOT EXISTS "IDX_ConsentEvent_anonymous_acceptedAt"
+  ON "ConsentEvent" ("anonymousIdentifier", "acceptedAt" DESC)
+  WHERE "anonymousIdentifier" IS NOT NULL;
+
+-- ===========================================================================
+-- 5. MarketingConsent — append-only marketing-channel consent
+-- ===========================================================================
+
+CREATE TABLE IF NOT EXISTS "MarketingConsent" (
+  "id" UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  "subjectType" VARCHAR(20) NOT NULL,
+  "customerAccountId" UUID REFERENCES "CustomerAccount"("id") ON DELETE SET NULL,
+  "tenantAccountId" UUID REFERENCES "TenantAccount"("id") ON DELETE SET NULL,
+  "channel" VARCHAR(20) NOT NULL,
+  "action" VARCHAR(20) NOT NULL,
+  "source" VARCHAR(120),
+  "iysReferenceId" VARCHAR(120),
+  "ipAddress" INET,
+  "userAgent" VARCHAR(500),
+  "createdAt" TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  CONSTRAINT "CHK_MarketingConsent_subjectType"
+    CHECK ("subjectType" IN ('customer', 'tenant')),
+  CONSTRAINT "CHK_MarketingConsent_channel"
+    CHECK ("channel" IN ('email', 'sms', 'push', 'call')),
+  CONSTRAINT "CHK_MarketingConsent_action"
+    CHECK ("action" IN ('granted', 'revoked')),
+  CONSTRAINT "CHK_MarketingConsent_subjectXor"
+    CHECK (
+      ("subjectType" = 'customer' AND "customerAccountId" IS NOT NULL AND "tenantAccountId" IS NULL)
+      OR
+      ("subjectType" = 'tenant' AND "tenantAccountId" IS NOT NULL AND "customerAccountId" IS NULL)
+    )
+);
+
+CREATE INDEX IF NOT EXISTS "IDX_MarketingConsent_customer_channel_createdAt"
+  ON "MarketingConsent" ("customerAccountId", "channel", "createdAt" DESC)
+  WHERE "customerAccountId" IS NOT NULL;
+CREATE INDEX IF NOT EXISTS "IDX_MarketingConsent_tenant_channel_createdAt"
+  ON "MarketingConsent" ("tenantAccountId", "channel", "createdAt" DESC)
+  WHERE "tenantAccountId" IS NOT NULL;
+
+-- ===========================================================================
+-- 6. StoreTermsAddendum — store-scoped add-on terms
+-- ===========================================================================
+
+CREATE TABLE IF NOT EXISTS "StoreTermsAddendum" (
+  "id" UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  "storeId" UUID NOT NULL REFERENCES "Store"("id") ON DELETE CASCADE,
+  "parentDocumentVersionId" UUID NOT NULL
+    REFERENCES "PlatformLegalDocumentVersion"("id") ON DELETE RESTRICT,
+  "title" VARCHAR(255) NOT NULL,
+  "body" TEXT NOT NULL,
+  "locale" VARCHAR(16) NOT NULL DEFAULT 'tr',
+  "isActive" BOOLEAN NOT NULL DEFAULT TRUE,
+  "createdAt" TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  "updatedAt" TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS "IDX_StoreTermsAddendum_storeId"
+  ON "StoreTermsAddendum" ("storeId");
+CREATE INDEX IF NOT EXISTS "IDX_StoreTermsAddendum_parentVersion"
+  ON "StoreTermsAddendum" ("parentDocumentVersionId");
+
+-- ===========================================================================
+-- LEGACY — to be removed once consumers migrate to the canonical pipeline.
+-- ===========================================================================
+
+-- LegalDocument: seeded by the setup wizard with minimal CH baseline copy.
+-- Used by SetupStore and admin-tenant-reviews until the setup flow is
+-- rewritten against PlatformLegalDocument(+Version).
+CREATE TABLE IF NOT EXISTS "LegalDocument" (
+  "id" UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  "type" TEXT NOT NULL,
+  "version" TEXT NOT NULL,
+  "countryCode" CHAR(2) NOT NULL,
+  "content" TEXT NOT NULL,
+  "createdAt" TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  CONSTRAINT "UQ_LegalDocument_type_country_version"
+    UNIQUE ("type", "countryCode", "version")
+);
+
+-- StoreLegalDocument + translation: read/written by store-settings until that
+-- module is rewritten against StoreTermsAddendum.
+CREATE TABLE IF NOT EXISTS "StoreLegalDocument" (
+  "id" UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  "storeId" UUID NOT NULL REFERENCES "Store"("id") ON DELETE CASCADE,
+  "documentType" VARCHAR(32) NOT NULL,
+  "versionLabel" VARCHAR(64) NOT NULL DEFAULT 'v1',
+  "isPublished" BOOLEAN NOT NULL DEFAULT FALSE,
+  "effectiveFrom" TIMESTAMPTZ,
+  "createdAt" TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  "updatedAt" TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  CONSTRAINT "CHK_StoreLegalDocument_documentType"
+    CHECK ("documentType" IN ('terms_and_conditions', 'privacy_notice', 'distance_sales'))
+);
+
+CREATE INDEX IF NOT EXISTS "IDX_StoreLegalDocument_storeId"
+  ON "StoreLegalDocument" ("storeId");
+
+CREATE TABLE IF NOT EXISTS "StoreLegalDocumentTranslation" (
+  "id" UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  "documentId" UUID NOT NULL REFERENCES "StoreLegalDocument"("id") ON DELETE CASCADE,
+  "locale" VARCHAR(16) NOT NULL,
+  "title" VARCHAR(255) NOT NULL,
+  "body" TEXT NOT NULL,
+  "createdAt" TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  "updatedAt" TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  UNIQUE ("documentId", "locale")
+);
+
+-- StoreProfileNote + translation: same legacy story as StoreLegalDocument.
+CREATE TABLE IF NOT EXISTS "StoreProfileNote" (
+  "id" UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  "storeId" UUID NOT NULL REFERENCES "Store"("id") ON DELETE CASCADE,
+  "noteType" VARCHAR(32) NOT NULL DEFAULT 'profile',
+  "isPublished" BOOLEAN NOT NULL DEFAULT FALSE,
+  "createdAt" TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  "updatedAt" TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  CONSTRAINT "CHK_StoreProfileNote_noteType"
+    CHECK ("noteType" IN ('profile', 'story', 'operational'))
+);
+
+CREATE INDEX IF NOT EXISTS "IDX_StoreProfileNote_storeId"
+  ON "StoreProfileNote" ("storeId");
+
+CREATE TABLE IF NOT EXISTS "StoreProfileNoteTranslation" (
+  "id" UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  "noteId" UUID NOT NULL REFERENCES "StoreProfileNote"("id") ON DELETE CASCADE,
+  "locale" VARCHAR(16) NOT NULL,
+  "title" VARCHAR(255),
+  "body" TEXT NOT NULL,
+  "createdAt" TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  "updatedAt" TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  UNIQUE ("noteId", "locale")
+);
