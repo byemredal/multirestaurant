@@ -50,22 +50,22 @@ function validateForm(form: TenantAuthorizedPersonInput) {
   const errors: AuthorizedPersonErrors = {};
   const email = form.email.trim();
   if (!form.fullName.trim()) {
-    errors.fullName = 'Full name is required.';
+    errors.fullName = 'Ad soyad zorunludur.';
   }
   if (!email) {
-    errors.email = 'Email is required.';
+    errors.email = 'E-posta zorunludur.';
   } else if (!/^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(email)) {
-    errors.email = 'Enter a valid email address.';
+    errors.email = 'Geçerli bir e-posta adresi girin.';
   }
   if (!form.phoneNumber.trim()) {
-    errors.phoneNumber = 'Phone number is required.';
+    errors.phoneNumber = 'Telefon numarası zorunludur.';
   }
   if (
     form.ownershipPercentage !== null &&
     form.ownershipPercentage !== undefined &&
     (Number.isNaN(form.ownershipPercentage) || form.ownershipPercentage < 0 || form.ownershipPercentage > 100)
   ) {
-    errors.ownershipPercentage = 'Ownership share must be between 0 and 100.';
+    errors.ownershipPercentage = 'Sahiplik payı 0 ile 100 arasında olmalıdır.';
   }
   return errors;
 }
@@ -121,7 +121,7 @@ export function AuthorizedPersonStep({
         navigating = true;
         onNavigate(getTenantOnboardingStepUrl(workspace.stateToken, nextStep));
       } catch (error) {
-        setSubmitError(error instanceof Error ? error.message : 'Authorized person details could not be saved.');
+        setSubmitError(error instanceof Error ? error.message : 'Yetkili kişi bilgileri kaydedilemedi.');
       } finally {
         if (!navigating) {
           setSaving(false);
@@ -139,8 +139,8 @@ export function AuthorizedPersonStep({
         totalSteps={0}
         status={ownerStatus}
         updatedAt={workspace.application.updatedAt}
-        title="Authorized person"
-        description="Add the owner, authorized representative, or signatory contact for this onboarding application. Commercial and tax details stay in the previous business-details step."
+        title="Yetkili kişi"
+        description="Bu başvuru için işletme sahibi, yetkili temsilci veya imza yetkilisi bilgilerini girin. Ticari ve vergi bilgileri önceki adımda tutulur."
       />
 
       <div className="grid gap-5">
@@ -225,7 +225,7 @@ export function AuthorizedPersonStep({
         </div>
 
         <OnboardingBottomActionBar
-          primaryLabel="Save authorized person"
+          primaryLabel="Yetkili kişi bilgilerini kaydet"
           onPrimary={() => void saveAndContinue()}
           primaryDisabled={saving || Boolean(resolvedSession?.redirectStep)}
           primaryLoading={saving}

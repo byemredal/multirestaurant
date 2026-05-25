@@ -33,7 +33,7 @@ export function getTenantOnboardingComplianceCatalog(
   country = 'CH',
   language = 'de-CH',
 ): TenantOnboardingComplianceCatalog {
-  const placeholderNote = 'Placeholder guidance; requirements must be reviewed before production.';
+  const placeholderNote = 'Taslak yönlendirme metnidir; gereksinimler yayına alınmadan önce incelenmelidir.';
 
   return {
     country,
@@ -41,7 +41,7 @@ export function getTenantOnboardingComplianceCatalog(
     documents: [
       {
         type: 'commercial_register_extract',
-        label: 'Commercial register extract or business registration document',
+        label: 'Ticaret sicili özeti veya işletme kayıt belgesi',
         required: false,
         description: placeholderNote,
         acceptedFormats: ['pdf', 'jpg', 'jpeg', 'png'],
@@ -49,7 +49,7 @@ export function getTenantOnboardingComplianceCatalog(
       },
       {
         type: 'identity_document',
-        label: 'Authorized representative identification document',
+        label: 'Yetkili temsilci kimlik belgesi',
         required: false,
         description: placeholderNote,
         acceptedFormats: ['pdf', 'jpg', 'jpeg', 'png'],
@@ -57,7 +57,7 @@ export function getTenantOnboardingComplianceCatalog(
       },
       {
         type: 'bank_statement',
-        label: 'Bank account evidence',
+        label: 'Banka hesabı kanıt belgesi',
         required: false,
         description: placeholderNote,
         acceptedFormats: ['pdf', 'jpg', 'jpeg', 'png'],
@@ -67,12 +67,12 @@ export function getTenantOnboardingComplianceCatalog(
     documentValidationPolicy: {
       mode: 'minimum_current_required_document',
       minimumRequiredDocuments: 1,
-      note: 'Current backend rule: upload at least one current required document before submission.',
+      note: 'Mevcut sistem kuralı: göndermeden önce en az bir güncel zorunlu belge yükleyin.',
     },
     consents: [
       {
         consentKey: 'privacy_acknowledgement',
-        label: 'I acknowledge the privacy information for this partner application.',
+        label: 'Bu iş ortağı başvurusuna ilişkin gizlilik bilgilendirmesini okuduğumu onaylıyorum.',
         description: placeholderNote,
         documentCode: 'partner_privacy_placeholder',
         documentVersion: 'placeholder-v1',
@@ -81,7 +81,7 @@ export function getTenantOnboardingComplianceCatalog(
       },
       {
         consentKey: 'partner_terms_acknowledgement',
-        label: 'I acknowledge the partner terms placeholder presented for onboarding.',
+        label: 'Başvuru sırasında sunulan iş ortağı koşulları taslağını okuduğumu onaylıyorum.',
         description: placeholderNote,
         documentCode: 'partner_terms_placeholder',
         documentVersion: 'placeholder-v1',

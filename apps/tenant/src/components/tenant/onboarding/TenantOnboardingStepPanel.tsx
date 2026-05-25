@@ -155,13 +155,13 @@ function formatPhoneVerificationError(message: string) {
     normalized.includes('invalid phone verification code') ||
     normalized.includes('tenant_onboarding_phone_verify_failed_400')
   ) {
-    return 'Kod dogrulanamadi. Lutfen gonderilen 6 haneli kodu kontrol edin.';
+    return 'Kod doğrulanamadı. Lütfen gönderilen 6 haneli kodu kontrol edin.';
   }
   if (normalized.includes('expired')) {
-    return 'Kodun suresi doldu. Lutfen yeni kod isteyin.';
+    return 'Kodun süresi doldu. Lütfen yeni kod isteyin.';
   }
   if (normalized.includes('attempts exceeded')) {
-    return 'Cok fazla hatali deneme yapildi. Lutfen yeni kod isteyin.';
+    return 'Çok fazla hatalı deneme yapıldı. Lütfen yeni kod isteyin.';
   }
   return message;
 }
@@ -337,7 +337,7 @@ export function TenantOnboardingStepPanel({
         setPhoneCode(challenge.debugCode);
       }
     } catch (error) {
-      setPhoneVerificationError(error instanceof Error ? error.message : 'Kod gonderilemedi.');
+      setPhoneVerificationError(error instanceof Error ? error.message : 'Kod gönderilemedi.');
     } finally {
       setPhoneVerificationLoading(false);
     }
@@ -351,7 +351,7 @@ export function TenantOnboardingStepPanel({
       onPhoneVerified(result.workspace);
       onContinue();
     } catch (error) {
-      const message = error instanceof Error ? error.message : 'Kod dogrulanamadi.';
+      const message = error instanceof Error ? error.message : 'Kod doğrulanamadı.';
       setPhoneVerificationError(formatPhoneVerificationError(message));
     } finally {
       setPhoneVerificationLoading(false);
@@ -408,8 +408,8 @@ export function TenantOnboardingStepPanel({
           totalSteps={totalSteps}
           status={phoneVerified ? 'completed' : 'in_progress'}
           updatedAt={workspace.application.updatedAt}
-          title="Telefon dogrulama"
-          description="Telefon numaranizi girin, gelen 6 haneli kodu kutulara yazin. Onay tamamlanmadan sonraki adima gecilemez."
+          title="Telefon doğrulama"
+          description="Telefon numaranızı girin, gelen 6 haneli kodu kutulara yazın. Onay tamamlanmadan sonraki adıma geçilemez."
         />
         <div className="grid gap-4">
           <div className="rounded-[18px] border border-primary-100 bg-primary-50 px-4 py-4 text-[14px] text-primary-700">
@@ -418,7 +418,7 @@ export function TenantOnboardingStepPanel({
             ) : phoneChallenge ? (
               <div className="grid gap-2">
                 <span>
-                  {`Kod ${phoneChallenge.maskedPhoneNumber} numarasi icin olusturuldu. Gecerlilik: ${new Date(phoneChallenge.expiresAt).toLocaleTimeString('tr-TR', { hour: '2-digit', minute: '2-digit' })}.`}
+                  {`Kod ${phoneChallenge.maskedPhoneNumber} numarası için oluşturuldu. Geçerlilik: ${new Date(phoneChallenge.expiresAt).toLocaleTimeString('tr-TR', { hour: '2-digit', minute: '2-digit' })}.`}
                 </span>
                 {phoneChallenge.debugCode ? (
                   <span className="font-semibold text-primary-800">
@@ -427,7 +427,7 @@ export function TenantOnboardingStepPanel({
                 ) : null}
               </div>
             ) : (
-              'SMS provider baglanana kadar kod e-posta log transportu uzerinden uretilir. UI gercek OTP akisina hazirdir.'
+              'SMS sağlayıcısı bağlanana kadar kod e-posta log aktarımı üzerinden üretilir. Arayüz gerçek doğrulama akışına hazırdır.'
             )}
           </div>
 
@@ -446,7 +446,7 @@ export function TenantOnboardingStepPanel({
                 value={phoneNumber}
                 onChange={(event) => setPhoneNumber(event.target.value)}
               />
-              <p className="mt-1 text-[12px] text-ink-500">SMS kodu bu numaraya gonderilecek.</p>
+              <p className="mt-1 text-[12px] text-ink-500">SMS kodu bu numaraya gönderilecek.</p>
             </div>
             <Button
               type="button"
@@ -455,7 +455,7 @@ export function TenantOnboardingStepPanel({
               disabled={phoneVerificationLoading || phoneVerified || !canSendPhoneCode}
               className="rounded-[14px] px-4 py-2.5 text-[14px] font-semibold"
             >
-              {phoneChallenge ? 'Kodu yeniden gonder' : 'Kodu gonder'}
+              {phoneChallenge ? 'Kodu yeniden gönder' : 'Kodu gönder'}
             </Button>
           </div>
 
@@ -484,7 +484,7 @@ export function TenantOnboardingStepPanel({
           onSave={() => (phoneVerified ? onContinue() : void verifyPhoneCode())}
           saving={phoneVerificationLoading}
           disableSave={!phoneVerified && phoneCode.length !== 6}
-          primaryLabel={phoneVerified ? 'Devam et' : 'Dogrula ve devam et'}
+          primaryLabel={phoneVerified ? 'Devam et' : 'Doğrula ve devam et'}
         />
       </Card>
     );
@@ -611,7 +611,7 @@ export function TenantOnboardingStepPanel({
           status={activeEntry?.status ?? 'in_progress'}
           updatedAt={activeEntry?.updatedAt ?? workspace.application.updatedAt}
           title="Belgeler"
-          description="Inceleme icin en az bir gerekli belge yukleyin. Yukleme tamamlandiginda dogrulama adimi tamamlanir."
+          description="İnceleme için en az bir gerekli belge yükleyin. Yükleme tamamlandığında doğrulama adımı tamamlanır."
         />
         {activeEntry?.status === 'needs_revision' && <RevisionAlert />}
         <fieldset disabled={locked} className="m-0 grid min-w-0 gap-4 border-0 p-0 md:grid-cols-2">
@@ -621,7 +621,7 @@ export function TenantOnboardingStepPanel({
           >
             <option value="business_license">Ticaret lisansi</option>
             <option value="tax_certificate">Vergi belgesi</option>
-            <option value="identity_document">Yetkili kimligi</option>
+            <option value="identity_document">Yetkili kimliği</option>
             <option value="bank_statement">Banka kaniti</option>
             <option value="food_safety_certificate">Gida guvenligi belgesi</option>
           </Select>
@@ -643,7 +643,7 @@ export function TenantOnboardingStepPanel({
         />
         <div className="mt-6">
           <p className="mb-3 text-[12px] font-bold uppercase tracking-[0.14em] text-ink-400">
-            Yuklenen belgeler
+            Yüklenen belgeler
           </p>
           <DocumentsList documents={documents} />
         </div>
@@ -653,7 +653,7 @@ export function TenantOnboardingStepPanel({
           onBack={onBack}
           onSave={() => void saveDocumentAndAdvance()}
           saving={saving}
-          primaryLabel="Belgeyi yukle ve devam et"
+          primaryLabel="Belgeyi yükle ve devam et"
         />
       </Card>
     );
@@ -904,8 +904,8 @@ export function TenantOnboardingStepPanel({
           totalSteps={totalSteps}
           status={activeEntry.status}
           updatedAt={activeEntry.updatedAt}
-          title="Yetkili kisi bilgileri"
-          description="Basvurudan sorumlu yetkili kisi ve sahiplik bilgilerini tamamlayin."
+          title="Yetkili kişi bilgileri"
+          description="Başvurudan sorumlu yetkili kişi ve sahiplik bilgilerini tamamlayın."
         />
         {activeEntry.status === 'needs_revision' && <RevisionAlert />}
         <ValidationBanner errors={err} />

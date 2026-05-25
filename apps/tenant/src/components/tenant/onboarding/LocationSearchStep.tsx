@@ -61,7 +61,7 @@ export function LocationSearchStep({
 
   async function saveAndContinue() {
     if (!canContinue) {
-      setError('Lutfen isletme konumunu ve ulke kodunu girin.');
+      setError('Lütfen işletme konumunu ve ülke kodunu girin.');
       return;
     }
 
@@ -95,13 +95,13 @@ export function LocationSearchStep({
         totalSteps={0}
         status={workspace.locationSelection ? 'completed' : 'in_progress'}
         updatedAt={workspace.application.updatedAt}
-        title="Isletme konumu"
-        description="Once yalnizca isletmenizin konumunu arayin veya yazin. Tam adres alanlari bir sonraki adimda netlesecek."
+        title="İşletme konumu"
+        description="Önce yalnızca işletmenizin konumunu arayın veya yazın. Tam adres alanları bir sonraki adımda netleşecek."
       />
 
       <div className="grid gap-5">
         <div className="rounded-[8px] border border-primary-100 bg-primary-50 px-4 py-4 text-[14px] leading-6 text-primary-700">
-          Harita veya yer arama saglayicisi henuz bagli degil. Bu alan, Switzerland-first ilerideki adres ve koordinat modeline uyumlu yalin bir konum taslagi kaydeder.
+          Harita veya yer arama sağlayıcısı henüz bağlı değil. Bu alan, ülkeye göre uyarlanabilecek adres ve koordinat modeline uygun yalın bir konum taslağı kaydeder.
         </div>
 
         {error ? (
@@ -113,18 +113,18 @@ export function LocationSearchStep({
         <label className="block">
           <span className="mb-2 block text-[13px] font-semibold text-ink-700">Konum ara</span>
           <Input
-            placeholder="Restoran adi, sokak veya bolge"
+            placeholder="Restoran adı, sokak veya bölge"
             value={rawInput}
             onChange={(event) => setRawInput(event.target.value)}
             disabled={saving}
           />
           <span className="mt-2 block text-[12px] leading-5 text-ink-500">
-            Ornek: Bahnhofstrasse 1, Zurich veya isletme adiniz. Sonraki adimda adres detaylarini tamamlayacagiz.
+            Örnek: Bahnhofstrasse 1, Zürih veya işletme adınız. Sonraki adımda adres detaylarını tamamlayacağız.
           </span>
         </label>
 
         <label className="block max-w-[160px]">
-          <span className="mb-2 block text-[13px] font-semibold text-ink-700">Ulke</span>
+          <span className="mb-2 block text-[13px] font-semibold text-ink-700">Ülke</span>
           <Input
             value={country}
             maxLength={2}

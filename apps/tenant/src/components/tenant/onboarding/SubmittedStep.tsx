@@ -11,16 +11,16 @@ type SubmittedStepProps = {
 };
 
 const STATUS_LABELS: Record<string, string> = {
-  submitted: 'Submitted',
-  under_review: 'Under review',
-  rejected: 'Review completed',
-  suspended: 'On hold',
+  submitted: 'Gönderildi',
+  under_review: 'İnceleniyor',
+  rejected: 'İnceleme tamamlandı',
+  suspended: 'Beklemeye alındı',
 };
 
 export function SubmittedStep({ resolvedSession, workspace }: SubmittedStepProps) {
   const copy = useMemo(() => getSubmittedCopy(), []);
   const status = resolvedSession?.status ?? workspace.application.status;
-  const label = STATUS_LABELS[status] ?? 'Submitted';
+  const label = STATUS_LABELS[status] ?? 'Gönderildi';
 
   return (
     <Card className="border-0 bg-white p-0 shadow-none">
@@ -37,13 +37,13 @@ export function SubmittedStep({ resolvedSession, workspace }: SubmittedStepProps
           {copy.note}
         </p>
         <dl className="mx-auto mt-8 grid max-w-[430px] gap-3 rounded-[8px] border border-ink-100 p-4 text-left text-[13px] sm:grid-cols-2">
-          <dt className="text-ink-500">Application status</dt>
+          <dt className="text-ink-500">Başvuru durumu</dt>
           <dd className="font-semibold text-ink-800">{label}</dd>
-          <dt className="text-ink-500">Submitted at</dt>
+          <dt className="text-ink-500">Gönderilme tarihi</dt>
           <dd className="font-semibold text-ink-800">
             {workspace.application.submittedAt
-              ? new Date(workspace.application.submittedAt).toLocaleString()
-              : 'Pending update'}
+              ? new Date(workspace.application.submittedAt).toLocaleString('tr-TR')
+              : 'Güncelleme bekleniyor'}
           </dd>
         </dl>
       </div>

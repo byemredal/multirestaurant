@@ -30,7 +30,7 @@ export function OnboardingBottomActionBar({
           rounded="sm"
           className="box-border w-full bg-primary text-[14px] font-semibold text-white shadow-none disabled:cursor-not-allowed disabled:opacity-60"
         >
-          {primaryLoading ? 'Lutfen bekleyin...' : primaryLabel}
+          {primaryLoading ? 'Lütfen bekleyin...' : primaryLabel}
         </Button>
         {secondaryLabel && onSecondary ? (
           <Button

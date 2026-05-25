@@ -36,22 +36,22 @@ type ReviewBlock = {
 };
 
 const MISSING_LABELS: Partial<Record<TenantOnboardingReviewBlockKey, string>> = {
-  'phone-verification': 'Contact verification',
-  location: 'Location',
-  address: 'Business address',
-  'business-details': 'Business details',
-  'authorized-person': 'Authorized person',
-  'bank-details': 'Bank details',
-  'billing-address': 'Billing address',
-  'plan-selection': 'Plan selection',
-  'operations-info': 'Legacy operations information',
-  documents: 'Required documents',
-  consents: 'Required acknowledgements',
+  'phone-verification': 'İletişim doğrulaması',
+  location: 'Konum',
+  address: 'İşletme adresi',
+  'business-details': 'İşletme detayları',
+  'authorized-person': 'Yetkili kişi',
+  'bank-details': 'Banka bilgileri',
+  'billing-address': 'Fatura adresi',
+  'plan-selection': 'Plan seçimi',
+  'operations-info': 'Operasyon bilgileri',
+  documents: 'Zorunlu belgeler',
+  consents: 'Zorunlu onaylar',
 };
 
 function valueOrMissing(value: unknown) {
   const display = value === null || value === undefined ? '' : String(value).trim();
-  return display || 'Missing';
+  return display || 'Eksik';
 }
 
 function buildBlocks(result: TenantOnboardingReviewResult): ReviewBlock[] {
@@ -63,124 +63,124 @@ function buildBlocks(result: TenantOnboardingReviewResult): ReviewBlock[] {
   return [
     {
       key: 'phone-verification',
-      title: 'Contact / phone verification',
+      title: 'İletişim / telefon doğrulaması',
       editStep: result.editSteps.phone,
       missingKeys: ['phone-verification'],
       rows: [
-        { label: 'Phone', value: summary.phoneVerification.maskedPhoneNumber },
-        { label: 'Verification', value: summary.phoneVerification.verified ? 'Verified' : null },
+        { label: 'Telefon', value: summary.phoneVerification.maskedPhoneNumber },
+        { label: 'Doğrulama', value: summary.phoneVerification.verified ? 'Doğrulandı' : null },
       ],
     },
     {
       key: 'location',
-      title: 'Location selection',
+      title: 'Konum seçimi',
       editStep: result.editSteps.location,
       missingKeys: ['location'],
       rows: [
-        { label: 'Selected location', value: summary.locationSelection?.locationLabel },
-        { label: 'Country', value: summary.locationSelection?.country },
+        { label: 'Seçilen konum', value: summary.locationSelection?.locationLabel },
+        { label: 'Ülke', value: summary.locationSelection?.country },
       ],
     },
     {
       key: 'address',
-      title: 'Business address',
+      title: 'İşletme adresi',
       editStep: result.editSteps.address,
       missingKeys: ['address'],
       rows: [
-        { label: 'Business name', value: summary.businessInfo?.businessName },
-        { label: 'Address', value: summary.businessInfo?.addressLine1 },
+        { label: 'İşletme adı', value: summary.businessInfo?.businessName },
+        { label: 'Adres', value: summary.businessInfo?.addressLine1 },
         {
-          label: 'City / postal code',
+          label: 'Şehir / posta kodu',
           value: [summary.businessInfo?.postalCode, summary.businessInfo?.city].filter(Boolean).join(' '),
         },
-        { label: 'Country', value: summary.businessInfo?.country },
+        { label: 'Ülke', value: summary.businessInfo?.country },
       ],
     },
     {
       key: 'business-details',
-      title: 'Commercial / legal / tax details',
+      title: 'Ticari / hukuki / vergi bilgileri',
       editStep: result.editSteps.businessDetails,
       missingKeys: ['business-details'],
       rows: [
-        { label: 'Registered name', value: summary.legalTaxInfo?.legalEntityName },
-        { label: 'Tax reference', value: summary.legalTaxInfo?.taxId },
-        { label: 'VAT reference', value: summary.legalTaxInfo?.vatId },
-        { label: 'Registration country', value: summary.legalTaxInfo?.registrationCountry },
+        { label: 'Kayıtlı unvan', value: summary.legalTaxInfo?.legalEntityName },
+        { label: 'Vergi referansı', value: summary.legalTaxInfo?.taxId },
+        { label: 'KDV referansı', value: summary.legalTaxInfo?.vatId },
+        { label: 'Kayıt ülkesi', value: summary.legalTaxInfo?.registrationCountry },
       ],
     },
     {
       key: 'authorized-person',
-      title: 'Authorized person',
+      title: 'Yetkili kişi',
       editStep: result.editSteps.authorizedPerson,
       missingKeys: ['authorized-person'],
       rows: [
-        { label: 'Name', value: summary.ownerContactInfo?.fullName },
-        { label: 'Email', value: summary.ownerContactInfo?.email },
-        { label: 'Phone', value: summary.ownerContactInfo?.phoneNumber },
-        { label: 'Role', value: summary.ownerContactInfo?.roleTitle },
+        { label: 'Ad soyad', value: summary.ownerContactInfo?.fullName },
+        { label: 'E-posta', value: summary.ownerContactInfo?.email },
+        { label: 'Telefon', value: summary.ownerContactInfo?.phoneNumber },
+        { label: 'Görev', value: summary.ownerContactInfo?.roleTitle },
       ],
     },
     {
       key: 'bank-details',
-      title: 'Bank details',
+      title: 'Banka bilgileri',
       editStep: result.editSteps.bankDetails,
       missingKeys: ['bank-details'],
       rows: [
-        { label: 'Bank', value: summary.bankDetails?.bankName },
-        { label: 'Account holder', value: summary.bankDetails?.accountHolderName },
+        { label: 'Banka', value: summary.bankDetails?.bankName },
+        { label: 'Hesap sahibi', value: summary.bankDetails?.accountHolderName },
         { label: 'IBAN', value: summary.bankDetails?.maskedIban },
-        { label: 'Currency', value: summary.bankDetails?.currency },
+        { label: 'Para birimi', value: summary.bankDetails?.currency },
       ],
     },
     {
       key: 'billing-address',
-      title: 'Billing address',
+      title: 'Fatura adresi',
       editStep: result.editSteps.billingAddress,
       missingKeys: ['billing-address'],
       rows: [
-        { label: 'Billing name', value: summary.billingAddress?.billingName },
-        { label: 'Address', value: summary.billingAddress?.addressLine1 },
+        { label: 'Fatura adı', value: summary.billingAddress?.billingName },
+        { label: 'Adres', value: summary.billingAddress?.addressLine1 },
         {
-          label: 'City / postal code',
+          label: 'Şehir / posta kodu',
           value: [summary.billingAddress?.postalCode, summary.billingAddress?.city].filter(Boolean).join(' '),
         },
-        { label: 'Country', value: summary.billingAddress?.country },
+        { label: 'Ülke', value: summary.billingAddress?.country },
       ],
     },
     {
       key: 'plan-selection',
-      title: 'Selected plan',
+      title: 'Seçilen plan',
       editStep: result.editSteps.planSelection,
       missingKeys: ['plan-selection'],
       rows: [
         { label: 'Plan', value: summary.planSelection?.planNameSnapshot },
-        { label: 'Fee summary', value: summary.planSelection?.commissionSummarySnapshot },
-        { label: 'Currency', value: summary.planSelection?.currency },
+        { label: 'Ücret özeti', value: summary.planSelection?.commissionSummarySnapshot },
+        { label: 'Para birimi', value: summary.planSelection?.currency },
       ],
     },
     {
       key: 'operations-info',
-      title: 'Operational setup',
+      title: 'Operasyon bilgileri',
       editStep: result.editSteps.operations,
       missingKeys: ['operations-info'],
       rows: [
         {
-          label: 'Operations information',
-          value: summary.legacyRequirements.operationsComplete ? 'Complete' : null,
+          label: 'Operasyon bilgileri',
+          value: summary.legacyRequirements.operationsComplete ? 'Tamamlandı' : null,
         },
       ],
     },
     {
       key: 'documents',
-      title: 'Required documents',
+      title: 'Zorunlu belgeler',
       editStep: result.editSteps.documents,
       returnToReview: true,
       missingKeys: ['documents'],
       rows: [
         {
-          label: 'Current required files',
+          label: 'Güncel zorunlu dosyalar',
           value: summary.legacyRequirements.documentsComplete
-            ? `${summary.legacyRequirements.requiredDocuments.length} uploaded`
+            ? `${summary.legacyRequirements.requiredDocuments.length} belge yüklendi`
             : null,
         },
       ],
@@ -239,7 +239,7 @@ export function ReviewStep({
       })
       .catch((caught: unknown) => {
         if (requestSequence === requestSequenceRef.current) {
-          setError(caught instanceof Error ? caught.message : 'Review summary could not be loaded.');
+          setError(caught instanceof Error ? caught.message : 'Başvuru özeti yüklenemedi.');
         }
       })
       .finally(() => {
@@ -271,7 +271,7 @@ export function ReviewStep({
         navigating = true;
         onNavigate(getTenantOnboardingStepUrl(workspace.stateToken, 'submitted'));
       } catch (caught) {
-        setError(caught instanceof Error ? caught.message : 'Application could not be submitted.');
+        setError(caught instanceof Error ? caught.message : 'Başvuru gönderilemedi.');
       } finally {
         if (!navigating) {
           setSubmitting(false);
@@ -296,7 +296,7 @@ export function ReviewStep({
         await saveTenantOnboardingConsents(workspace.stateToken, selectedConsentKeys);
         await loadReview();
       } catch (caught) {
-        setError(caught instanceof Error ? caught.message : 'Acknowledgements could not be saved.');
+        setError(caught instanceof Error ? caught.message : 'Onaylar kaydedilemedi.');
       } finally {
         setSavingConsents(false);
       }
@@ -333,7 +333,7 @@ export function ReviewStep({
 
         {loadingReview ? (
           <div className="flex min-h-40 items-center justify-center rounded-[8px] border border-ink-100 text-[14px] text-ink-500">
-            Loading application summary...
+            Başvuru özeti yükleniyor...
           </div>
         ) : (
           <>
@@ -343,7 +343,7 @@ export function ReviewStep({
                 <p className="mt-1">{missingLabels.join(', ')}</p>
                 {review?.missingRequiredBlocks.includes('operations-info') ? (
                   <p className="mt-2">
-                    Add operational setup information before submission.
+                    Başvuruyu göndermeden önce operasyon bilgilerini ekleyin.
                   </p>
                 ) : null}
               </div>
@@ -352,9 +352,9 @@ export function ReviewStep({
             <section className="rounded-[8px] border border-ink-200 bg-white p-4">
               <div className="flex flex-wrap items-start justify-between gap-3">
                 <div>
-                  <h3 className="text-[15px] font-bold text-ink-900">Acknowledgements and consent</h3>
+                  <h3 className="text-[15px] font-bold text-ink-900">Onaylar ve izinler</h3>
                   <p className="mt-1 text-[12px] leading-5 text-ink-500">
-                    Placeholder wording for onboarding foundation only. Reviewed country-specific legal text will replace it before production use.
+                    Bu metinler başvuru temeli için taslaktır. Ülkeye özgü incelenmiş hukuki metinler yayına alınmadan önce yerini alacaktır.
                   </p>
                 </div>
                 <span className={`rounded-full px-2.5 py-1 text-[11px] font-semibold ${
@@ -362,7 +362,7 @@ export function ReviewStep({
                     ? 'bg-amber-50 text-amber-700'
                     : 'bg-success-50 text-success-700'
                 }`}>
-                  {review?.missingRequiredBlocks.includes('consents') ? 'Missing' : 'Complete'}
+                  {review?.missingRequiredBlocks.includes('consents') ? 'Eksik' : 'Tamamlandı'}
                 </span>
               </div>
               <div className="mt-4 grid gap-3">
@@ -383,7 +383,7 @@ export function ReviewStep({
                         <span className="mt-1 block text-[12px] leading-5 text-ink-500">{consent.description}</span>
                         {stored ? (
                           <span className="mt-2 inline-flex rounded-full bg-success-50 px-2 py-0.5 text-[11px] font-semibold text-success-700">
-                            Accepted and saved
+                            Kabul edildi ve kaydedildi
                           </span>
                         ) : null}
                       </span>
@@ -399,7 +399,7 @@ export function ReviewStep({
                     disabled={!allRequiredConsentsSelected || savingConsents || submitting}
                     className="rounded-[8px] bg-primary px-5 py-2.5 text-[13px] font-semibold text-white disabled:opacity-60"
                   >
-                    {savingConsents ? 'Saving...' : 'Save acknowledgements'}
+                    {savingConsents ? 'Kaydediliyor...' : 'Onayları kaydet'}
                   </Button>
                 </div>
               ) : null}
@@ -416,7 +416,7 @@ export function ReviewStep({
                         <span className={`mt-2 inline-flex rounded-full px-2 py-0.5 text-[11px] font-semibold ${
                           incomplete ? 'bg-amber-50 text-amber-700' : 'bg-success-50 text-success-700'
                         }`}>
-                          {incomplete ? 'Missing' : 'Complete'}
+                          {incomplete ? 'Eksik' : 'Tamamlandı'}
                         </span>
                       </div>
                       {block.editStep ? (
@@ -427,7 +427,7 @@ export function ReviewStep({
                           disabled={submitting}
                           className="rounded-[8px] px-3 py-2 text-[12px] font-semibold"
                         >
-                          Edit
+                          Düzenle
                         </Button>
                       ) : null}
                     </div>
@@ -435,7 +435,7 @@ export function ReviewStep({
                       {block.rows.map((row) => (
                         <div key={row.label} className="grid grid-cols-[minmax(96px,0.42fr)_1fr] gap-3 text-[12px] leading-5">
                           <dt className="text-ink-500">{row.label}</dt>
-                          <dd className={valueOrMissing(row.value) === 'Missing' ? 'text-amber-700' : 'text-ink-800'}>
+                          <dd className={valueOrMissing(row.value) === 'Eksik' ? 'text-amber-700' : 'text-ink-800'}>
                             {valueOrMissing(row.value)}
                           </dd>
                         </div>

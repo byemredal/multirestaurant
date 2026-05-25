@@ -47,16 +47,16 @@ function validateForm(form: TenantBankDetailsInput) {
   const errors: BankDetailsErrors = {};
   const iban = form.iban.trim().replace(/\s+/g, '').toUpperCase();
   if (!form.bankName.trim()) {
-    errors.bankName = 'Bank name is required.';
+    errors.bankName = 'Banka adı zorunludur.';
   }
   if (!form.accountHolderName.trim()) {
-    errors.accountHolderName = 'Account holder name is required.';
+    errors.accountHolderName = 'Hesap sahibi adı zorunludur.';
   }
   if (!/^[A-Z]{2}\d{2}[A-Z0-9]{4,30}$/.test(iban)) {
-    errors.iban = 'Enter a valid basic IBAN format.';
+    errors.iban = 'Geçerli bir IBAN biçimi girin.';
   }
   if (!form.currency?.trim() || !/^[A-Z]{3}$/.test(form.currency.trim().toUpperCase())) {
-    errors.currency = 'Currency must be a 3-letter code.';
+    errors.currency = 'Para birimi 3 harfli kod olmalıdır.';
   }
   return errors;
 }
@@ -109,7 +109,7 @@ export function BankDetailsStep({
         navigating = true;
         onNavigate(getTenantOnboardingStepUrl(workspace.stateToken, nextStep));
       } catch (error) {
-        setSubmitError(error instanceof Error ? error.message : 'Bank details could not be saved.');
+        setSubmitError(error instanceof Error ? error.message : 'Banka bilgileri kaydedilemedi.');
       } finally {
         if (!navigating) {
           setSaving(false);
@@ -125,8 +125,8 @@ export function BankDetailsStep({
         totalSteps={0}
         status={status}
         updatedAt={workspace.application.updatedAt}
-        title="Bank details"
-        description="Add the payout account details for this partner onboarding draft. Plan selection remains separate."
+        title="Banka bilgileri"
+        description="Bu iş ortağı başvurusu için ödeme alınacak hesap bilgilerini ekleyin. Plan seçimi ayrı adımda yapılır."
       />
 
       <div className="grid gap-5">
@@ -171,7 +171,7 @@ export function BankDetailsStep({
         </div>
 
         <OnboardingBottomActionBar
-          primaryLabel="Save bank details"
+          primaryLabel="Banka bilgilerini kaydet"
           onPrimary={() => void saveAndContinue()}
           primaryDisabled={saving || Boolean(resolvedSession?.redirectStep)}
           primaryLoading={saving}

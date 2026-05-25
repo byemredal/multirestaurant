@@ -48,11 +48,11 @@ function getInitialAddress(workspace: TenantOnboardingWorkspace, resolvedSession
 function validateAddress(form: TenantAddressInput) {
   const errors: AddressErrors = {};
   if (!form.country.trim() || !/^[A-Z]{2}$/.test(form.country.trim().toUpperCase())) {
-    errors.country = 'Ulke kodu ISO-2 formatinda olmalidir.';
+    errors.country = 'Ülke kodu ISO-2 formatında olmalıdır.';
   }
-  if (!form.city.trim()) errors.city = 'Sehir / bolge zorunludur.';
+  if (!form.city.trim()) errors.city = 'Şehir / bölge zorunludur.';
   if (!form.postalCode.trim()) errors.postalCode = 'Posta kodu zorunludur.';
-  if (!form.addressLine1.trim()) errors.addressLine1 = 'Adres satiri zorunludur.';
+  if (!form.addressLine1.trim()) errors.addressLine1 = 'Adres satırı zorunludur.';
   return errors;
 }
 
@@ -124,19 +124,19 @@ export function AddressStep({
         totalSteps={0}
         status={getBusinessInfo(workspace) ? 'in_progress' : 'not_started'}
         updatedAt={workspace.application.updatedAt}
-        title="Isletme adresi"
-        description="Konum seciminizden sonra tam adres alanlarini tamamlayin. Bu bilgiler admin inceleme ve isletme profili icin mevcut business_info modeline kaydedilir."
+        title="İşletme adresi"
+        description="Konum seçiminizden sonra tam adres alanlarını tamamlayın. Bu bilgiler inceleme ve işletme profiliniz için kaydedilir."
       />
 
       <div className="grid gap-5">
         {location ? (
           <div className="rounded-[8px] border border-primary-100 bg-primary-50 px-4 py-4 text-[14px] leading-6 text-primary-700">
-            <strong className="font-semibold">Secilen konum:</strong> {location.locationLabel}
+            <strong className="font-semibold">Seçilen konum:</strong> {location.locationLabel}
             {location.country ? <span> ({location.country})</span> : null}
           </div>
         ) : (
           <div className="rounded-[8px] border border-[#f3d7ac] bg-[#fff8ed] px-4 py-3 text-[13px] text-[#b54708]">
-            Once konum secimi tamamlanmalidir. Backend bu sayfayi normalde location adimina yonlendirir.
+            Önce konum seçimi tamamlanmalıdır. Sistem bu sayfayı normalde konum adımına yönlendirir.
           </div>
         )}
 
@@ -148,7 +148,7 @@ export function AddressStep({
 
         <div className="grid gap-4 sm:grid-cols-2">
           <label className="block">
-            <span className="mb-2 block text-[13px] font-semibold text-ink-700">Ulke</span>
+            <span className="mb-2 block text-[13px] font-semibold text-ink-700">Ülke</span>
             <Input
               value={form.country}
               maxLength={2}
@@ -160,7 +160,7 @@ export function AddressStep({
           </label>
 
           <label className="block">
-            <span className="mb-2 block text-[13px] font-semibold text-ink-700">Sehir / kanton / bolge</span>
+            <span className="mb-2 block text-[13px] font-semibold text-ink-700">Şehir / kanton / bölge</span>
             <Input
               value={form.city}
               onChange={(event) => updateField('city', event.target.value)}
@@ -182,7 +182,7 @@ export function AddressStep({
           </label>
 
           <label className="block">
-            <span className="mb-2 block text-[13px] font-semibold text-ink-700">Region / kanton</span>
+            <span className="mb-2 block text-[13px] font-semibold text-ink-700">Bölge / kanton</span>
             <Input
               value={form.region ?? ''}
               onChange={(event) => updateField('region', event.target.value)}
@@ -192,7 +192,7 @@ export function AddressStep({
         </div>
 
         <label className="block">
-          <span className="mb-2 block text-[13px] font-semibold text-ink-700">Adres satiri 1</span>
+          <span className="mb-2 block text-[13px] font-semibold text-ink-700">Adres satırı 1</span>
           <Input
             value={form.addressLine1}
             onChange={(event) => updateField('addressLine1', event.target.value)}
@@ -203,7 +203,7 @@ export function AddressStep({
         </label>
 
         <label className="block">
-          <span className="mb-2 block text-[13px] font-semibold text-ink-700">Adres satiri 2</span>
+          <span className="mb-2 block text-[13px] font-semibold text-ink-700">Adres satırı 2</span>
           <Input
             value={form.addressLine2 ?? ''}
             onChange={(event) => updateField('addressLine2', event.target.value)}
@@ -221,7 +221,7 @@ export function AddressStep({
             <Input value={form.floor ?? ''} onChange={(event) => updateField('floor', event.target.value)} disabled={saving} />
           </label>
           <label className="block">
-            <span className="mb-2 block text-[13px] font-semibold text-ink-700">Kapi</span>
+            <span className="mb-2 block text-[13px] font-semibold text-ink-700">Kapı</span>
             <Input value={form.door ?? ''} onChange={(event) => updateField('door', event.target.value)} disabled={saving} />
           </label>
         </div>

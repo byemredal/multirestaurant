@@ -25,11 +25,11 @@ type DocumentsVerificationStepProps = {
 };
 
 const DOCUMENT_STATUS_COPY: Record<TenantOnboardingDocument['status'], { label: string; className: string }> = {
-  pending: { label: 'Uploaded / pending review', className: 'bg-primary-50 text-primary-700' },
-  approved: { label: 'Approved', className: 'bg-success-50 text-success-700' },
-  rejected: { label: 'Rejected', className: 'bg-danger-50 text-danger-700' },
-  revision_requested: { label: 'Needs replacement', className: 'bg-amber-50 text-amber-700' },
-  expired: { label: 'Expired', className: 'bg-amber-50 text-amber-700' },
+  pending: { label: 'Yüklendi / inceleme bekliyor', className: 'bg-primary-50 text-primary-700' },
+  approved: { label: 'Onaylandı', className: 'bg-success-50 text-success-700' },
+  rejected: { label: 'Reddedildi', className: 'bg-danger-50 text-danger-700' },
+  revision_requested: { label: 'Yeniden yüklenmeli', className: 'bg-amber-50 text-amber-700' },
+  expired: { label: 'Süresi doldu', className: 'bg-amber-50 text-amber-700' },
 };
 
 function currentDocuments(workspace: TenantOnboardingWorkspace) {
@@ -92,7 +92,7 @@ export function DocumentsVerificationStep({
       })
       .catch((caught: unknown) => {
         if (requestSequence === requestSequenceRef.current) {
-          setError(caught instanceof Error ? caught.message : 'Document requirements could not be loaded.');
+          setError(caught instanceof Error ? caught.message : 'Belge gereksinimleri yüklenemedi.');
         }
       })
       .finally(() => {
@@ -104,7 +104,7 @@ export function DocumentsVerificationStep({
 
   async function uploadDocument() {
     if (!file) {
-      setError('Choose a PDF or image document before uploading.');
+      setError('Yüklemeden önce bir PDF veya görsel belge seçin.');
       return;
     }
 
@@ -125,7 +125,7 @@ export function DocumentsVerificationStep({
           onNavigate(getTenantOnboardingStepUrl(workspace.stateToken, 'review'));
         }
       } catch (caught) {
-        setError(caught instanceof Error ? caught.message : 'Document could not be uploaded.');
+        setError(caught instanceof Error ? caught.message : 'Belge yüklenemedi.');
       } finally {
         if (!navigating) {
           setUploading(false);
@@ -158,7 +158,7 @@ export function DocumentsVerificationStep({
         <section className="rounded-[8px] border border-ink-200 bg-white p-4">
           <div className="flex flex-wrap items-center justify-between gap-3">
             <div>
-              <h3 className="text-[15px] font-bold text-ink-900">Required documents</h3>
+              <h3 className="text-[15px] font-bold text-ink-900">Zorunlu belgeler</h3>
               <p className="mt-1 text-[13px] text-ink-500">
                 {requirements?.documentRequirements?.validationPolicy.note ?? copy.requirement}
               </p>
@@ -166,7 +166,7 @@ export function DocumentsVerificationStep({
             <span className={`rounded-full px-2.5 py-1 text-[11px] font-semibold ${
               documentsSatisfied ? 'bg-success-50 text-success-700' : 'bg-amber-50 text-amber-700'
             }`}>
-              {documentsSatisfied ? 'Complete' : 'Missing'}
+              {documentsSatisfied ? 'Tamamlandı' : 'Eksik'}
             </span>
           </div>
           <p className="mt-3 rounded-[8px] bg-ink-50 px-3 py-2 text-[12px] leading-5 text-ink-600">
@@ -175,12 +175,12 @@ export function DocumentsVerificationStep({
         </section>
 
         <section className="rounded-[8px] border border-ink-200 bg-white p-4">
-          <h3 className="text-[15px] font-bold text-ink-900">Country-pack document guidance</h3>
+          <h3 className="text-[15px] font-bold text-ink-900">Ülke paketine göre belge rehberi</h3>
           <p className="mt-2 text-[12px] leading-5 text-ink-500">
-            These placeholder categories guide upload selection only. They are not yet enforced as a final country-specific document set.
+            Bu taslak kategoriler yalnızca yükleme seçimine rehberlik eder. Henüz ülkeye özgü nihai belge kümesi olarak uygulanmaz.
           </p>
           {loadingRequirements ? (
-            <p className="mt-4 text-[13px] text-ink-500">Loading document guidance...</p>
+            <p className="mt-4 text-[13px] text-ink-500">Belge rehberi yükleniyor...</p>
           ) : (
             <div className="mt-4 grid gap-3">
               {documentDefinitions.map((definition) => {
@@ -195,7 +195,7 @@ export function DocumentsVerificationStep({
                       <span className={`rounded-full px-2.5 py-1 text-[11px] font-semibold ${
                         uploaded ? 'bg-success-50 text-success-700' : 'bg-ink-100 text-ink-600'
                       }`}>
-                        {uploaded ? 'Uploaded' : 'Guidance'}
+                        {uploaded ? 'Yüklendi' : 'Rehber'}
                       </span>
                     </div>
                   </div>
@@ -212,10 +212,10 @@ export function DocumentsVerificationStep({
         ) : null}
 
         <section className="rounded-[8px] border border-ink-200 bg-white p-4">
-          <h3 className="text-[15px] font-bold text-ink-900">Upload a document</h3>
+          <h3 className="text-[15px] font-bold text-ink-900">Belge yükleyin</h3>
           <div className="mt-4 grid gap-4 sm:grid-cols-2">
             <label className="block">
-              <span className="mb-2 block text-[13px] font-semibold text-ink-700">Document category</span>
+              <span className="mb-2 block text-[13px] font-semibold text-ink-700">Belge kategorisi</span>
               <select
                 value={documentType}
                 onChange={(event) => setDocumentType(event.target.value)}
@@ -228,7 +228,7 @@ export function DocumentsVerificationStep({
               </select>
             </label>
             <label className="block">
-              <span className="mb-2 block text-[13px] font-semibold text-ink-700">Expiry date, if applicable</span>
+              <span className="mb-2 block text-[13px] font-semibold text-ink-700">Varsa geçerlilik bitiş tarihi</span>
               <Input
                 type="date"
                 value={expiresAt}
@@ -252,16 +252,16 @@ export function DocumentsVerificationStep({
               disabled={uploading || loadingRequirements || !documentType || !file || Boolean(resolvedSession?.redirectStep)}
               className="rounded-[8px] bg-primary px-5 py-2.5 text-[14px] font-semibold text-white disabled:opacity-60"
             >
-              {uploading ? 'Uploading...' : 'Upload document'}
+              {uploading ? 'Yükleniyor...' : 'Belgeyi yükle'}
             </Button>
           </div>
         </section>
 
         <section className="rounded-[8px] border border-ink-200 bg-white p-4">
-          <h3 className="text-[15px] font-bold text-ink-900">Current uploaded documents</h3>
+          <h3 className="text-[15px] font-bold text-ink-900">Güncel yüklenen belgeler</h3>
           {documents.length === 0 ? (
             <p className="mt-4 rounded-[8px] border border-dashed border-ink-200 bg-ink-50 px-4 py-4 text-[13px] text-ink-500">
-              No current document has been uploaded yet.
+              Henüz güncel bir belge yüklenmedi.
             </p>
           ) : (
             <div className="mt-4 grid gap-3">
@@ -273,7 +273,7 @@ export function DocumentsVerificationStep({
                       <div>
                         <p className="text-[14px] font-semibold text-ink-800">{document.type}</p>
                         <p className="mt-1 text-[12px] text-ink-500">
-                          Version {document.version} - uploaded {new Date(document.uploadedAt).toLocaleString()}
+                          Sürüm {document.version} - yüklenme tarihi {new Date(document.uploadedAt).toLocaleString('tr-TR')}
                         </p>
                       </div>
                       <span className={`rounded-full px-2.5 py-1 text-[11px] font-semibold ${statusCopy.className}`}>
@@ -294,7 +294,7 @@ export function DocumentsVerificationStep({
 
         {documentsSatisfied && !returnToReview ? (
           <OnboardingBottomActionBar
-            primaryLabel="Return to review"
+            primaryLabel="Kontrole dön"
             onPrimary={returnToReviewPage}
             primaryDisabled={uploading || returningToReview || Boolean(resolvedSession?.redirectStep)}
             primaryLoading={returningToReview}

@@ -80,19 +80,19 @@ function initialForm(workspace: TenantOnboardingWorkspace, resolvedSession: Tena
 function validateFullForm(form: TenantBusinessDetailsInput) {
   const errors: BusinessDetailsErrors = {};
   if (form.registrationNumber.trim().length < 3) {
-    errors.registrationNumber = 'Registration number must be at least 3 characters.';
+    errors.registrationNumber = 'Kayıt numarası en az 3 karakter olmalıdır.';
   }
   if (!form.registeredBusinessName.trim()) {
-    errors.registeredBusinessName = 'Registered business name is required.';
+    errors.registeredBusinessName = 'Kayıtlı işletme unvanı zorunludur.';
   }
   if (!form.registrationCountry.trim() || !/^[A-Z]{2}$/.test(form.registrationCountry.trim().toUpperCase())) {
-    errors.registrationCountry = 'Registration country must be an ISO-2 code.';
+    errors.registrationCountry = 'Kayıt ülkesi ISO-2 kodu olmalıdır.';
   }
   if (!form.registeredAddress.trim()) {
-    errors.registeredAddress = 'Registered address is required.';
+    errors.registeredAddress = 'Kayıtlı adres zorunludur.';
   }
   if (form.vatRegistered && !form.vatNumber?.trim()) {
-    errors.vatNumber = 'VAT number is required when VAT registration is selected.';
+    errors.vatNumber = 'KDV kaydı seçildiğinde KDV numarası zorunludur.';
   }
   return errors;
 }
@@ -142,7 +142,7 @@ export function BusinessDetailsStep({
 
   async function verifyRegistration() {
     if (form.registrationNumber.trim().length < 3) {
-      setErrors({ registrationNumber: 'Registration number must be at least 3 characters.' });
+      setErrors({ registrationNumber: 'Kayıt numarası en az 3 karakter olmalıdır.' });
       return;
     }
 
@@ -164,9 +164,9 @@ export function BusinessDetailsStep({
           return;
         }
         setVerified(result.accepted);
-        setMessage(result.message ?? 'Registration accepted for draft review.');
+        setMessage(result.message ?? 'Kayıt numarası taslak inceleme için kabul edildi.');
       } catch (error) {
-        setSubmitError(error instanceof Error ? error.message : 'Registration could not be checked.');
+        setSubmitError(error instanceof Error ? error.message : 'Kayıt numarası kontrol edilemedi.');
       } finally {
         if (!navigating) {
           setChecking(false);
@@ -193,7 +193,7 @@ export function BusinessDetailsStep({
         navigating = true;
         onNavigate(getTenantOnboardingStepUrl(workspace.stateToken, nextStep));
       } catch (error) {
-        setSubmitError(error instanceof Error ? error.message : 'Business details could not be saved.');
+        setSubmitError(error instanceof Error ? error.message : 'İşletme bilgileri kaydedilemedi.');
       } finally {
         if (!navigating) {
           setSaving(false);
@@ -209,8 +209,8 @@ export function BusinessDetailsStep({
         totalSteps={0}
         status={workspace.steps.find((step) => step.stepKey === 'legal_tax_info')?.status ?? 'in_progress'}
         updatedAt={workspace.application.updatedAt}
-        title="Business details"
-        description="Enter commercial, legal, and tax registration information. Person/owner details stay separate for the authorized-person step."
+        title="İşletme detayları"
+        description="Ticari, hukuki ve vergi kayıt bilgilerini girin. Kişi ve işletme sahibi bilgileri yetkili kişi adımında ayrıca alınır."
       />
 
       <div className="grid gap-5">
@@ -247,7 +247,7 @@ export function BusinessDetailsStep({
 
         {!verified ? (
           <OnboardingBottomActionBar
-            primaryLabel="Check registration"
+            primaryLabel="Kaydı kontrol et"
             onPrimary={() => void verifyRegistration()}
             primaryDisabled={checking || form.registrationNumber.trim().length < 3}
             primaryLoading={checking}
@@ -296,7 +296,7 @@ export function BusinessDetailsStep({
                 onChange={(event) => updateField('vatRegistered', event.target.checked)}
                 disabled={saving}
               />
-              VAT registered
+              KDV kaydı bulunuyor
             </label>
 
             {form.vatRegistered ? (
@@ -325,12 +325,12 @@ export function BusinessDetailsStep({
             </label>
 
             <label className="block">
-              <span className="mb-2 block text-[13px] font-semibold text-ink-700">Registry / tax authority name</span>
+              <span className="mb-2 block text-[13px] font-semibold text-ink-700">Sicil / vergi kurumu adı</span>
               <Input value={form.authorityName ?? ''} onChange={(event) => updateField('authorityName', event.target.value)} disabled={saving} />
             </label>
 
             <OnboardingBottomActionBar
-              primaryLabel="Save business details"
+              primaryLabel="İşletme detaylarını kaydet"
               onPrimary={() => void saveAndContinue()}
               primaryDisabled={saving || Boolean(resolvedSession?.redirectStep)}
               primaryLoading={saving}

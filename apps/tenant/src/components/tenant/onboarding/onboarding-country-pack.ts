@@ -50,47 +50,47 @@ export type OnboardingFieldConfig<TKey extends string> = {
 export function getBusinessDetailsFields(countryPack?: TenantOnboardingCountryPack) {
   const country = countryPack?.country ?? 'CH';
   const registrationLabel = country === 'CH'
-    ? 'Registration / UID number'
-    : 'Commercial or tax registration number';
+    ? 'Ticaret sicili / UID numarası'
+    : 'Ticari veya vergi kayıt numarası';
 
   return {
     legalReviewNote:
-      'Placeholder labels only. Country-specific legal and tax wording must be reviewed before production.',
+      'Bu alan adları taslak niteliğindedir. Ülkeye özgü hukuki ve vergisel metinler yayına alınmadan önce incelenmelidir.',
     fields: [
       {
         key: 'registrationNumber',
         label: registrationLabel,
         required: true,
-        helpText: 'Used for the onboarding draft check. No real authority lookup is performed yet.',
+        helpText: 'Başvuru taslağı kontrolünde kullanılır. Henüz gerçek bir kurum sorgulaması yapılmaz.',
       },
       {
         key: 'registeredBusinessName',
-        label: 'Registered business name',
+        label: 'Kayıtlı işletme unvanı',
         required: true,
       },
       {
         key: 'legalForm',
-        label: 'Legal form / company type',
+        label: 'Hukuki yapı / şirket türü',
         required: false,
       },
       {
         key: 'taxNumber',
-        label: country === 'CH' ? 'Tax / UID reference' : 'Tax number',
+        label: country === 'CH' ? 'Vergi / UID referansı' : 'Vergi numarası',
         required: false,
       },
       {
         key: 'vatNumber',
-        label: country === 'CH' ? 'VAT / MWST number' : 'VAT number',
+        label: country === 'CH' ? 'KDV / MWST numarası' : 'KDV numarası',
         required: false,
       },
       {
         key: 'registrationCountry',
-        label: 'Registration country',
+        label: 'Kayıt ülkesi',
         required: true,
       },
       {
         key: 'registeredAddress',
-        label: 'Registered address',
+        label: 'Kayıtlı adres',
         required: true,
       },
     ] satisfies BusinessDetailsFieldConfig[],
@@ -102,36 +102,36 @@ export function getAuthorizedPersonFields(countryPack?: TenantOnboardingCountryP
 
   return {
     guidance:
-      'If you are a sole proprietor, enter your own information. If this is a company, enter the authorized representative or signatory information.',
+      'Şahıs işletmesiyseniz kendi bilgilerinizi girin. Şirket adına başvuruyorsanız yetkili temsilci veya imza yetkilisinin bilgilerini girin.',
     legalReviewNote:
-      'Placeholder labels only. Country-specific identity and signatory wording must be reviewed before production.',
+      'Bu alan adları taslak niteliğindedir. Ülkeye özgü kimlik ve imza yetkisi metinleri yayına alınmadan önce incelenmelidir.',
     fields: [
       {
         key: 'fullName',
-        label: 'Full legal name',
+        label: 'Ad soyad',
         required: true,
       },
       {
         key: 'email',
-        label: 'Contact email',
+        label: 'İletişim e-postası',
         required: true,
       },
       {
         key: 'phoneNumber',
-        label: 'Contact phone',
+        label: 'İletişim telefonu',
         required: true,
       },
       {
         key: 'roleTitle',
-        label: country === 'CH' ? 'Role / signatory capacity' : 'Role / title',
+        label: country === 'CH' ? 'Görev / imza yetkisi' : 'Görev / unvan',
         required: false,
-        helpText: 'Examples: owner, managing director, authorized representative.',
+        helpText: 'Örnek: işletme sahibi, müdür, yetkili temsilci.',
       },
       {
         key: 'ownershipPercentage',
-        label: 'Ownership share',
+        label: 'Sahiplik payı',
         required: false,
-        helpText: 'Optional placeholder field; future country packs may decide whether this is required.',
+        helpText: 'İsteğe bağlı taslak alandır; ileride ülke paketine göre zorunlu olabilir.',
       },
     ] satisfies AuthorizedPersonFieldConfig[],
   };
@@ -142,17 +142,17 @@ export function getBankDetailsFields(countryPack?: TenantOnboardingCountryPack) 
 
   return {
     helperText:
-      'This account is used for payout setup during onboarding. No real bank provider validation is performed yet.',
+      'Bu hesap, başvuru sırasında ödeme alımı kurulumu için kullanılır. Henüz banka sağlayıcısı üzerinden gerçek doğrulama yapılmaz.',
     fields: [
-      { key: 'bankName', label: 'Bank name', required: true },
-      { key: 'accountHolderName', label: 'Account holder name', required: true },
+      { key: 'bankName', label: 'Banka adı', required: true },
+      { key: 'accountHolderName', label: 'Hesap sahibi adı', required: true },
       {
         key: 'iban',
         label: 'IBAN',
         required: true,
-        helpText: 'Basic IBAN format validation only. Country-specific banking rules will come from country packs later.',
+        helpText: 'Yalnızca temel IBAN biçimi kontrol edilir. Ülkeye özgü banka kuralları ileride ülke paketinden gelecektir.',
       },
-      { key: 'currency', label: 'Currency', required: true, helpText: `Default payout currency: ${currency}` },
+      { key: 'currency', label: 'Para birimi', required: true, helpText: `Varsayılan ödeme para birimi: ${currency}` },
     ] satisfies OnboardingFieldConfig<BankDetailsFieldKey>[],
   };
 }
@@ -160,15 +160,15 @@ export function getBankDetailsFields(countryPack?: TenantOnboardingCountryPack) 
 export function getBillingAddressFields() {
   return {
     helperText:
-      'This address is used for invoice and billing records. It can differ from the physical business address.',
+      'Bu adres fatura ve faturalama kayıtları için kullanılır. Fiziksel işletme adresinden farklı olabilir.',
     fields: [
-      { key: 'useBusinessAddress', label: 'Use business address', required: false },
-      { key: 'billingName', label: 'Billing name / company name', required: true },
-      { key: 'country', label: 'Country', required: true },
-      { key: 'city', label: 'City / canton / region', required: true },
-      { key: 'postalCode', label: 'Postal code', required: true },
-      { key: 'addressLine1', label: 'Address line 1', required: true },
-      { key: 'addressLine2', label: 'Address line 2', required: false },
+      { key: 'useBusinessAddress', label: 'İşletme adresini kullan', required: false },
+      { key: 'billingName', label: 'Fatura adı / şirket unvanı', required: true },
+      { key: 'country', label: 'Ülke', required: true },
+      { key: 'city', label: 'Şehir / kanton / bölge', required: true },
+      { key: 'postalCode', label: 'Posta kodu', required: true },
+      { key: 'addressLine1', label: 'Adres satırı 1', required: true },
+      { key: 'addressLine2', label: 'Adres satırı 2', required: false },
     ] satisfies OnboardingFieldConfig<BillingAddressFieldKey>[],
   };
 }
@@ -177,10 +177,10 @@ export function getPlanSelectionCopy(countryPack?: TenantOnboardingCountryPack) 
   const currency = countryPack?.currency ?? 'CHF';
 
   return {
-    title: 'Choose your plan',
-    helperText: 'Select the service package you want to take to review.',
+    title: 'Planınızı seçin',
+    helperText: 'İncelemeye göndermek istediğiniz hizmet paketini seçin.',
     disclaimer:
-      'Plan pricing and commission text is configurable placeholder copy only. Country and contract review is required before production use.',
+      'Plan fiyatı ve komisyon metinleri yapılandırılabilir taslak içeriktir. Yayına alınmadan önce ülke ve sözleşme incelemesi gereklidir.',
     currency,
   };
 }
@@ -189,14 +189,14 @@ export function getReviewCopy(countryPack?: TenantOnboardingCountryPack) {
   const country = countryPack?.country ?? 'CH';
 
   return {
-    title: 'Review your application',
-    helperText: 'Check your saved information before sending the application for review.',
-    submitLabel: 'Submit application',
-    missingText: 'Complete the remaining required items before submitting.',
+    title: 'Başvurunuzu kontrol edin',
+    helperText: 'Başvurunuzu incelemeye göndermeden önce kaydedilen bilgileri kontrol edin.',
+    submitLabel: 'Başvuruyu gönder',
+    missingText: 'Göndermeden önce kalan zorunlu alanları tamamlayın.',
     countryNote:
       country === 'CH'
-        ? 'Country-specific legal wording is placeholder copy pending review.'
-        : 'Legal wording is placeholder copy pending country review.',
+        ? 'Ülkeye özgü hukuki metinler inceleme bekleyen taslak içeriktir.'
+        : 'Hukuki metinler ülke incelemesi bekleyen taslak içeriktir.',
   };
 }
 
@@ -204,25 +204,25 @@ export function getOperationsCopy(countryPack?: TenantOnboardingCountryPack) {
   const country = countryPack?.country ?? 'CH';
 
   return {
-    title: 'Operational setup',
-    helperText: 'Add the minimum operating details required before documents and final submission.',
+    title: 'Operasyon bilgileri',
+    helperText: 'Belgelerden ve son gönderimden önce gerekli temel operasyon bilgilerini ekleyin.',
     note:
       country === 'CH'
-        ? 'Operational requirements are placeholder configuration for Switzerland onboarding and will be refined with the country pack.'
-        : 'Operational requirements will be refined by the selected country pack.',
+        ? 'Operasyon gereksinimleri İsviçre başvurusu için taslak yapılandırmadır ve ülke paketiyle geliştirilecektir.'
+        : 'Operasyon gereksinimleri seçilen ülke paketine göre geliştirilecektir.',
     deliveryModels: [
-      { value: 'platform_fleet', label: 'Marketplace delivery support' },
-      { value: 'own_fleet', label: 'Own delivery operation' },
-      { value: 'pickup_only', label: 'Pickup only' },
+      { value: 'platform_fleet', label: 'Pazaryeri teslimat desteği' },
+      { value: 'own_fleet', label: 'Kendi teslimat operasyonum' },
+      { value: 'pickup_only', label: 'Yalnızca gel-al' },
     ],
   };
 }
 
 export function getSubmittedCopy() {
   return {
-    title: 'Application submitted',
-    body: 'Your application has been received and is ready for review. We will update you when its status changes.',
-    note: 'Review timing and any follow-up requirements depend on the application review process.',
+    title: 'Başvurunuz gönderildi',
+    body: 'Başvurunuz alındı ve incelemeye hazır. Durumu değiştiğinde sizi bilgilendireceğiz.',
+    note: 'İnceleme süresi ve olası ek gereksinimler başvuru değerlendirme sürecine bağlıdır.',
   };
 }
 
@@ -230,14 +230,14 @@ export function getDocumentsVerificationCopy(countryPack?: TenantOnboardingCount
   const country = countryPack?.country ?? 'CH';
 
   return {
-    title: 'Documents and verification',
-    helperText: 'Upload at least one current required document so the application can be submitted for review.',
+    title: 'Belgeler ve doğrulama',
+    helperText: 'Başvurunun incelemeye gönderilebilmesi için en az bir güncel zorunlu belge yükleyin.',
     countryNote:
       country === 'CH'
-        ? 'Document categories and consent wording are placeholder configuration pending Switzerland-specific review.'
-        : 'Document categories and consent wording will be configured by the selected country pack.',
-    requirement: 'At least one current required document',
+        ? 'Belge kategorileri ve onay metinleri İsviçre özelindeki incelemeyi bekleyen taslak yapılandırmadır.'
+        : 'Belge kategorileri ve onay metinleri seçilen ülke paketine göre yapılandırılacaktır.',
+    requirement: 'En az bir güncel zorunlu belge',
     reviewNote:
-      'Uploaded documents remain subject to review. Formal consent capture is not introduced in this slice.',
+      'Yüklenen belgeler incelemeye tabidir. Onay kayıtları başvuru kontrol adımında alınır.',
   };
 }

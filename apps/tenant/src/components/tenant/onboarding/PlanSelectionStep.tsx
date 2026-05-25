@@ -75,7 +75,7 @@ export function PlanSelectionStep({
       })
       .catch((caught: unknown) => {
         if (requestSequence === planRequestSequenceRef.current) {
-          setError(caught instanceof Error ? caught.message : 'Plans could not be loaded.');
+          setError(caught instanceof Error ? caught.message : 'Planlar yüklenemedi.');
         }
       })
       .finally(() => {
@@ -87,7 +87,7 @@ export function PlanSelectionStep({
 
   async function saveAndContinue() {
     if (!selectedPlanKey) {
-      setError('Select one plan before continuing.');
+      setError('Devam etmeden önce bir plan seçin.');
       return;
     }
 
@@ -104,7 +104,7 @@ export function PlanSelectionStep({
         navigating = true;
         onNavigate(getTenantOnboardingStepUrl(workspace.stateToken, nextStep));
       } catch (caught) {
-        setError(caught instanceof Error ? caught.message : 'Plan selection could not be saved.');
+        setError(caught instanceof Error ? caught.message : 'Plan seçimi kaydedilemedi.');
       } finally {
         if (!navigating) {
           setSaving(false);
@@ -137,7 +137,7 @@ export function PlanSelectionStep({
 
         {loadingPlans ? (
           <div className="flex min-h-40 items-center justify-center rounded-[8px] border border-ink-100 text-[14px] text-ink-500">
-            Loading available plans...
+            Kullanılabilir planlar yükleniyor...
           </div>
         ) : (
           <div className="grid gap-4 lg:grid-cols-3">
@@ -163,25 +163,25 @@ export function PlanSelectionStep({
                     <span className="text-[18px] font-bold leading-6 text-ink-900">{plan.title}</span>
                     {plan.recommended ? (
                       <span className="shrink-0 rounded-full bg-primary px-2 py-1 text-[11px] font-semibold text-white">
-                        Recommended
+                        Önerilen
                       </span>
                     ) : null}
                   </div>
                   <p className="mt-3 min-h-12 text-[13px] leading-5 text-ink-500">{plan.description}</p>
                   <div className="mt-4 rounded-[8px] bg-ink-50 px-3 py-3">
-                    <p className="text-[12px] font-semibold text-ink-500">Fee summary ({plan.currency})</p>
+                    <p className="text-[12px] font-semibold text-ink-500">Ücret özeti ({plan.currency})</p>
                     <p className="mt-1 text-[14px] font-bold text-ink-900">{plan.commissionSummary}</p>
                     {plan.monthlyFeeSummary ? (
                       <p className="mt-1 text-[12px] text-ink-500">{plan.monthlyFeeSummary}</p>
                     ) : null}
                   </div>
-                  <p className="mt-4 text-[12px] font-semibold text-ink-700">Included services</p>
+                  <p className="mt-4 text-[12px] font-semibold text-ink-700">Dahil olan hizmetler</p>
                   <ul className="mt-2 space-y-2 text-[12px] leading-5 text-ink-600">
                     {plan.includedServices.map((service) => (
                       <li key={service}>+ {service}</li>
                     ))}
                   </ul>
-                  <p className="mt-4 text-[12px] font-semibold text-ink-700">Benefits</p>
+                  <p className="mt-4 text-[12px] font-semibold text-ink-700">Avantajlar</p>
                   <ul className="mt-2 space-y-1 text-[12px] leading-5 text-ink-600">
                     {plan.benefits.map((benefit) => (
                       <li key={benefit}>{benefit}</li>
@@ -191,7 +191,7 @@ export function PlanSelectionStep({
                   <span className={`mt-4 flex h-9 items-center justify-center rounded-[8px] text-[13px] font-semibold ${
                     selected ? 'bg-primary text-white' : 'bg-ink-50 text-ink-700'
                   }`}>
-                    {selected ? 'Selected' : 'Select plan'}
+                    {selected ? 'Seçildi' : 'Planı seç'}
                   </span>
                 </button>
               );
@@ -200,11 +200,11 @@ export function PlanSelectionStep({
         )}
 
         {!selectedPlanKey && !loadingPlans ? (
-          <p className="text-[12px] text-ink-500">Select a plan to continue to operational details.</p>
+          <p className="text-[12px] text-ink-500">Operasyon bilgilerine devam etmek için bir plan seçin.</p>
         ) : null}
 
         <OnboardingBottomActionBar
-          primaryLabel="Save plan and continue"
+          primaryLabel="Planı kaydet ve devam et"
           onPrimary={() => void saveAndContinue()}
           primaryDisabled={saving || loadingPlans || !selectedPlanKey || Boolean(resolvedSession?.redirectStep)}
           primaryLoading={saving}

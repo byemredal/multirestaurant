@@ -107,7 +107,7 @@ const STEP_META: Record<TenantOnboardingStepKey, StepMeta> = {
   },
   bank_details: {
     title: 'Banka bilgileri',
-    description: 'IBAN ve odeme hazirligi.',
+    description: 'IBAN ve ödeme hazırlığı.',
     Icon: IconScale,
   },
   billing_address: {
@@ -116,8 +116,8 @@ const STEP_META: Record<TenantOnboardingStepKey, StepMeta> = {
     Icon: IconFile,
   },
   membership_plan: {
-    title: 'Paket secimi',
-    description: 'Uyelik veya hizmet planini secin.',
+    title: 'Paket seçimi',
+    description: 'Üyelik veya hizmet planını seçin.',
     Icon: IconTruck,
   },
   operations_info: {

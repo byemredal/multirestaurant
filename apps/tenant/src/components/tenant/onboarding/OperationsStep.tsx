@@ -47,9 +47,9 @@ function initialForm(workspace: TenantOnboardingWorkspace): TenantOperationsInfo
 
 function validateForm(form: TenantOperationsInfoInput) {
   const errors: OperationsErrors = {};
-  if (!form.primaryCity?.trim()) errors.primaryCity = 'Primary city is required.';
-  if (!form.primaryPostalCode?.trim()) errors.primaryPostalCode = 'Postal code is required.';
-  if (!form.deliveryModel?.trim()) errors.deliveryModel = 'Choose an operating model.';
+  if (!form.primaryCity?.trim()) errors.primaryCity = 'Ana faaliyet şehri zorunludur.';
+  if (!form.primaryPostalCode?.trim()) errors.primaryPostalCode = 'Posta kodu zorunludur.';
+  if (!form.deliveryModel?.trim()) errors.deliveryModel = 'Bir operasyon modeli seçin.';
   return errors;
 }
 
@@ -101,7 +101,7 @@ export function OperationsStep({
         navigating = true;
         onNavigate(getTenantOnboardingStepUrl(workspace.stateToken, nextStep));
       } catch (error) {
-        setSubmitError(error instanceof Error ? error.message : 'Operational details could not be saved.');
+        setSubmitError(error instanceof Error ? error.message : 'Operasyon bilgileri kaydedilemedi.');
       } finally {
         if (!navigating) {
           setSaving(false);
@@ -134,7 +134,7 @@ export function OperationsStep({
 
         <div className="grid gap-4 sm:grid-cols-2">
           <label className="block">
-            <span className="mb-2 block text-[13px] font-semibold text-ink-700">Primary operating city</span>
+            <span className="mb-2 block text-[13px] font-semibold text-ink-700">Ana faaliyet şehri</span>
             <Input
               value={form.primaryCity ?? ''}
               onChange={(event) => updateField('primaryCity', event.target.value)}
@@ -145,7 +145,7 @@ export function OperationsStep({
           </label>
 
           <label className="block">
-            <span className="mb-2 block text-[13px] font-semibold text-ink-700">Postal code</span>
+            <span className="mb-2 block text-[13px] font-semibold text-ink-700">Posta kodu</span>
             <Input
               value={form.primaryPostalCode ?? ''}
               onChange={(event) => updateField('primaryPostalCode', event.target.value)}
@@ -156,7 +156,7 @@ export function OperationsStep({
           </label>
 
           <label className="block sm:col-span-2">
-            <span className="mb-2 block text-[13px] font-semibold text-ink-700">Operating model</span>
+            <span className="mb-2 block text-[13px] font-semibold text-ink-700">Operasyon modeli</span>
             <select
               value={form.deliveryModel ?? ''}
               onChange={(event) => updateField('deliveryModel', event.target.value)}
@@ -165,7 +165,7 @@ export function OperationsStep({
                 errors.deliveryModel ? 'border-danger-200' : 'border-ink-200'
               }`}
             >
-              <option value="">Select an operating model</option>
+              <option value="">Operasyon modeli seçin</option>
               {copy.deliveryModels.map((model) => (
                 <option key={model.value} value={model.value}>{model.label}</option>
               ))}
@@ -182,15 +182,15 @@ export function OperationsStep({
               className="mt-1"
             />
             <span>
-              <span className="block font-semibold">Pickup is available</span>
+              <span className="block font-semibold">Gel-al hizmeti sunuluyor</span>
               <span className="mt-1 block text-[12px] leading-5 text-ink-500">
-                Select this when customers can collect orders from the business location.
+                Müşteriler siparişlerini işletme konumundan teslim alabiliyorsa seçin.
               </span>
             </span>
           </label>
 
           <label className="block sm:col-span-2">
-            <span className="mb-2 block text-[13px] font-semibold text-ink-700">Opening hours summary</span>
+            <span className="mb-2 block text-[13px] font-semibold text-ink-700">Çalışma saatleri özeti</span>
             <textarea
               value={form.openingHoursSummary ?? ''}
               onChange={(event) => updateField('openingHoursSummary', event.target.value)}
@@ -201,7 +201,7 @@ export function OperationsStep({
           </label>
 
           <label className="block">
-            <span className="mb-2 block text-[13px] font-semibold text-ink-700">Estimated go-live date</span>
+            <span className="mb-2 block text-[13px] font-semibold text-ink-700">Tahmini faaliyete başlama tarihi</span>
             <Input
               type="date"
               value={form.estimatedGoLiveDate ?? ''}
@@ -212,7 +212,7 @@ export function OperationsStep({
         </div>
 
         <OnboardingBottomActionBar
-          primaryLabel="Save operations and continue"
+          primaryLabel="Operasyon bilgilerini kaydet ve devam et"
           onPrimary={() => void saveAndContinue()}
           primaryDisabled={saving || Boolean(resolvedSession?.redirectStep)}
           primaryLoading={saving}

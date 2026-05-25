@@ -28,7 +28,7 @@ function getSeedPhone(workspace: TenantOnboardingWorkspace) {
 
 function formatSendError(message: string) {
   if (message.toLowerCase().includes('phone number')) {
-    return 'Lutfen gecerli bir telefon numarasi girin.';
+    return 'Lütfen geçerli bir telefon numarası girin.';
   }
   return message;
 }
@@ -56,7 +56,7 @@ export function PhoneVerificationStep({
 
   async function sendCode() {
     if (!canSend) {
-      setError('Lutfen telefon numaranizi kontrol edin.');
+      setError('Lütfen telefon numaranızı kontrol edin.');
       return;
     }
 
@@ -74,7 +74,7 @@ export function PhoneVerificationStep({
         navigating = true;
         onNavigate(getTenantOnboardingStepUrl(workspace.stateToken, nextStep));
       } catch (sendError) {
-        const message = sendError instanceof Error ? sendError.message : 'Kod gonderilemedi.';
+        const message = sendError instanceof Error ? sendError.message : 'Kod gönderilemedi.';
         setError(formatSendError(message));
       } finally {
         if (!navigating) {
@@ -91,30 +91,30 @@ export function PhoneVerificationStep({
         totalSteps={0}
         status={status}
         updatedAt={workspace.application.updatedAt}
-        title="Telefon dogrulama"
-        description="Basvuruya devam edebilmek icin iletisim numaranizi onaylayin. Kodu yalnizca backend basariyla olusturduktan sonra OTP adimina gececegiz."
+        title="Telefon doğrulama"
+        description="Başvuruya devam edebilmek için iletişim numaranızı onaylayın. Kod başarıyla oluşturulduktan sonra doğrulama adımına geçeceksiniz."
       />
 
       <div className="grid gap-5">
         <div className="rounded-[8px] border border-primary-100 bg-primary-50 px-4 py-4 text-[14px] leading-6 text-primary-700">
           {challenge ? (
             <span>
-              Kod {challenge.maskedPhoneNumber} numarasi icin gonderildi. Gecerlilik:{' '}
+              Kod {challenge.maskedPhoneNumber} numarası için gönderildi. Geçerlilik:{' '}
               {new Date(challenge.expiresAt).toLocaleTimeString('tr-TR', {
                 hour: '2-digit',
                 minute: '2-digit',
               })}.
             </span>
           ) : initialMaskedPhone ? (
-            <span>Son kod hedefi: {initialMaskedPhone}. Numarayi degistirip yeni kod isteyebilirsiniz.</span>
+            <span>Son kod hedefi: {initialMaskedPhone}. Numarayı değiştirip yeni kod isteyebilirsiniz.</span>
           ) : (
-            <span>Kayit sirasinda verilen telefon numarasi otomatik doldurulur; gerekiyorsa duzeltebilirsiniz.</span>
+            <span>Kayıt sırasında verilen telefon numarası otomatik doldurulur; gerekiyorsa düzeltebilirsiniz.</span>
           )}
         </div>
 
         {showDebugCode ? (
           <div className="rounded-[8px] border border-[#f3d7ac] bg-[#fff8ed] px-4 py-3 text-[13px] text-[#b54708]">
-            Development test kodu: <strong>{challenge.debugCode}</strong>
+            Geliştirme test kodu: <strong>{challenge.debugCode}</strong>
           </div>
         ) : null}
 
@@ -125,7 +125,7 @@ export function PhoneVerificationStep({
         ) : null}
 
         <label className="block">
-          <span className="mb-2 block text-[13px] font-semibold text-ink-700">Telefon numarasi</span>
+          <span className="mb-2 block text-[13px] font-semibold text-ink-700">Telefon numarası</span>
           <Input
             inputMode="tel"
             autoComplete="tel"
@@ -135,13 +135,13 @@ export function PhoneVerificationStep({
             disabled={sending || workspace.phoneVerification?.verified}
           />
           <span className="mt-2 block text-[12px] leading-5 text-ink-500">
-            SMS entegrasyonu baglanana kadar kod mevcut email/log fallback ile uretilir.
+            SMS entegrasyonu bağlanana kadar kod geliştirme amaçlı mevcut e-posta/log yöntemiyle üretilir.
           </span>
         </label>
       </div>
 
       <OnboardingBottomActionBar
-        primaryLabel={resolvedSession?.redirectStep ? 'Yonlendiriliyor' : 'Kod gonder'}
+        primaryLabel={resolvedSession?.redirectStep ? 'Yönlendiriliyor' : 'Kod gönder'}
         onPrimary={() => void sendCode()}
         primaryDisabled={!canSend || Boolean(resolvedSession?.redirectStep)}
         primaryLoading={sending}

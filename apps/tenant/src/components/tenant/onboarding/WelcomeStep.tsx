@@ -59,13 +59,13 @@ export function WelcomeStep({
         totalSteps={0}
         status="in_progress"
         updatedAt={workspace.application.updatedAt}
-        title="Basvurunuza hos geldiniz"
-        description="Telefon dogrulamaniz tamamlandi. Simdi isletme bilgilerinizi ekleyip basvurunuzu tamamlayacagiz."
+        title="Başvurunuza hoş geldiniz"
+        description="Telefon doğrulamanız tamamlandı. Şimdi işletme bilgilerinizi ekleyip başvurunuzu tamamlayacağız."
       />
 
       <div className="grid gap-4">
         <div className="rounded-[8px] border border-[#d7eadf] bg-[#f0fdf4] px-4 py-4 text-[14px] leading-6 text-[#067647]">
-          Tesekkurler. Bundan sonraki adimlarda once isletmenizin konumunu netlestirecek, sonra dogrulama icin gerekli bilgileri tamamlayacagiz.
+          Teşekkürler. Bundan sonraki adımlarda önce işletmenizin konumunu netleştirecek, sonra doğrulama için gerekli bilgileri tamamlayacağız.
         </div>
 
         {error ? (
@@ -76,22 +76,22 @@ export function WelcomeStep({
 
         <div className="grid gap-3 sm:grid-cols-2">
           <div className="rounded-[8px] border border-ink-100 bg-ink-50 px-4 py-4">
-            <p className="text-[15px] font-bold text-[#1c1917]">Isletmenizi ekleyin</p>
+            <p className="text-[15px] font-bold text-[#1c1917]">İşletmenizi ekleyin</p>
             <p className="mt-2 text-[13px] leading-6 text-[#586575]">
-              Konum, adres ve temel ticari bilgileri adim adim tamamlayin.
+              Konum, adres ve temel ticari bilgileri adım adım tamamlayın.
             </p>
           </div>
           <div className="rounded-[8px] border border-ink-100 bg-ink-50 px-4 py-4">
-            <p className="text-[15px] font-bold text-[#1c1917]">Isletmenizi dogrulayin</p>
+            <p className="text-[15px] font-bold text-[#1c1917]">İşletmenizi doğrulayın</p>
             <p className="mt-2 text-[13px] leading-6 text-[#586575]">
-              Yetkili kisi, belgeler ve son kontrol ile basvurunuzu incelemeye gonderin.
+              Yetkili kişi, belgeler ve son kontrol ile başvurunuzu incelemeye gönderin.
             </p>
           </div>
         </div>
       </div>
 
       <OnboardingBottomActionBar
-        primaryLabel={resolvedSession?.redirectStep ? 'Yonlendiriliyor' : 'Devam et'}
+        primaryLabel={resolvedSession?.redirectStep ? 'Yönlendiriliyor' : 'Devam et'}
         onPrimary={() => void continueToLocation()}
         primaryDisabled={Boolean(resolvedSession?.redirectStep)}
         primaryLoading={loading}

@@ -774,7 +774,7 @@ export class TenantOnboardingService {
     const selectedPlan = getTenantOnboardingPlanCatalog(countryPack.country, countryPack.currency)
       .find((plan) => plan.active && plan.planKey === dto.planKey.trim());
     if (!selectedPlan) {
-      throw new BadRequestException('Selected onboarding plan is not available.');
+      throw new BadRequestException('Seçilen başvuru planı kullanılamıyor.');
     }
 
     await this.store.upsertPlanSelection(application.id, {
@@ -2437,7 +2437,7 @@ export class TenantOnboardingService {
         const documents = await this.store.listDocuments(applicationId);
         const currentRequiredDocuments = documents.filter((document) => document.isCurrent && document.isRequired);
         if (currentRequiredDocuments.length === 0) {
-          throw new BadRequestException('At least one required document must be uploaded before completing the documents step.');
+          throw new BadRequestException('Belge adımını tamamlamadan önce en az bir zorunlu belge yüklenmelidir.');
         }
         if (currentRequiredDocuments.some((document) => ['rejected', 'revision_requested', 'expired'].includes(document.status))) {
           throw new BadRequestException('Current required documents must be re-uploaded before the documents step can be completed.');
@@ -2533,7 +2533,7 @@ export class TenantOnboardingService {
     }
     const currentRequiredDocuments = documents.filter((document) => document.isCurrent && document.isRequired);
     if (currentRequiredDocuments.length === 0) {
-      throw new BadRequestException('At least one required current document must be uploaded before submission.');
+      throw new BadRequestException('Göndermeden önce en az bir güncel zorunlu belge yüklenmelidir.');
     }
     const businessInfo = await this.store.getBusinessDetail(applicationId);
     const country = businessInfo?.country?.trim().toUpperCase() || 'CH';
@@ -2550,7 +2550,7 @@ export class TenantOnboardingService {
         ),
     );
     if (missingRequiredConsent) {
-      throw new BadRequestException('All required onboarding acknowledgements must be accepted before submission.');
+      throw new BadRequestException('Göndermeden önce tüm zorunlu başvuru onayları kabul edilmelidir.');
     }
   }
 

@@ -64,11 +64,11 @@ function initialForm(workspace: TenantOnboardingWorkspace): TenantBillingAddress
 
 function validateForm(form: TenantBillingAddressInput) {
   const errors: BillingAddressErrors = {};
-  if (!form.billingName.trim()) errors.billingName = 'Billing name is required.';
-  if (!/^[A-Z]{2}$/.test(form.country.trim().toUpperCase())) errors.country = 'Country must be an ISO-2 code.';
-  if (!form.city.trim()) errors.city = 'City or region is required.';
-  if (!form.postalCode.trim()) errors.postalCode = 'Postal code is required.';
-  if (!form.addressLine1.trim()) errors.addressLine1 = 'Address line 1 is required.';
+  if (!form.billingName.trim()) errors.billingName = 'Fatura adı zorunludur.';
+  if (!/^[A-Z]{2}$/.test(form.country.trim().toUpperCase())) errors.country = 'Ülke ISO-2 kodu olmalıdır.';
+  if (!form.city.trim()) errors.city = 'Şehir veya bölge zorunludur.';
+  if (!form.postalCode.trim()) errors.postalCode = 'Posta kodu zorunludur.';
+  if (!form.addressLine1.trim()) errors.addressLine1 = 'Adres satırı 1 zorunludur.';
   return errors;
 }
 
@@ -136,7 +136,7 @@ export function BillingAddressStep({
         navigating = true;
         onNavigate(getTenantOnboardingStepUrl(workspace.stateToken, nextStep));
       } catch (error) {
-        setSubmitError(error instanceof Error ? error.message : 'Billing address could not be saved.');
+        setSubmitError(error instanceof Error ? error.message : 'Fatura adresi kaydedilemedi.');
       } finally {
         if (!navigating) {
           setSaving(false);
@@ -152,8 +152,8 @@ export function BillingAddressStep({
         totalSteps={0}
         status={status}
         updatedAt={workspace.application.updatedAt}
-        title="Billing address"
-        description="Add the invoice address for this partner account. It is saved separately from the physical business location."
+        title="Fatura adresi"
+        description="İş ortağı hesabı için fatura adresini ekleyin. Bu adres fiziksel işletme konumundan ayrı kaydedilir."
       />
 
       <div className="grid gap-5">
@@ -184,7 +184,7 @@ export function BillingAddressStep({
           <span>
             <span className="block font-semibold">{labelByKey.useBusinessAddress}</span>
             <span className="mt-1 block text-[12px] leading-5 text-ink-500">
-              Prefill and save a billing snapshot from the completed business address.
+              Tamamlanan işletme adresinden fatura bilgilerini doldurup kaydedin.
             </span>
           </span>
         </label>
@@ -227,7 +227,7 @@ export function BillingAddressStep({
         </div>
 
         <OnboardingBottomActionBar
-          primaryLabel="Save billing address"
+          primaryLabel="Fatura adresini kaydet"
           onPrimary={() => void saveAndContinue()}
           primaryDisabled={saving || Boolean(resolvedSession?.redirectStep)}
           primaryLoading={saving}

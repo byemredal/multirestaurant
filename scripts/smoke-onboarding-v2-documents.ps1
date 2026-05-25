@@ -226,9 +226,9 @@ async function openTab(url) {
   const verification = await waitForValue(
     send,
     '({ path: location.pathname, search: location.search, text: document.body.innerText })',
-    value => value && value.path.endsWith('/verification') && value.search === '' && value.text.includes('Documents and verification') && value.text.includes('Country-pack document guidance'),
+    value => value && value.path.endsWith('/verification') && value.search === '' && value.text.includes('Belgeler ve doğrulama') && value.text.includes('Ülke paketine göre belge rehberi'),
   );
-  if (!verification.path.endsWith('/verification') || verification.search !== '' || !verification.text.includes('Documents and verification') || !verification.text.includes('Country-pack document guidance')) {
+  if (!verification.path.endsWith('/verification') || verification.search !== '' || !verification.text.includes('Belgeler ve doğrulama') || !verification.text.includes('Ülke paketine göre belge rehberi')) {
     throw new Error(`Custom verification route did not render in forward flow. Last state: ${JSON.stringify(verification)}`);
   }
 
@@ -239,7 +239,7 @@ async function openTab(url) {
   await delay(500);
   const clickedUpload = await send('Runtime.evaluate', {
     expression: `(() => {
-      const button = Array.from(document.querySelectorAll('button')).find(x => x.innerText.includes('Upload document'));
+      const button = Array.from(document.querySelectorAll('button')).find(x => x.innerText.includes('Belgeyi yükle'));
       if (!button || button.disabled) return false;
       button.click();
       return true;
@@ -250,12 +250,12 @@ async function openTab(url) {
   const uploadComplete = await waitForValue(
     send,
     'document.body.innerText',
-    text => (text || '').includes('Return to review'),
+    text => (text || '').includes('Kontrole dön'),
   );
-  if (!uploadComplete.includes('Return to review')) throw new Error('Uploaded document did not enable review continuation.');
+  if (!uploadComplete.includes('Kontrole dön')) throw new Error('Uploaded document did not enable review continuation.');
   const returnClicked = await send('Runtime.evaluate', {
     expression: `(() => {
-      const button = Array.from(document.querySelectorAll('button')).find(x => x.innerText.includes('Return to review'));
+      const button = Array.from(document.querySelectorAll('button')).find(x => x.innerText.includes('Kontrole dön'));
       if (!button || button.disabled) return false;
       button.click();
       return true;
@@ -266,14 +266,14 @@ async function openTab(url) {
   const reviewAfterUpload = await waitForValue(
     send,
     '({ path: location.pathname, text: document.body.innerText })',
-    value => value && value.path.endsWith('/review') && value.text.includes('Submit application') && value.text.includes('Acknowledgements and consent') && !value.text.includes('Required documents\nMissing'),
+    value => value && value.path.endsWith('/review') && value.text.includes('Başvuruyu gönder') && value.text.includes('Onaylar ve izinler') && !value.text.includes('Zorunlu belgeler\nEksik'),
   );
-  if (!reviewAfterUpload.path.endsWith('/review') || !reviewAfterUpload.text.includes('Submit application') || reviewAfterUpload.text.includes('Required documents,') || reviewAfterUpload.text.includes('Required documents\nMissing')) {
+  if (!reviewAfterUpload.path.endsWith('/review') || !reviewAfterUpload.text.includes('Başvuruyu gönder') || reviewAfterUpload.text.includes('Zorunlu belgeler,') || reviewAfterUpload.text.includes('Zorunlu belgeler\nEksik')) {
     throw new Error(`Upload did not return to a complete review screen. Last state: ${JSON.stringify(reviewAfterUpload)}`);
   }
   const clickedEditAgain = await send('Runtime.evaluate', {
     expression: `(() => {
-      const card = Array.from(document.querySelectorAll('section')).find(x => x.querySelector('h3')?.innerText === 'Required documents');
+      const card = Array.from(document.querySelectorAll('section')).find(x => x.querySelector('h3')?.innerText === 'Zorunlu belgeler');
       const button = card && Array.from(card.querySelectorAll('button')).find(x => x.innerText.trim() === 'Edit');
       if (!button) return false;
       button.click();
@@ -285,7 +285,7 @@ async function openTab(url) {
   const repeatedEdit = await waitForValue(
     send,
     '({ path: location.pathname, search: location.search, text: document.body.innerText })',
-    value => value && value.path.endsWith('/verification') && value.search === '?returnTo=review' && value.text.includes('Documents and verification'),
+    value => value && value.path.endsWith('/verification') && value.search === '?returnTo=review' && value.text.includes('Belgeler ve doğrulama'),
   );
   if (!repeatedEdit.path.endsWith('/verification') || repeatedEdit.search !== '?returnTo=review') {
     throw new Error('Repeated returnToReview edit route was blocked.');
@@ -294,11 +294,11 @@ async function openTab(url) {
   await waitForValue(
     send,
     '({ path: location.pathname, text: document.body.innerText })',
-    value => value && value.path.endsWith('/review') && value.text.includes('Submit application'),
+    value => value && value.path.endsWith('/review') && value.text.includes('Başvuruyu gönder'),
   );
   const submitBlockedBeforeConsents = await send('Runtime.evaluate', {
     expression: `(() => {
-      const button = Array.from(document.querySelectorAll('button')).find(x => x.innerText.includes('Submit application'));
+      const button = Array.from(document.querySelectorAll('button')).find(x => x.innerText.includes('Başvuruyu gönder'));
       return Boolean(button && button.disabled);
     })()`,
     returnByValue: true,
@@ -306,7 +306,7 @@ async function openTab(url) {
   if (!submitBlockedBeforeConsents.result.result.value) throw new Error('Submit was not blocked before required acknowledgements.');
   const selectedConsents = await send('Runtime.evaluate', {
     expression: `(() => {
-      const section = Array.from(document.querySelectorAll('section')).find(x => x.querySelector('h3')?.innerText === 'Acknowledgements and consent');
+      const section = Array.from(document.querySelectorAll('section')).find(x => x.querySelector('h3')?.innerText === 'Onaylar ve izinler');
       const boxes = section ? Array.from(section.querySelectorAll('input[type="checkbox"]')) : [];
       boxes.filter(box => !box.checked && !box.disabled).forEach(box => box.click());
       const save = section && Array.from(section.querySelectorAll('button')).find(x => x.innerText.includes('Save acknowledgements'));
@@ -320,14 +320,14 @@ async function openTab(url) {
   await waitForValue(
     send,
     `(() => {
-      const button = Array.from(document.querySelectorAll('button')).find(x => x.innerText.includes('Submit application'));
+      const button = Array.from(document.querySelectorAll('button')).find(x => x.innerText.includes('Başvuruyu gönder'));
       return { enabled: Boolean(button && !button.disabled), text: document.body.innerText };
     })()`,
     value => value && value.enabled && value.text.includes('Accepted and saved'),
   );
   const submitClicked = await send('Runtime.evaluate', {
     expression: `(() => {
-      const button = Array.from(document.querySelectorAll('button')).find(x => x.innerText.includes('Submit application'));
+      const button = Array.from(document.querySelectorAll('button')).find(x => x.innerText.includes('Başvuruyu gönder'));
       if (!button || button.disabled) return { clicked: false, disabled: button?.disabled ?? null, text: document.body.innerText };
       button.click();
       return { clicked: true, disabled: false, text: document.body.innerText };
@@ -340,16 +340,16 @@ async function openTab(url) {
   const submitted = await waitForValue(
     send,
     '({ path: location.pathname, text: document.body.innerText })',
-    value => value && value.path.endsWith('/submitted') && value.text.includes('Application submitted'),
+    value => value && value.path.endsWith('/submitted') && value.text.includes('Başvurunuz gönderildi'),
   );
-  if (!submitted.path.endsWith('/submitted') || !submitted.text.includes('Application submitted')) throw new Error('Submitted page did not render.');
+  if (!submitted.path.endsWith('/submitted') || !submitted.text.includes('Başvurunuz gönderildi')) throw new Error('Submitted page did not render.');
   await send('Page.reload', { ignoreCache: true });
   const submittedAfterRefresh = await waitForValue(
     send,
     '({ path: location.pathname, text: document.body.innerText })',
-    value => value && value.path.endsWith('/submitted') && value.text.includes('Application submitted'),
+    value => value && value.path.endsWith('/submitted') && value.text.includes('Başvurunuz gönderildi'),
   );
-  if (!submittedAfterRefresh.path.endsWith('/submitted') || !submittedAfterRefresh.text.includes('Application submitted')) throw new Error('Submitted refresh regressed.');
+  if (!submittedAfterRefresh.path.endsWith('/submitted') || !submittedAfterRefresh.text.includes('Başvurunuz gönderildi')) throw new Error('Submitted refresh regressed.');
   await send('Page.navigate', { url: waitingUrl });
   const waitingRedirectPath = await waitForValue(send, 'location.pathname', value => (value || '').endsWith('/submitted'));
   if (!waitingRedirectPath.endsWith('/submitted')) throw new Error('Waiting alias did not reach submitted.');

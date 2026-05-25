@@ -352,7 +352,7 @@ export function useTenantOnboardingWorkspace(stateToken?: string, requestedStep?
         return result.workspace;
       } catch (saveError) {
         const message =
-          saveError instanceof Error ? saveError.message : 'Document could not be saved.';
+          saveError instanceof Error ? saveError.message : 'Belge kaydedilemedi.';
         setError(message);
         throw saveError;
       } finally {
