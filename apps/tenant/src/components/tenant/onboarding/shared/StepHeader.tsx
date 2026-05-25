@@ -19,47 +19,38 @@ export type StepHeaderProps = {
 export function StepHeader({
   title,
   description,
-  stepIndex,
-  totalSteps,
   status,
   updatedAt,
 }: StepHeaderProps) {
   const tone =
     status === 'completed'
-      ? 'bg-[#ecfdf3] text-[#067647] ring-1 ring-[#bbf7d0]'
+      ? 'bg-success-50 text-success-700 ring-1 ring-success-100'
       : status === 'needs_revision'
-        ? 'bg-[#fff8ed] text-[#b54708] ring-1 ring-[#f3d7ac]'
+        ? 'bg-warning-50 text-warning-600 ring-1 ring-warning-200'
         : status === 'in_progress'
           ? 'bg-primary-50 text-primary-700 ring-1 ring-primary-100'
           : 'bg-ink-50 text-ink-500 ring-1 ring-ink-200';
 
   return (
-    <div className="mb-7">
-      <div className="flex flex-wrap items-center justify-between gap-2">
-        <span className="text-[11px] font-bold uppercase tracking-[0.22em] text-[#a8a29e]">
-          {totalSteps > 0 ? `Adim ${stepIndex + 1} / ${totalSteps}` : 'Hazirlik'}
-        </span>
-        <div className="flex items-center gap-3">
-          <span
-            className={`rounded-full px-2.5 py-0.5 text-[10px] font-bold uppercase tracking-[0.12em] ${tone}`}
-          >
-            {STEP_STATUS_LABELS[status] ?? status}
-          </span>
-          <span className="text-[11px] text-[#a8a29e]">
-            Güncellendi{' '}
-            {new Date(updatedAt).toLocaleString('tr-TR', {
-              day: '2-digit',
-              month: 'short',
-              hour: '2-digit',
-              minute: '2-digit',
-            })}
-          </span>
-        </div>
-      </div>
-      <h2 className="mt-3 text-[28px] font-bold tracking-[-0.03em] text-[#1c1917] sm:text-[32px]">
+    <div className="mb-9 text-center">
+      <h2 className="text-[27px] font-semibold leading-tight text-ink-900 sm:text-[32px]">
         {title}
       </h2>
-      <p className="mt-3 max-w-[640px] text-[15px] leading-7 text-[#586575]">{description}</p>
+      <p className="mx-auto mt-3 max-w-[580px] text-[14px] leading-6 text-ink-500">{description}</p>
+      <div className="mt-5 inline-flex flex-wrap items-center justify-center gap-3 text-[11px] text-ink-400">
+        <span className={`rounded-[4px] px-2.5 py-1 font-medium ${tone}`}>
+          {STEP_STATUS_LABELS[status] ?? status}
+        </span>
+        <span>
+          Güncellendi{' '}
+          {new Date(updatedAt).toLocaleString('tr-TR', {
+            day: '2-digit',
+            month: 'short',
+            hour: '2-digit',
+            minute: '2-digit',
+          })}
+        </span>
+      </div>
     </div>
   );
 }

@@ -174,6 +174,7 @@ try {
   Wait-Port -Port $CdpPort -TimeoutSeconds 10
 
   $env:SLICE101_REVIEW_URL = "$TenantBase/onboarding/$encodedToken/review"
+  $env:SLICE101_VERIFICATION_URL = "$TenantBase/onboarding/$encodedToken/verification"
   $env:SLICE101_WAITING_URL = "$TenantBase/onboarding/$encodedToken/waiting"
   $env:SLICE101_DOCUMENT_FILE = $testFile
   $env:SLICE101_CDP_PORT = [string]$CdpPort
@@ -195,6 +196,7 @@ async function openTab(url) {
 }
 (async () => {
   const reviewUrl = process.env.SLICE101_REVIEW_URL;
+  const verificationUrl = process.env.SLICE101_VERIFICATION_URL;
   const waitingUrl = process.env.SLICE101_WAITING_URL;
   const tab = await openTab('about:blank');
   const socket = new WebSocket(tab.webSocketDebuggerUrl);
@@ -220,31 +222,14 @@ async function openTab(url) {
   await send('Runtime.enable');
   await send('DOM.enable');
 
-  await send('Page.navigate', { url: reviewUrl });
-  const beforeText = await waitForValue(
-    send,
-    'document.body.innerText',
-    text => (text || '').includes('Required documents') && (text || '').includes('Missing'),
-  ) || '';
-  if (!beforeText.includes('Required documents') || !beforeText.includes('Missing')) throw new Error('Review did not report missing documents.');
-  const clickedEdit = await send('Runtime.evaluate', {
-    expression: `(() => {
-      const card = Array.from(document.querySelectorAll('section')).find(x => x.querySelector('h3')?.innerText === 'Required documents');
-      const button = card && Array.from(card.querySelectorAll('button')).find(x => x.innerText.trim() === 'Edit');
-      if (!button) return false;
-      button.click();
-      return true;
-    })()`,
-    returnByValue: true,
-  });
-  if (!clickedEdit.result.result.value) throw new Error('Required documents edit action was unavailable.');
+  await send('Page.navigate', { url: verificationUrl });
   const verification = await waitForValue(
     send,
     '({ path: location.pathname, search: location.search, text: document.body.innerText })',
-    value => value && value.path.endsWith('/verification') && value.search === '?returnTo=review' && value.text.includes('Documents and verification') && value.text.includes('Country-pack document guidance'),
+    value => value && value.path.endsWith('/verification') && value.search === '' && value.text.includes('Documents and verification') && value.text.includes('Country-pack document guidance'),
   );
-  if (!verification.path.endsWith('/verification') || verification.search !== '?returnTo=review' || !verification.text.includes('Documents and verification') || !verification.text.includes('Country-pack document guidance')) {
-    throw new Error(`Custom verification route did not render with returnTo=review. Last state: ${JSON.stringify(verification)}`);
+  if (!verification.path.endsWith('/verification') || verification.search !== '' || !verification.text.includes('Documents and verification') || !verification.text.includes('Country-pack document guidance')) {
+    throw new Error(`Custom verification route did not render in forward flow. Last state: ${JSON.stringify(verification)}`);
   }
 
   const root = await send('DOM.getDocument', { depth: -1, pierce: true });
@@ -262,13 +247,29 @@ async function openTab(url) {
     returnByValue: true,
   });
   if (!clickedUpload.result.result.value) throw new Error('Upload action was unavailable.');
+  const uploadComplete = await waitForValue(
+    send,
+    'document.body.innerText',
+    text => (text || '').includes('Return to review'),
+  );
+  if (!uploadComplete.includes('Return to review')) throw new Error('Uploaded document did not enable review continuation.');
+  const returnClicked = await send('Runtime.evaluate', {
+    expression: `(() => {
+      const button = Array.from(document.querySelectorAll('button')).find(x => x.innerText.includes('Return to review'));
+      if (!button || button.disabled) return false;
+      button.click();
+      return true;
+    })()`,
+    returnByValue: true,
+  });
+  if (!returnClicked.result.result.value) throw new Error('Return to review action was unavailable after upload.');
   const reviewAfterUpload = await waitForValue(
     send,
     '({ path: location.pathname, text: document.body.innerText })',
     value => value && value.path.endsWith('/review') && value.text.includes('Submit application') && value.text.includes('Acknowledgements and consent') && !value.text.includes('Required documents\nMissing'),
   );
   if (!reviewAfterUpload.path.endsWith('/review') || !reviewAfterUpload.text.includes('Submit application') || reviewAfterUpload.text.includes('Required documents,') || reviewAfterUpload.text.includes('Required documents\nMissing')) {
-    throw new Error('Upload did not return to a complete review screen.');
+    throw new Error(`Upload did not return to a complete review screen. Last state: ${JSON.stringify(reviewAfterUpload)}`);
   }
   const clickedEditAgain = await send('Runtime.evaluate', {
     expression: `(() => {
@@ -355,7 +356,7 @@ async function openTab(url) {
   const settledAt = requests.length;
   await delay(2200);
   const result = {
-    reviewMissingInitially: true,
+    verificationShownBeforeReview: true,
     countryPackDocumentGuidanceRendered: true,
     verificationReturnToReview: true,
     repeatedVerificationEdit: true,

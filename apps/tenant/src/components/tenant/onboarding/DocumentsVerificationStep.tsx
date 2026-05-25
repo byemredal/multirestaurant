@@ -58,6 +58,7 @@ export function DocumentsVerificationStep({
   const [documentType, setDocumentType] = useState<string>('');
   const [expiresAt, setExpiresAt] = useState('');
   const [uploading, setUploading] = useState(false);
+  const [returningToReview, setReturningToReview] = useState(false);
   const [loadingRequirements, setLoadingRequirements] = useState(true);
   const [requirements, setRequirements] = useState<TenantOnboardingComplianceResult | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -108,6 +109,7 @@ export function DocumentsVerificationStep({
     }
 
     await runOnce(async () => {
+      let navigating = false;
       setUploading(true);
       setError(null);
       try {
@@ -119,14 +121,22 @@ export function DocumentsVerificationStep({
         onWorkspaceResolved(result.workspace);
         setFile(null);
         if (returnToReview) {
+          navigating = true;
           onNavigate(getTenantOnboardingStepUrl(workspace.stateToken, 'review'));
         }
       } catch (caught) {
         setError(caught instanceof Error ? caught.message : 'Document could not be uploaded.');
       } finally {
-        setUploading(false);
+        if (!navigating) {
+          setUploading(false);
+        }
       }
     });
+  }
+
+  function returnToReviewPage() {
+    setReturningToReview(true);
+    onNavigate(getTenantOnboardingStepUrl(workspace.stateToken, 'review'));
   }
 
   return (
@@ -285,8 +295,9 @@ export function DocumentsVerificationStep({
         {documentsSatisfied && !returnToReview ? (
           <OnboardingBottomActionBar
             primaryLabel="Return to review"
-            onPrimary={() => onNavigate(getTenantOnboardingStepUrl(workspace.stateToken, 'review'))}
-            primaryDisabled={uploading || Boolean(resolvedSession?.redirectStep)}
+            onPrimary={returnToReviewPage}
+            primaryDisabled={uploading || returningToReview || Boolean(resolvedSession?.redirectStep)}
+            primaryLoading={returningToReview}
           />
         ) : null}
       </div>

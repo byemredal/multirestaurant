@@ -111,17 +111,21 @@ export function AuthorizedPersonStep({
     }
 
     await runOnce(async () => {
+      let navigating = false;
       setSaving(true);
       setSubmitError(null);
       try {
         const result = await saveTenantOnboardingAuthorizedPerson(workspace.stateToken, normalizeForm(form));
         onWorkspaceResolved(result.workspace);
         const nextStep = result.redirectStep ?? result.nextStep ?? result.session?.currentStep ?? 'bank-details';
+        navigating = true;
         onNavigate(getTenantOnboardingStepUrl(workspace.stateToken, nextStep));
       } catch (error) {
         setSubmitError(error instanceof Error ? error.message : 'Authorized person details could not be saved.');
       } finally {
-        setSaving(false);
+        if (!navigating) {
+          setSaving(false);
+        }
       }
     });
   }
@@ -140,16 +144,16 @@ export function AuthorizedPersonStep({
       />
 
       <div className="grid gap-5">
-        <div className="rounded-[18px] border border-primary-100 bg-primary-50 px-4 py-4 text-[13px] leading-6 text-primary-700">
+        <div className="rounded-[8px] border border-primary-100 bg-primary-50 px-4 py-4 text-[13px] leading-6 text-primary-700">
           {countryConfig.guidance}
         </div>
 
-        <div className="rounded-[18px] border border-[#f3d7ac] bg-[#fff8ed] px-4 py-4 text-[13px] leading-6 text-[#b54708]">
+        <div className="rounded-[8px] border border-[#f3d7ac] bg-[#fff8ed] px-4 py-4 text-[13px] leading-6 text-[#b54708]">
           {countryConfig.legalReviewNote}
         </div>
 
         {submitError ? (
-          <div className="rounded-[14px] border border-danger-200 bg-danger-50 px-4 py-3 text-[13px] text-danger-600">
+          <div className="rounded-[8px] border border-danger-200 bg-danger-50 px-4 py-3 text-[13px] text-danger-600">
             {submitError}
           </div>
         ) : null}

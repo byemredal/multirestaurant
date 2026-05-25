@@ -126,17 +126,21 @@ export function BillingAddressStep({
     }
 
     await runOnce(async () => {
+      let navigating = false;
       setSaving(true);
       setSubmitError(null);
       try {
         const result = await saveTenantOnboardingBillingAddress(workspace.stateToken, normalizeForm(form));
         onWorkspaceResolved(result.workspace);
         const nextStep = result.redirectStep ?? result.nextStep ?? result.session?.currentStep ?? 'plan-selection';
+        navigating = true;
         onNavigate(getTenantOnboardingStepUrl(workspace.stateToken, nextStep));
       } catch (error) {
         setSubmitError(error instanceof Error ? error.message : 'Billing address could not be saved.');
       } finally {
-        setSaving(false);
+        if (!navigating) {
+          setSaving(false);
+        }
       }
     });
   }
@@ -153,17 +157,17 @@ export function BillingAddressStep({
       />
 
       <div className="grid gap-5">
-        <div className="rounded-[18px] border border-primary-100 bg-primary-50 px-4 py-4 text-[13px] leading-6 text-primary-700">
+        <div className="rounded-[8px] border border-primary-100 bg-primary-50 px-4 py-4 text-[13px] leading-6 text-primary-700">
           {config.helperText}
         </div>
 
         {submitError ? (
-          <div className="rounded-[14px] border border-danger-200 bg-danger-50 px-4 py-3 text-[13px] text-danger-600">
+          <div className="rounded-[8px] border border-danger-200 bg-danger-50 px-4 py-3 text-[13px] text-danger-600">
             {submitError}
           </div>
         ) : null}
 
-        <label className="flex items-start gap-3 rounded-[14px] border border-ink-200 px-4 py-3 text-[14px] text-ink-700">
+        <label className="flex items-start gap-3 rounded-[8px] border border-ink-200 px-4 py-3 text-[14px] text-ink-700">
           <input
             type="checkbox"
             checked={Boolean(form.useBusinessAddress)}

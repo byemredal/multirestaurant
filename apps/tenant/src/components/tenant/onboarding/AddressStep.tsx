@@ -98,17 +98,21 @@ export function AddressStep({
     }
 
     await runOnce(async () => {
+      let navigating = false;
       setSaving(true);
       setSubmitError(null);
       try {
         const result = await saveTenantOnboardingAddress(workspace.stateToken, normalizeAddress(form));
         onWorkspaceResolved(result.workspace);
         const nextStep = result.redirectStep ?? result.nextStep ?? result.session?.currentStep ?? 'business-details';
+        navigating = true;
         onNavigate(getTenantOnboardingStepUrl(workspace.stateToken, nextStep));
       } catch (error) {
         setSubmitError(error instanceof Error ? error.message : 'Adres kaydedilemedi.');
       } finally {
-        setSaving(false);
+        if (!navigating) {
+          setSaving(false);
+        }
       }
     });
   }
@@ -126,18 +130,18 @@ export function AddressStep({
 
       <div className="grid gap-5">
         {location ? (
-          <div className="rounded-[18px] border border-primary-100 bg-primary-50 px-4 py-4 text-[14px] leading-6 text-primary-700">
+          <div className="rounded-[8px] border border-primary-100 bg-primary-50 px-4 py-4 text-[14px] leading-6 text-primary-700">
             <strong className="font-semibold">Secilen konum:</strong> {location.locationLabel}
             {location.country ? <span> ({location.country})</span> : null}
           </div>
         ) : (
-          <div className="rounded-[14px] border border-[#f3d7ac] bg-[#fff8ed] px-4 py-3 text-[13px] text-[#b54708]">
+          <div className="rounded-[8px] border border-[#f3d7ac] bg-[#fff8ed] px-4 py-3 text-[13px] text-[#b54708]">
             Once konum secimi tamamlanmalidir. Backend bu sayfayi normalde location adimina yonlendirir.
           </div>
         )}
 
         {submitError ? (
-          <div className="rounded-[14px] border border-danger-200 bg-danger-50 px-4 py-3 text-[13px] text-danger-600">
+          <div className="rounded-[8px] border border-danger-200 bg-danger-50 px-4 py-3 text-[13px] text-danger-600">
             {submitError}
           </div>
         ) : null}

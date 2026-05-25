@@ -92,6 +92,7 @@ export function PlanSelectionStep({
     }
 
     await runOnce(async () => {
+      let navigating = false;
       setSaving(true);
       setError(null);
       try {
@@ -99,12 +100,15 @@ export function PlanSelectionStep({
           planKey: selectedPlanKey,
         });
         onWorkspaceResolved(result.workspace);
-        const nextStep = result.redirectStep ?? result.nextStep ?? result.session?.currentStep ?? 'review';
+        const nextStep = result.redirectStep ?? result.nextStep ?? result.session?.currentStep ?? 'operations';
+        navigating = true;
         onNavigate(getTenantOnboardingStepUrl(workspace.stateToken, nextStep));
       } catch (caught) {
         setError(caught instanceof Error ? caught.message : 'Plan selection could not be saved.');
       } finally {
-        setSaving(false);
+        if (!navigating) {
+          setSaving(false);
+        }
       }
     });
   }
@@ -121,12 +125,12 @@ export function PlanSelectionStep({
       />
 
       <div className="grid gap-5">
-        <div className="rounded-[18px] border border-primary-100 bg-primary-50 px-4 py-4 text-[13px] leading-6 text-primary-700">
+        <div className="rounded-[8px] border border-primary-100 bg-primary-50 px-4 py-4 text-[13px] leading-6 text-primary-700">
           {copy.disclaimer}
         </div>
 
         {error ? (
-          <div className="rounded-[14px] border border-danger-200 bg-danger-50 px-4 py-3 text-[13px] text-danger-600">
+          <div className="rounded-[8px] border border-danger-200 bg-danger-50 px-4 py-3 text-[13px] text-danger-600">
             {error}
           </div>
         ) : null}
@@ -196,7 +200,7 @@ export function PlanSelectionStep({
         )}
 
         {!selectedPlanKey && !loadingPlans ? (
-          <p className="text-[12px] text-ink-500">Select a plan to continue to review.</p>
+          <p className="text-[12px] text-ink-500">Select a plan to continue to operational details.</p>
         ) : null}
 
         <OnboardingBottomActionBar

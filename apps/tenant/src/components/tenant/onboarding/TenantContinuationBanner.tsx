@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import {
   getTenantOnboardingStepUrl,
   type TenantOnboardingWorkflowStepKey,
@@ -15,6 +15,7 @@ export function TenantContinuationBanner({
 }) {
   const [resumeUrl, setResumeUrl] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
+  const resetTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   useEffect(() => {
     if (!stateToken) {
@@ -24,26 +25,39 @@ export function TenantContinuationBanner({
     setResumeUrl(`${window.location.origin}${getTenantOnboardingStepUrl(stateToken, stepKey)}`);
   }, [stateToken, stepKey]);
 
+  useEffect(() => () => {
+    if (resetTimerRef.current) {
+      clearTimeout(resetTimerRef.current);
+    }
+  }, []);
+
+  const copy = useCallback(async () => {
+    if (!resumeUrl) {
+      return;
+    }
+
+    try {
+      await navigator.clipboard.writeText(resumeUrl);
+      setCopied(true);
+      if (resetTimerRef.current) {
+        clearTimeout(resetTimerRef.current);
+      }
+      resetTimerRef.current = setTimeout(() => setCopied(false), 1800);
+    } catch {
+      setCopied(false);
+    }
+  }, [resumeUrl]);
+
   if (!resumeUrl) {
     return null;
   }
 
-  const copy = async () => {
-    try {
-      await navigator.clipboard.writeText(resumeUrl);
-      setCopied(true);
-      setTimeout(() => setCopied(false), 1800);
-    } catch {
-      setCopied(false);
-    }
-  };
-
   return (
-    <div className="mb-5 flex justify-end">
+    <div className="mb-6 flex justify-end">
       <button
         type="button"
         onClick={() => void copy()}
-        className="inline-flex h-9 items-center gap-2 rounded-full border border-primary-100 bg-primary-50 px-3 text-[12.5px] font-semibold text-primary-700 transition hover:border-primary-200 hover:bg-primary-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/35"
+        className="inline-flex h-9 items-center gap-2 rounded-[4px] border border-ink-200 bg-white px-3 text-[12px] font-medium text-ink-500 transition hover:border-primary-200 hover:text-primary-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/25"
       >
         <svg
           aria-hidden="true"

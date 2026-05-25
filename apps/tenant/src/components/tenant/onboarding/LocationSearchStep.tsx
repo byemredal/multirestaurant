@@ -66,6 +66,7 @@ export function LocationSearchStep({
     }
 
     await runOnce(async () => {
+      let navigating = false;
       setSaving(true);
       setError(null);
       try {
@@ -75,11 +76,14 @@ export function LocationSearchStep({
         );
         onWorkspaceResolved(result.workspace);
         const nextStep = result.redirectStep ?? result.nextStep ?? result.session?.currentStep ?? 'address';
+        navigating = true;
         onNavigate(getTenantOnboardingStepUrl(workspace.stateToken, nextStep));
       } catch (saveError) {
         setError(saveError instanceof Error ? saveError.message : 'Konum kaydedilemedi.');
       } finally {
-        setSaving(false);
+        if (!navigating) {
+          setSaving(false);
+        }
       }
     });
   }
@@ -96,12 +100,12 @@ export function LocationSearchStep({
       />
 
       <div className="grid gap-5">
-        <div className="rounded-[18px] border border-primary-100 bg-primary-50 px-4 py-4 text-[14px] leading-6 text-primary-700">
+        <div className="rounded-[8px] border border-primary-100 bg-primary-50 px-4 py-4 text-[14px] leading-6 text-primary-700">
           Harita veya yer arama saglayicisi henuz bagli degil. Bu alan, Switzerland-first ilerideki adres ve koordinat modeline uyumlu yalin bir konum taslagi kaydeder.
         </div>
 
         {error ? (
-          <div className="rounded-[14px] border border-danger-200 bg-danger-50 px-4 py-3 text-[13px] text-danger-600">
+          <div className="rounded-[8px] border border-danger-200 bg-danger-50 px-4 py-3 text-[13px] text-danger-600">
             {error}
           </div>
         ) : null}

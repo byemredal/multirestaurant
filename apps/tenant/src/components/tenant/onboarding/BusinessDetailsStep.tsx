@@ -147,6 +147,7 @@ export function BusinessDetailsStep({
     }
 
     await runOnce(async () => {
+      let navigating = false;
       setChecking(true);
       setSubmitError(null);
       try {
@@ -158,6 +159,7 @@ export function BusinessDetailsStep({
           onWorkspaceResolved(result.workspace);
         }
         if (result.redirectStep) {
+          navigating = true;
           onNavigate(getTenantOnboardingStepUrl(workspace.stateToken, result.redirectStep));
           return;
         }
@@ -166,7 +168,9 @@ export function BusinessDetailsStep({
       } catch (error) {
         setSubmitError(error instanceof Error ? error.message : 'Registration could not be checked.');
       } finally {
-        setChecking(false);
+        if (!navigating) {
+          setChecking(false);
+        }
       }
     });
   }
@@ -179,17 +183,21 @@ export function BusinessDetailsStep({
     }
 
     await runOnce(async () => {
+      let navigating = false;
       setSaving(true);
       setSubmitError(null);
       try {
         const result = await saveTenantOnboardingBusinessDetails(workspace.stateToken, normalizeForm(form));
         onWorkspaceResolved(result.workspace);
         const nextStep = result.redirectStep ?? result.nextStep ?? result.session?.currentStep ?? 'authorized-person';
+        navigating = true;
         onNavigate(getTenantOnboardingStepUrl(workspace.stateToken, nextStep));
       } catch (error) {
         setSubmitError(error instanceof Error ? error.message : 'Business details could not be saved.');
       } finally {
-        setSaving(false);
+        if (!navigating) {
+          setSaving(false);
+        }
       }
     });
   }
@@ -206,18 +214,18 @@ export function BusinessDetailsStep({
       />
 
       <div className="grid gap-5">
-        <div className="rounded-[18px] border border-[#f3d7ac] bg-[#fff8ed] px-4 py-4 text-[13px] leading-6 text-[#b54708]">
+        <div className="rounded-[8px] border border-[#f3d7ac] bg-[#fff8ed] px-4 py-4 text-[13px] leading-6 text-[#b54708]">
           {countryConfig.legalReviewNote}
         </div>
 
         {submitError ? (
-          <div className="rounded-[14px] border border-danger-200 bg-danger-50 px-4 py-3 text-[13px] text-danger-600">
+          <div className="rounded-[8px] border border-danger-200 bg-danger-50 px-4 py-3 text-[13px] text-danger-600">
             {submitError}
           </div>
         ) : null}
 
         {message ? (
-          <div className="rounded-[14px] border border-[#bbf7d0] bg-[#ecfdf3] px-4 py-3 text-[13px] text-[#067647]">
+          <div className="rounded-[8px] border border-[#bbf7d0] bg-[#ecfdf3] px-4 py-3 text-[13px] text-[#067647]">
             {message}
           </div>
         ) : null}
@@ -281,7 +289,7 @@ export function BusinessDetailsStep({
               </label>
             </div>
 
-            <label className="flex items-center gap-3 rounded-[14px] border border-ink-200 px-4 py-3 text-[14px] text-ink-700">
+            <label className="flex items-center gap-3 rounded-[8px] border border-ink-200 px-4 py-3 text-[14px] text-ink-700">
               <input
                 type="checkbox"
                 checked={Boolean(form.vatRegistered)}

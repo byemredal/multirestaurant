@@ -178,6 +178,7 @@ export function useTenantOnboardingWorkspace(stateToken?: string, requestedStep?
     if (!session && !currentStateToken) {
       return;
     }
+    let requestSeq: number | null = null;
     try {
       setError(null);
       const resolveKey = currentStateToken && requestedStep
@@ -198,7 +199,7 @@ export function useTenantOnboardingWorkspace(stateToken?: string, requestedStep?
         setLoading(true);
       }
 
-      const requestSeq = workspaceRequestSeqRef.current + 1;
+      requestSeq = workspaceRequestSeqRef.current + 1;
       workspaceRequestSeqRef.current = requestSeq;
       loadingRequestSeqRef.current = requestSeq;
       if (currentStateToken && requestedStep) {
@@ -232,7 +233,9 @@ export function useTenantOnboardingWorkspace(stateToken?: string, requestedStep?
           : 'Tenant onboarding state could not be loaded.',
       );
     } finally {
-      setLoading(false);
+      if (requestSeq === null || requestSeq >= loadingRequestSeqRef.current) {
+        setLoading(false);
+      }
     }
   }, [currentStateToken, keepRouteTokenInWorkspace, replaceWorkspace, requestedStep, session]);
 

@@ -197,8 +197,19 @@ export function getTenantOnboardingAccessibleStepKeys(workspace: TenantOnboardin
       return true;
     }
 
-    if (stepKey === 'operations' || stepKey === 'verification' || stepKey === 'review') {
+    if (stepKey === 'operations') {
       return isBackendStepCompleted(workspace, 'membership_plan');
+    }
+
+    if (stepKey === 'verification') {
+      return isBackendStepCompleted(workspace, 'operations_info');
+    }
+
+    if (stepKey === 'review') {
+      return (
+        isBackendStepCompleted(workspace, 'operations_info') &&
+        isBackendStepCompleted(workspace, 'documents')
+      );
     }
 
     const previousSteps = tenantOnboardingWorkflowStepOrder
@@ -222,8 +233,17 @@ export function canAccessTenantOnboardingStep(
 
 export function getFirstLockedSafeTenantOnboardingStep(workspace: TenantOnboardingWorkspace) {
   const accessibleSteps = getTenantOnboardingAccessibleStepKeys(workspace);
-  if (isBackendStepCompleted(workspace, 'membership_plan')) {
+  if (
+    isBackendStepCompleted(workspace, 'operations_info') &&
+    isBackendStepCompleted(workspace, 'documents')
+  ) {
     return 'review';
+  }
+  if (isBackendStepCompleted(workspace, 'operations_info')) {
+    return 'verification';
+  }
+  if (isBackendStepCompleted(workspace, 'membership_plan')) {
+    return 'operations';
   }
   if (isBackendStepCompleted(workspace, 'billing_address')) {
     return 'plan-selection';

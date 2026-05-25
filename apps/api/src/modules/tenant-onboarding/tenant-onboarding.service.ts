@@ -790,9 +790,9 @@ export class TenantOnboardingService {
     const workspace = await this.getWorkspace(application.tenantAccountId);
     return {
       stateToken: workspace.stateToken,
-      nextStep: 'review',
+      nextStep: 'operations',
       redirectStep: null,
-      session: await this.resolveSessionByStateToken(workspace.stateToken, 'review'),
+      session: await this.resolveSessionByStateToken(workspace.stateToken, 'operations'),
       workspace,
     };
   }
@@ -1138,6 +1138,14 @@ export class TenantOnboardingService {
       return 'plan-selection';
     }
 
+    if (!this.isWorkspaceStepCompleted(workspace, 'operations_info')) {
+      return 'operations';
+    }
+
+    if (!this.isWorkspaceStepCompleted(workspace, 'documents')) {
+      return 'verification';
+    }
+
     return 'review';
   }
 
@@ -1189,14 +1197,14 @@ export class TenantOnboardingService {
       allowed.add('operations');
     }
 
-    if (
-      this.isWorkspaceStepCompleted(workspace, 'operations_info') ||
-      this.isWorkspaceStepCompleted(workspace, 'membership_plan')
-    ) {
+    if (this.isWorkspaceStepCompleted(workspace, 'operations_info')) {
       allowed.add('verification');
     }
 
-    if (this.isWorkspaceStepCompleted(workspace, 'membership_plan')) {
+    if (
+      this.isWorkspaceStepCompleted(workspace, 'operations_info') &&
+      this.isWorkspaceStepCompleted(workspace, 'documents')
+    ) {
       allowed.add('review');
     }
 

@@ -31,6 +31,7 @@ export function WelcomeStep({
 
   async function continueToLocation() {
     await runOnce(async () => {
+      let navigating = false;
       setLoading(true);
       setError(null);
       try {
@@ -39,11 +40,14 @@ export function WelcomeStep({
           onWorkspaceResolved(result.workspace);
         }
         const nextStep = result.redirectStep ?? result.nextStep ?? result.session?.currentStep ?? 'location';
+        navigating = true;
         onNavigate(getTenantOnboardingStepUrl(workspace.stateToken, nextStep));
       } catch (continueError) {
         setError(continueError instanceof Error ? continueError.message : 'Devam edilemedi.');
       } finally {
-        setLoading(false);
+        if (!navigating) {
+          setLoading(false);
+        }
       }
     });
   }
@@ -60,24 +64,24 @@ export function WelcomeStep({
       />
 
       <div className="grid gap-4">
-        <div className="rounded-[18px] border border-[#d7eadf] bg-[#f0fdf4] px-4 py-4 text-[14px] leading-6 text-[#067647]">
+        <div className="rounded-[8px] border border-[#d7eadf] bg-[#f0fdf4] px-4 py-4 text-[14px] leading-6 text-[#067647]">
           Tesekkurler. Bundan sonraki adimlarda once isletmenizin konumunu netlestirecek, sonra dogrulama icin gerekli bilgileri tamamlayacagiz.
         </div>
 
         {error ? (
-          <div className="rounded-[14px] border border-danger-200 bg-danger-50 px-4 py-3 text-[13px] text-danger-600">
+          <div className="rounded-[8px] border border-danger-200 bg-danger-50 px-4 py-3 text-[13px] text-danger-600">
             {error}
           </div>
         ) : null}
 
         <div className="grid gap-3 sm:grid-cols-2">
-          <div className="rounded-[16px] border border-[#e6ded3] bg-[#fffbf5] px-4 py-4">
+          <div className="rounded-[8px] border border-ink-100 bg-ink-50 px-4 py-4">
             <p className="text-[15px] font-bold text-[#1c1917]">Isletmenizi ekleyin</p>
             <p className="mt-2 text-[13px] leading-6 text-[#586575]">
               Konum, adres ve temel ticari bilgileri adim adim tamamlayin.
             </p>
           </div>
-          <div className="rounded-[16px] border border-[#e6ded3] bg-[#fffbf5] px-4 py-4">
+          <div className="rounded-[8px] border border-ink-100 bg-ink-50 px-4 py-4">
             <p className="text-[15px] font-bold text-[#1c1917]">Isletmenizi dogrulayin</p>
             <p className="mt-2 text-[13px] leading-6 text-[#586575]">
               Yetkili kisi, belgeler ve son kontrol ile basvurunuzu incelemeye gonderin.

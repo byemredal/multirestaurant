@@ -61,6 +61,7 @@ export function PhoneVerificationStep({
     }
 
     await runOnce(async () => {
+      let navigating = false;
       setSending(true);
       setError(null);
       try {
@@ -70,12 +71,15 @@ export function PhoneVerificationStep({
           onWorkspaceResolved(result.session.workspace);
         }
         const nextStep = result.redirectStep ?? result.nextStep ?? 'otp';
+        navigating = true;
         onNavigate(getTenantOnboardingStepUrl(workspace.stateToken, nextStep));
       } catch (sendError) {
         const message = sendError instanceof Error ? sendError.message : 'Kod gonderilemedi.';
         setError(formatSendError(message));
       } finally {
-        setSending(false);
+        if (!navigating) {
+          setSending(false);
+        }
       }
     });
   }
@@ -92,7 +96,7 @@ export function PhoneVerificationStep({
       />
 
       <div className="grid gap-5">
-        <div className="rounded-[18px] border border-primary-100 bg-primary-50 px-4 py-4 text-[14px] leading-6 text-primary-700">
+        <div className="rounded-[8px] border border-primary-100 bg-primary-50 px-4 py-4 text-[14px] leading-6 text-primary-700">
           {challenge ? (
             <span>
               Kod {challenge.maskedPhoneNumber} numarasi icin gonderildi. Gecerlilik:{' '}
@@ -109,13 +113,13 @@ export function PhoneVerificationStep({
         </div>
 
         {showDebugCode ? (
-          <div className="rounded-[14px] border border-[#f3d7ac] bg-[#fff8ed] px-4 py-3 text-[13px] text-[#b54708]">
+          <div className="rounded-[8px] border border-[#f3d7ac] bg-[#fff8ed] px-4 py-3 text-[13px] text-[#b54708]">
             Development test kodu: <strong>{challenge.debugCode}</strong>
           </div>
         ) : null}
 
         {error ? (
-          <div className="rounded-[14px] border border-danger-200 bg-danger-50 px-4 py-3 text-[13px] text-danger-600">
+          <div className="rounded-[8px] border border-danger-200 bg-danger-50 px-4 py-3 text-[13px] text-danger-600">
             {error}
           </div>
         ) : null}

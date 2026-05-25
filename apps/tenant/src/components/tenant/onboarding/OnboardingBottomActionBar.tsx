@@ -20,29 +20,30 @@ export function OnboardingBottomActionBar({
   onSecondary,
 }: OnboardingBottomActionBarProps) {
   return (
-    <div className="sticky bottom-0 -mx-5 mt-8 border-t border-ink-200 bg-white/95 px-5 py-4 backdrop-blur sm:static sm:mx-0 sm:bg-transparent sm:px-0 sm:pb-0">
-      <div className="flex flex-col-reverse gap-3 sm:flex-row sm:items-center sm:justify-between">
-        {secondaryLabel && onSecondary ? (
-          <Button
-            type="button"
-            variant="outline"
-            onClick={onSecondary}
-            disabled={primaryLoading}
-            className="rounded-[14px] px-4 py-2.5 text-[14px] font-semibold"
-          >
-            {secondaryLabel}
-          </Button>
-        ) : (
-          <span />
-        )}
+    <div className="sticky bottom-0 -mx-5 mt-10 border-t border-ink-100 bg-white/95 px-5 py-4 backdrop-blur sm:static sm:mx-0 sm:border-0 sm:bg-transparent sm:px-0 sm:pb-0">
+      <div className="mx-auto flex w-full max-w-[320px] flex-col items-stretch gap-2.5">
         <Button
           type="button"
           onClick={onPrimary}
           disabled={primaryDisabled || primaryLoading}
-          className="rounded-[14px] bg-primary px-5 py-2.5 text-[14px] font-semibold text-white shadow-pop disabled:cursor-not-allowed disabled:opacity-60"
+          size="lg"
+          rounded="sm"
+          className="box-border w-full bg-primary text-[14px] font-semibold text-white shadow-none disabled:cursor-not-allowed disabled:opacity-60"
         >
           {primaryLoading ? 'Lutfen bekleyin...' : primaryLabel}
         </Button>
+        {secondaryLabel && onSecondary ? (
+          <Button
+            type="button"
+            variant="ghost"
+            onClick={onSecondary}
+            disabled={primaryLoading}
+            rounded="sm"
+            className="box-border w-full text-[13px] font-medium text-ink-500"
+          >
+            {secondaryLabel}
+          </Button>
+        ) : null}
       </div>
     </div>
   );

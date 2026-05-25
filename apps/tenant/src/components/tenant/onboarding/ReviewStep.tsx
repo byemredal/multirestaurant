@@ -262,16 +262,20 @@ export function ReviewStep({
 
   async function submitApplication() {
     await runOnce(async () => {
+      let navigating = false;
       setSubmitting(true);
       setError(null);
       try {
         const result = await submitTenantOnboardingByStateToken(workspace.stateToken);
         onWorkspaceResolved(result.workspace);
+        navigating = true;
         onNavigate(getTenantOnboardingStepUrl(workspace.stateToken, 'submitted'));
       } catch (caught) {
         setError(caught instanceof Error ? caught.message : 'Application could not be submitted.');
       } finally {
-        setSubmitting(false);
+        if (!navigating) {
+          setSubmitting(false);
+        }
       }
     });
   }

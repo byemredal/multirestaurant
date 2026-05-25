@@ -91,17 +91,21 @@ export function OperationsStep({
     }
 
     await runOnce(async () => {
+      let navigating = false;
       setSaving(true);
       setSubmitError(null);
       try {
         const result = await saveTenantOnboardingOperations(workspace.stateToken, normalizeForm(form));
         onWorkspaceResolved(result.workspace);
         const nextStep = result.redirectStep ?? result.nextStep ?? result.session?.currentStep ?? 'verification';
+        navigating = true;
         onNavigate(getTenantOnboardingStepUrl(workspace.stateToken, nextStep));
       } catch (error) {
         setSubmitError(error instanceof Error ? error.message : 'Operational details could not be saved.');
       } finally {
-        setSaving(false);
+        if (!navigating) {
+          setSaving(false);
+        }
       }
     });
   }

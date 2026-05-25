@@ -100,18 +100,22 @@ export function OtpVerificationStep({
     }
 
     await runOnce(async () => {
+      let navigating = false;
       setBusyAction('verify');
       setError(null);
       try {
         const result = await verifyTenantOnboardingPhoneCode(workspace.stateToken, code);
         onWorkspaceResolved(result.workspace);
         const nextStep = result.redirectStep ?? result.nextStep ?? result.session?.currentStep ?? 'welcome';
+        navigating = true;
         onNavigate(getTenantOnboardingStepUrl(workspace.stateToken, nextStep));
       } catch (verifyError) {
         const message = verifyError instanceof Error ? verifyError.message : 'Kod dogrulanamadi.';
         setError(formatVerifyError(message));
       } finally {
-        setBusyAction(null);
+        if (!navigating) {
+          setBusyAction(null);
+        }
       }
     });
   }
@@ -128,7 +132,7 @@ export function OtpVerificationStep({
       />
 
       <div className="grid gap-5">
-        <div className="rounded-[18px] border border-primary-100 bg-primary-50 px-4 py-4 text-[14px] leading-6 text-primary-700">
+        <div className="rounded-[8px] border border-primary-100 bg-primary-50 px-4 py-4 text-[14px] leading-6 text-primary-700">
           {maskedPhone ? <span>Kod hedefi: {maskedPhone}.</span> : <span>Kod daha once sectiginiz telefon numarasina gonderildi.</span>}
           {expiresAt ? (
             <span>
@@ -142,13 +146,13 @@ export function OtpVerificationStep({
         </div>
 
         {showDebugCode ? (
-          <div className="rounded-[14px] border border-[#f3d7ac] bg-[#fff8ed] px-4 py-3 text-[13px] text-[#b54708]">
+          <div className="rounded-[8px] border border-[#f3d7ac] bg-[#fff8ed] px-4 py-3 text-[13px] text-[#b54708]">
             Development test kodu: <strong>{challenge.debugCode}</strong>
           </div>
         ) : null}
 
         {error ? (
-          <div className="rounded-[14px] border border-danger-200 bg-danger-50 px-4 py-3 text-[13px] text-danger-600">
+          <div className="rounded-[8px] border border-danger-200 bg-danger-50 px-4 py-3 text-[13px] text-danger-600">
             {error}
           </div>
         ) : null}
@@ -158,7 +162,7 @@ export function OtpVerificationStep({
             <input
               key={index}
               aria-label={`OTP ${index + 1}`}
-              className="h-12 rounded-[12px] border border-ink-200 bg-white text-center text-[20px] font-bold text-ink-900 outline-none transition focus:border-primary focus:ring-2 focus:ring-primary/20 disabled:bg-ink-50 disabled:text-ink-400 sm:h-14"
+              className="h-12 rounded-[6px] border border-ink-200 bg-white text-center text-[20px] font-bold text-ink-900 outline-none transition focus:border-primary focus:ring-2 focus:ring-primary/20 disabled:bg-ink-50 disabled:text-ink-400 sm:h-14"
               inputMode="numeric"
               autoComplete={index === 0 ? 'one-time-code' : undefined}
               maxLength={1}

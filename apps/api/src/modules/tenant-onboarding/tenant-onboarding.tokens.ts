@@ -55,7 +55,7 @@ export function workflowSlugFromBackendStep(stepKey: TenantOnboardingStepKey): s
     bank_details: 'bank-details',
     billing_address: 'billing-address',
     membership_plan: 'plan-selection',
-    operations_info: 'plan-selection',
+    operations_info: 'operations',
     documents: 'verification',
     final_review: 'review',
   };
