@@ -34,6 +34,8 @@ export interface InitializeInput {
   defaultLanguage: string;
   defaultCurrency: string;
   defaultTimezone: string;
+  /** CountryPack version pinned into InstallationProfile at setup time. */
+  packVersion: string;
   legalDocuments: InitializeLegalDocument[];
 }
 
@@ -132,6 +134,31 @@ export class SetupStore {
           $createdAt: now,
         });
       }
+
+      // InstallationProfile pins which CountryPack this deployment runs.
+      // Written in the same transaction as PlatformSetup so the two views
+      // can never disagree about the active country/locale/currency.
+      await this.databaseService
+        .prepare(
+          `INSERT INTO "InstallationProfile" (
+             "id", "countryCode", "locale", "currencyCode",
+             "timezone", "packVersion",
+             "initializedAt", "initializedByAdminId"
+           ) VALUES (
+             'install', $countryCode, $locale, $currencyCode,
+             $timezone, $packVersion,
+             $initializedAt, $initializedByAdminId
+           )`,
+        )
+        .run({
+          $countryCode: input.primaryCountry,
+          $locale: input.defaultLanguage,
+          $currencyCode: input.defaultCurrency,
+          $timezone: input.defaultTimezone,
+          $packVersion: input.packVersion,
+          $initializedAt: now,
+          $initializedByAdminId: input.adminId,
+        });
     });
   }
 }

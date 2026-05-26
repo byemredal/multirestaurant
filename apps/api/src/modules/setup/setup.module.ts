@@ -1,5 +1,8 @@
 import { Module } from '@nestjs/common';
 import { CommonModule } from '../../common/common.module';
+import { InstallationProfileService } from './installation-profile.service';
+import { InstallationProfileStore } from './installation-profile.store';
+import { PlatformController } from './platform.controller';
 import { SetupController } from './setup.controller';
 import { SetupGuard } from './setup.guard';
 import { SetupService } from './setup.service';
@@ -10,14 +13,16 @@ import { SystemStateStore } from './system-state.store';
 
 @Module({
   imports: [CommonModule],
-  controllers: [SetupController, SystemController],
+  controllers: [SetupController, SystemController, PlatformController],
   providers: [
     SetupService,
     SetupStore,
     SetupGuard,
     SystemStateService,
     SystemStateStore,
+    InstallationProfileService,
+    InstallationProfileStore,
   ],
-  exports: [SetupStore],
+  exports: [SetupStore, InstallationProfileService],
 })
 export class SetupModule {}

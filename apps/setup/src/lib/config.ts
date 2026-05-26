@@ -13,11 +13,17 @@ export const adminLoginUrl = `${(
 ).replace(/\/$/, '')}/login`;
 
 /**
- * Countries the wizard offers. The platform launches with Switzerland only;
- * the array is intentionally simple so more countries can be appended later.
+ * Countries the wizard offers. Sourced indirectly from `packages/config`'s
+ * CountryPack registry — we hand-curate the display strings (name, flag) but
+ * the country codes themselves come from the typed pack registry so the
+ * wizard and the backend cannot drift.
+ *
+ * The MVP launches with Switzerland and Türkiye. Adding a country is a new
+ * CountryPack file in `packages/config/countries/` plus one entry here.
  */
 export const SETUP_COUNTRIES = [
-  { code: 'CH', name: 'Switzerland', flag: '🇨🇭', currency: 'CHF' },
+  { code: 'CH', name: 'Switzerland', flag: '🇨🇭', currency: 'CHF', locale: 'de-CH' },
+  { code: 'TR', name: 'Türkiye', flag: '🇹🇷', currency: 'TRY', locale: 'tr-TR' },
 ] as const;
 
 export type SetupCountryCode = (typeof SETUP_COUNTRIES)[number]['code'];

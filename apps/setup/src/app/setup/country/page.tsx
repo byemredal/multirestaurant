@@ -39,8 +39,8 @@ export default function CountryStepPage() {
         Birincil Pazarınızı Seçin
       </h1>
       <p className="m-0 text-[13.5px] leading-[1.55] text-ink-muted">
-        Platformunuzun başlatıldığı pazar. Daha sonra daha fazla ülke eklenebilir
-        — şu anda platform, İsviçre ile başlar.
+        Platformun başlatıldığı pazar. Yerel para birimi, dil, vergi ve hukuki
+        doküman varsayılanları seçtiğiniz ülkenin CountryPack tanımından gelir.
       </p>
 
       <div className="mt-7 grid gap-2.5">
@@ -67,7 +67,7 @@ export default function CountryStepPage() {
                   {country.name}
                 </span>
                 <span className="mt-0.5 block text-xs text-ink-muted">
-                  {country.code} · Currency {country.currency}
+                  {country.code} · {country.currency} · {country.locale}
                 </span>
               </span>
               <span

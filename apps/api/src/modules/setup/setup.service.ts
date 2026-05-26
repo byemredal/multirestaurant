@@ -1,8 +1,9 @@
 import { randomUUID } from 'node:crypto';
 import { ConflictException, Injectable } from '@nestjs/common';
-import { resolveCountryDefaults } from '@lieferzonen/config';
+import { getCountryPack, resolveCountryDefaults } from '@lieferzonen/config';
 import { PasswordService } from '../../common/security/password.service';
 import { InitializePlatformDto } from './dto/initialize-platform.dto';
+import { InstallationProfileService } from './installation-profile.service';
 import { DEFAULT_LEGAL_DOCUMENTS } from './setup.constants';
 import { SetupStore } from './setup.store';
 import { SystemStateService } from './system-state.service';
@@ -35,6 +36,7 @@ export class SetupService {
     private readonly setupStore: SetupStore,
     private readonly systemStateService: SystemStateService,
     private readonly passwordService: PasswordService,
+    private readonly installationProfileService: InstallationProfileService,
   ) {}
 
   /** Reports whether the platform has already been bootstrapped. */
@@ -74,17 +76,30 @@ export class SetupService {
 
       const passwordHash = await this.passwordService.hash(dto.adminPassword);
 
-      // Localization defaults come from the code-driven country config.
+      // Localization defaults come from the code-driven CountryPack so the
+      // wizard input cannot silently set inconsistent values.
       const primaryCountry = dto.primaryCountry.toUpperCase();
+      const pack = getCountryPack(primaryCountry);
       const countryDefaults = resolveCountryDefaults(primaryCountry);
 
-      // Baseline legal documents seeded for the primary country.
-      const legalDocuments = DEFAULT_LEGAL_DOCUMENTS.map((document) => ({
-        type: document.type,
-        version: document.version,
+      // Baseline legal documents — pack-provided placeholders take precedence
+      // over the generic constants so the seeded text is at least in the
+      // pack's primary locale. Both bodies are explicitly marked placeholder.
+      const packLegalDocs = pack.legalDocuments.map((document) => ({
+        type: document.typeCode,
+        version: document.versionLabel,
         countryCode: primaryCountry,
-        content: document.content,
+        content: `${document.placeholderTitle}\n\n${document.placeholderBody}`,
       }));
+      const legalDocuments =
+        packLegalDocs.length > 0
+          ? packLegalDocs
+          : DEFAULT_LEGAL_DOCUMENTS.map((document) => ({
+              type: document.type,
+              version: document.version,
+              countryCode: primaryCountry,
+              content: document.content,
+            }));
 
       await this.setupStore.initialize({
         adminId: randomUUID(),
@@ -99,6 +114,7 @@ export class SetupService {
         defaultLanguage: countryDefaults.defaultLanguage,
         defaultCurrency: countryDefaults.defaultCurrency,
         defaultTimezone: countryDefaults.defaultTimezone,
+        packVersion: pack.packVersion,
         legalDocuments,
       });
     } catch (error) {
@@ -116,6 +132,7 @@ export class SetupService {
     }
 
     await this.systemStateService.completeInitialization();
+    this.installationProfileService.invalidate();
     return this.getStatus();
   }
 }

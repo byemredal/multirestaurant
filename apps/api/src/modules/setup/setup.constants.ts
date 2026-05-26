@@ -1,9 +1,12 @@
+import { SUPPORTED_COUNTRY_CODES } from '@lieferzonen/config';
+
 /**
- * Countries the bootstrap wizard can target. The platform launches with
- * Switzerland only; the list is intentionally a simple array so additional
- * countries can be appended later without a schema or engine change.
+ * Countries the bootstrap wizard can target. Sourced from the typed
+ * CountryPack registry so the setup DTO and the code-driven packs cannot
+ * drift — adding a country file in `packages/config/countries` automatically
+ * widens the wizard.
  */
-export const SUPPORTED_SETUP_COUNTRIES = ['CH'] as const;
+export const SUPPORTED_SETUP_COUNTRIES = SUPPORTED_COUNTRY_CODES;
 
 export type SupportedSetupCountry = (typeof SUPPORTED_SETUP_COUNTRIES)[number];
 
