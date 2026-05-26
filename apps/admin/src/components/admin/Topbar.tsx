@@ -5,8 +5,6 @@ import { useState } from 'react';
 import Popover from '@/components/ui/Popover';
 import { Icon } from '@/lib/icons';
 import { mockNotifications } from '@/lib/mock/notifications';
-import { useBranding } from '@/lib/branding/BrandingProvider';
-import { Logo } from '@lieferzonen/ui';
 import { adminRoleList, type AdminRole } from '@/lib/rbac/roles';
 import {
   terminologyPresetList,
@@ -46,11 +44,34 @@ export default function Topbar({
   onSignOut,
 }: TopbarProps) {
   const router = useRouter();
-  const { presetId, setPresetId, preset } = useTerminology();
-  const branding = useBranding();
+  const { presetId, setPresetId } = useTerminology();
   const [readIds, setReadIds] = useState<string[]>([]);
 
-  const platformName = branding?.platformName?.trim() || 'Lieferzonen Group';
+  // Admin operational context — what scope this session is acting on. Today
+  // we ship a single placeholder scope; multi-region/tenant scoping is a
+  // future feature. The platform brand must never appear in this list — it
+  // would conflate "what we are" with "what we manage".
+  const adminContextScopes = [
+    {
+      id: 'platform-wide',
+      label: 'Platform Yönetimi',
+      meta: 'Tüm operasyon kapsamı',
+      initials: 'PY',
+    },
+    {
+      id: 'northern-region',
+      label: 'Northern Region',
+      meta: 'Bölge kapsamı (demo)',
+      initials: 'NR',
+    },
+    {
+      id: 'demo-sandbox',
+      label: 'Demo Sandbox',
+      meta: 'Test ortamı',
+      initials: 'DS',
+    },
+  ];
+  const activeContextScope = adminContextScopes[0]!;
 
   const unread = mockNotifications.filter(
     (n) => !n.read && !readIds.includes(n.id),
@@ -82,17 +103,20 @@ export default function Topbar({
         </span>
       </button>
 
-      {/* Organization / context switcher (placeholder) */}
+      {/* Admin context / scope switcher — NOT the platform brand. The label
+          + dropdown items describe the operational kapsam the session is
+          acting on; the platform name (e.g. "Yemekmarketi") belongs in the
+          sidebar mark, not as a workspace entry. */}
       <Popover
         align="left"
         trigger={() => (
-          <button type="button" className="app-switcher">
-            <Logo src={branding?.logoUrl || undefined} height={20} />
+          <button type="button" className="app-switcher" aria-label="Yönetim kapsamı">
+            <span className="app-switcher__logo" aria-hidden>
+              {activeContextScope.initials}
+            </span>
             <span className="app-switcher__text">
-              <span className="app-switcher__name">{platformName}</span>
-              <span className="app-switcher__meta">
-                Tüm {preset.tenant.plural.toLowerCase()}
-              </span>
+              <span className="app-switcher__name">{activeContextScope.label}</span>
+              <span className="app-switcher__meta">{activeContextScope.meta}</span>
             </span>
             <Icon.chevronDown width={14} height={14} />
           </button>
@@ -101,41 +125,39 @@ export default function Topbar({
         {(close) => (
           <>
             <div className="app-menu__head">
-              <div className="app-menu__title">Organization context</div>
+              <div className="app-menu__title">Yönetim kapsamı</div>
               <div className="app-menu__meta">
-                Scope every page to one workspace
+                Her sayfa için aktif operasyon kapsamını seçin.
               </div>
             </div>
             <div className="app-menu__sep" />
-            <div className="app-menu__label">Workspaces</div>
-            {[platformName, 'Northern Region', 'Demo Sandbox'].map(
-              (org, i) => (
-                <button
-                  key={org}
-                  type="button"
-                  className="app-menu__item"
-                  onClick={close}
-                >
-                  <span className="app-switcher__logo">
-                    {org.slice(0, 2).toUpperCase()}
-                  </span>
-                  <span>{org}</span>
-                  {i === 0 && (
-                    <Icon.check
-                      className="app-menu__item-check"
-                      width={16}
-                      height={16}
-                    />
-                  )}
-                </button>
-              ),
-            )}
+            <div className="app-menu__label">Kapsam</div>
+            {adminContextScopes.map((scope) => (
+              <button
+                key={scope.id}
+                type="button"
+                className="app-menu__item"
+                onClick={close}
+              >
+                <span className="app-switcher__logo" aria-hidden>
+                  {scope.initials}
+                </span>
+                <span>{scope.label}</span>
+                {scope.id === activeContextScope.id && (
+                  <Icon.check
+                    className="app-menu__item-check"
+                    width={16}
+                    height={16}
+                  />
+                )}
+              </button>
+            ))}
             <div className="app-menu__sep" />
             <button type="button" className="app-menu__item" onClick={close}>
               <span className="app-menu__item-icon">
                 <Icon.plus width={16} height={16} />
               </span>
-              Create workspace
+              Yeni kapsam oluştur
             </button>
           </>
         )}

@@ -2,12 +2,11 @@
 
 import type { ComponentType, SVGProps } from 'react';
 import type { TenantOnboardingStepKey, TenantOnboardingWorkspace } from '@/lib/tenant-onboarding-client';
-import Image from 'next/image';
 import { useTenantOnboardingWorkspace } from './useTenantOnboardingWorkspace';
-import { Button } from '@lieferzonen/ui';
+import { Button, PlatformLogo } from '@lieferzonen/ui';
 import { useTenantAuth } from '@/lib/auth/tenant-auth-context';
 import { TenantOnboardingSummary } from './TenantOnboardingSummary';
-import  logoUrl from '@lieferzonen/assets/logo.svg';
+import { apiBaseUrl } from '@/lib/http/tenant-http';
 import {
   tenantOnboardingProgressStepOrder,
   tenantOnboardingWorkflowSteps,
@@ -244,14 +243,7 @@ export function TenantOnboardingSidebar({ activeStep, onSelectStep, workspace }:
         <div className="relative z-10 flex h-full flex-col p-4 gap-4">
           <div className='flex flex-col gap-4'>
             <div className="size-fit bg-primary/15 p-2 rounded-md">
-              <Image
-                alt="Lieferzonen"
-                className="h-8 w-auto"
-                height={32}
-                priority
-                src={logoUrl}
-                width={108}
-              />
+              <PlatformLogo apiBaseUrl={apiBaseUrl} height={32} />
             </div>
             <div className='flex flex-row items-center justify-between gap-4'>
               <div className="hidden sm:block">

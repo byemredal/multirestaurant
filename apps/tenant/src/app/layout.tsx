@@ -7,11 +7,18 @@ import { TenantAuthProvider } from '@/lib/auth/tenant-auth-context';
 import { TenantGate } from '@/lib/auth/tenant-gate';
 import { TenantOrderStreamProvider } from '@/lib/realtime/tenant-order-stream-context';
 import { TenantStoreProvider } from '@/lib/tenant-store-context';
+import { fetchPlatformBranding } from '@/lib/branding/fetch-platform-branding';
 
-export const metadata: Metadata = {
-  title: 'Lieferzonen Tenant',
-  description: 'Restoranınızı Lieferzonen üzerinde tek bir akışta yönetin.',
-};
+export async function generateMetadata(): Promise<Metadata> {
+  const branding = await fetchPlatformBranding();
+  const name = branding?.platformName?.trim();
+  return {
+    title: name ? `${name} Tenant` : 'Tenant',
+    description: name
+      ? `Restoranınızı ${name} üzerinde tek bir akışta yönetin.`
+      : 'Restoranınızı tek bir akışta yönetin.',
+  };
+}
 
 export default function TenantRootLayout({
   children,

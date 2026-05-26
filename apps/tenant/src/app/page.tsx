@@ -5,9 +5,10 @@ import { useEffect, useState } from 'react';
 import { Button } from '@lieferzonen/ui';
 import { Input } from '@lieferzonen/ui';
 import { Select } from '@lieferzonen/ui';
-import logoUrl from '@lieferzonen/assets/logo.svg';
+import { PlatformLogo, usePlatformBranding } from '@lieferzonen/ui';
 import { useTenantAuth } from '@/lib/auth/tenant-auth-context';
 import { useRouter } from 'next/navigation';
+import { apiBaseUrl } from '@/lib/http/tenant-http';
 import {
   getTenantOnboardingWorkspaceByStateToken,
   startTenantOnboarding,
@@ -79,9 +80,46 @@ export default function TenantEntryPage() {
   const [resumeError, setResumeError] = useState<string | null>(null);
   const [storedStateToken, setStoredStateToken] = useState<string | null>(null);
   const [fieldErrors, setFieldErrors] = useState<Partial<Record<FieldKey, string>>>({});
+  const branding = usePlatformBranding(apiBaseUrl);
+  const platformName = branding?.platformName?.trim() || 'Platform';
 
+  // Stale resume token cleanup: a token in localStorage MUST be backend-validated
+  // before we hint at a "resume your onboarding" affordance. Without this guard a
+  // development/test artefact (or any closed-status leftover) would surface in
+  // the production hero and break trust.
   useEffect(() => {
-    setStoredStateToken(readOnboardingStateToken());
+    const stored = readOnboardingStateToken();
+    if (!stored) {
+      return;
+    }
+
+    let cancelled = false;
+    void getTenantOnboardingWorkspaceByStateToken(stored)
+      .then((workspace) => {
+        if (cancelled) {
+          return;
+        }
+        const status = workspace.application.status;
+        // Closed lifecycle and the no-progress draft default are NOT resume
+        // candidates — drop the token so the badge stays hidden.
+        const TERMINAL = new Set(['approved', 'active', 'rejected', 'suspended']);
+        if (TERMINAL.has(status)) {
+          clearOnboardingStateToken();
+          return;
+        }
+        setStoredStateToken(stored);
+      })
+      .catch(() => {
+        if (cancelled) {
+          return;
+        }
+        clearOnboardingStateToken();
+        setStoredStateToken(null);
+      });
+
+    return () => {
+      cancelled = true;
+    };
   }, []);
 
   if (session && status === 'PENDING_APPROVAL') {
@@ -192,7 +230,7 @@ export default function TenantEntryPage() {
       <header className="sticky top-0 z-30 border-b border-ink-100 bg-white/85 backdrop-blur">
         <div className="mx-auto flex max-w-[1280px] items-center gap-4 px-4 py-3.5 sm:px-6 lg:px-8">
           <a href="/" className="inline-flex items-center gap-2">
-            <Image alt="Lieferzonen" src={logoUrl} width={120} height={28} className="h-7 w-auto" priority />
+            <PlatformLogo apiBaseUrl={apiBaseUrl} height={28} />
             <span className="hidden text-[12px] font-semibold uppercase tracking-[0.16em] text-ink-500 sm:inline">
               Tenants
             </span>
@@ -235,7 +273,7 @@ export default function TenantEntryPage() {
               </h1>
 
               <p className="mt-5 max-w-[520px] text-[17px] leading-[1.65] text-ink-600">
-                Lieferzonen tenant platformu; menüden siparişe, fiyatlandırmadan kuryeye, restoran
+                {platformName} tenant platformu; menüden siparişe, fiyatlandırmadan kuryeye, restoran
                 operasyonunu uçtan uca toparlar — dakikalar içinde canlıya çık.
               </p>
 
@@ -505,7 +543,7 @@ export default function TenantEntryPage() {
                 </span>
               </div>
               <h2 className="mt-3 text-[28px] font-bold leading-[1.1] tracking-[-0.02em] sm:text-[32px]">
-                Restoranını Lieferzonen'a getir.
+                Restoranını {platformName}{platformName.endsWith('i') ? "'ye" : "'a"} getir.
               </h2>
               <p className="mt-2 text-[14px] leading-relaxed text-ink-500">
                 Sadece temel bilgiler. Belgeler ve detaylı ayarlar onboarding ekranında.
@@ -678,13 +716,13 @@ export default function TenantEntryPage() {
           <div className="relative mx-auto grid max-w-[1280px] gap-10 px-4 py-20 sm:px-6 lg:grid-cols-[1.05fr_1fr] lg:gap-14 lg:px-8">
             <div>
               <span className="inline-flex items-center gap-2 rounded-full border border-white/15 bg-white/5 px-3 py-1 text-[11.5px] font-semibold uppercase tracking-[0.14em] text-white/80">
-                Neden Lieferzonen
+                Neden {platformName}
               </span>
               <h2 className="mt-5 font-italiana text-[40px] leading-[1.06] tracking-[-0.02em] sm:text-[54px]">
                 Yerel marka, modern teknoloji.
               </h2>
               <p className="mt-5 max-w-[540px] text-[16px] leading-[1.7] text-white/80">
-                Lieferzonen, restoran sahiplerinin kendi vitrinlerini kurabildiği ve gerçek zamanlı
+                {platformName}, restoran sahiplerinin kendi vitrinlerini kurabildiği ve gerçek zamanlı
                 operasyon yürütebildiği bir pazar yeri. Şeffaf komisyon, hızlı destek, kuryelerinle
                 ya da bizim filomuzla teslim — kuralları sen koy.
               </p>
@@ -802,7 +840,7 @@ export default function TenantEntryPage() {
         {/* ── Footer ──────────────────────────────────────────────────── */}
         <footer className="border-t border-ink-100 bg-white">
           <div className="mx-auto flex max-w-[1280px] flex-wrap items-center justify-between gap-3 px-4 py-6 text-[12.5px] text-ink-500 sm:px-6 lg:px-8">
-            <p>© {new Date().getFullYear()} Lieferzonen — Tüm hakları saklıdır.</p>
+            <p>© {new Date().getFullYear()} {platformName} — Tüm hakları saklıdır.</p>
             <div className="flex flex-wrap gap-4">
               <a href="/me/legal" className="hover:text-ink-800">Kullanım Şartları</a>
               <a href="/me/legal" className="hover:text-ink-800">Gizlilik</a>

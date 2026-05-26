@@ -3,6 +3,7 @@
 import { usePathname, useRouter } from 'next/navigation';
 import { useCallback, useEffect, useState, type ReactNode } from 'react';
 import { Logo } from '@lieferzonen/ui';
+import { useBranding } from '@/lib/branding/BrandingProvider';
 import { findNavItemByPath, isLiveNavItem } from '@/lib/admin-navigation';
 import Sidebar, { type SidebarBadgeMap } from './Sidebar';
 import Topbar from './Topbar';
@@ -40,6 +41,8 @@ export default function AdminShell({
   const [mobileOpen, setMobileOpen] = useState(false);
   const [cmdkOpen, setCmdkOpen] = useState(false);
   const [role, setRole] = useState<AdminRole>('super_admin');
+  const branding = useBranding();
+  const platformLabel = branding?.platformName?.trim() || 'Platform';
 
   // hydrate persisted shell preferences
   useEffect(() => {
@@ -119,9 +122,14 @@ export default function AdminShell({
       <div className="app-shell" data-collapsed="false">
         <aside className="app-sidebar">
           <div className="app-sidebar__brand">
-            <Logo height={28} />
+            <Logo
+              src={branding?.logoUrl || undefined}
+              fallbackText={platformLabel}
+              alt={platformLabel}
+              height={28}
+            />
             <div className="app-sidebar__brand-text">
-              <div className="app-sidebar__brand-name">Lieferzonen Admin</div>
+              <div className="app-sidebar__brand-name">{platformLabel}</div>
               <div className="app-sidebar__brand-meta">Operations Console</div>
             </div>
           </div>
@@ -180,7 +188,7 @@ export default function AdminShell({
           onRoleChange={handleRoleChange}
           user={{
             name: displayName,
-            email: session?.admin.email ?? 'admin@lieferzonen.io',
+            email: session?.admin.email ?? '',
             initials,
             roleLabel,
           }}

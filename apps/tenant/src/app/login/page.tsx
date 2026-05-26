@@ -6,6 +6,7 @@ import Image from 'next/image';
 import { Button } from '@lieferzonen/ui';
 import { Input } from '@lieferzonen/ui';
 import { PlatformLogo } from '@lieferzonen/ui';
+import { usePlatformBranding } from '@lieferzonen/ui';
 import { useTenantAuth } from '@/lib/auth/tenant-auth-context';
 import { apiBaseUrl } from '@/lib/tenant-client';
 
@@ -15,6 +16,8 @@ const TENANT_HERO_IMAGE =
 export default function TenantLoginPage() {
   const router = useRouter();
   const { login } = useTenantAuth();
+  const branding = usePlatformBranding(apiBaseUrl);
+  const platformName = branding?.platformName?.trim() || 'Platform';
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
@@ -201,7 +204,7 @@ export default function TenantLoginPage() {
 
             <div className="absolute inset-x-8 bottom-8 text-white">
               <p className="text-[11.5px] font-semibold uppercase tracking-[0.18em] text-white/80">
-                Lieferzonen Studio
+                {platformName} Studio
               </p>
               <h2 className="mt-3 text-3xl font-bold leading-tight tracking-[-0.02em]">
                 Restoranınızı tek bir akış üzerinden işletin.

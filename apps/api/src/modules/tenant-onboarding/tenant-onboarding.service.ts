@@ -12,6 +12,7 @@ import { plainToInstance } from 'class-transformer';
 import { validateSync } from 'class-validator';
 import { AdminAuditLogService } from '../admin-audit-log/admin-audit-log.service';
 import { InstallationProfileService } from '../setup/installation-profile.service';
+import { SetupStore } from '../setup/setup.store';
 import { TenantAccountsStore } from '../tenants/tenants.store';
 import { SharedFileStorageService } from '../shared-file-storage/shared-file-storage.service';
 import { EmailService } from '../notification/email.service';
@@ -137,7 +138,18 @@ export class TenantOnboardingService {
     private readonly auditLogService: AdminAuditLogService,
     private readonly emailService: EmailService,
     private readonly installationProfileService: InstallationProfileService,
+    private readonly setupStore: SetupStore,
   ) { }
+
+  /**
+   * Resolve the platform-facing display name set during one-time setup. We
+   * read it on the email send path so subjects/templates surface the operator's
+   * chosen brand instead of a stale "Lieferzonen" placeholder.
+   */
+  private async resolvePlatformDisplayName(): Promise<string> {
+    const setup = await this.setupStore.getPlatformSetup();
+    return setup?.platformName?.trim() || 'Platform';
+  }
 
   /**
    * Resolve the country/locale/currency triple that drives onboarding
@@ -417,11 +429,12 @@ export class TenantOnboardingService {
       incrementResendCount: isResend,
     });
 
+    const platformName = await this.resolvePlatformDisplayName();
     let deliveryResult: { delivered: boolean; transport: string; stub: boolean };
     try {
       deliveryResult = await this.emailService.send({
         to: tenant.account.email,
-        subject: 'Lieferzonen telefon doğrulama kodunuz',
+        subject: `${platformName} telefon doğrulama kodunuz`,
         text: `Telefon doğrulama kodunuz: ${code}. Bu kod 10 dakika geçerlidir.`,
       });
     } catch (deliveryError) {
@@ -1158,9 +1171,10 @@ export class TenantOnboardingService {
       workspace.steps.find((step) => step.status !== 'completed');
     const appBaseUrl = process.env.TENANT_APP_URL ?? 'http://localhost:3001';
     const continueUrl = `${appBaseUrl}/onboarding/${encodeURIComponent(workspace.stateToken)}/${workflowSlugFromBackendStep(nextStep?.stepKey ?? 'final_review')}`;
+    const platformName = await this.resolvePlatformDisplayName();
     await this.emailService.send({
       to: tenant.account.email,
-      subject: 'Lieferzonen başvurunuza devam edin',
+      subject: `${platformName} başvurunuza devam edin`,
       text: `Başvurunuza buradan devam edebilirsiniz: ${continueUrl}`,
       html: `<p>Başvurunuza devam etmek için <a href="${continueUrl}">bu bağlantıyı</a> kullanın.</p>`,
     });

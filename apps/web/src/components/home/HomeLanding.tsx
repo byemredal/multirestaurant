@@ -3,6 +3,8 @@
 import { useEffect, useId, useRef, useState } from 'react';
 import Image from 'next/image';
 import Link from 'next/link';
+import { PlatformLogo, usePlatformBranding } from '@lieferzonen/ui';
+import { apiBaseUrl } from '@/lib/config';
 import type { RegionSearchResult } from '@/lib/home-discovery';
 
 /* ── Free-license imagery (Unsplash) ──────────────────────────────────── */
@@ -110,6 +112,8 @@ export default function HomeLanding({
   const inputRef = useRef<HTMLInputElement>(null);
   const [activeIndex, setActiveIndex] = useState(-1);
   const [open, setOpen] = useState(false);
+  const branding = usePlatformBranding(apiBaseUrl);
+  const platformName = branding?.platformName?.trim() || 'Platform';
 
   useEffect(() => {
     if (!query.trim()) {
@@ -739,7 +743,7 @@ export default function HomeLanding({
               Restoran sahibi misin?
             </p>
             <h3 className="mt-3 font-italiana text-[36px] leading-[1.05] tracking-[-0.02em] text-ink-900 sm:text-[44px]">
-              Lieferzonen partneri ol.
+              {platformName} partneri ol.
             </h3>
             <p className="mt-3 max-w-[420px] text-[14.5px] leading-[1.7] text-ink-600">
               Şeffaf komisyon, yerel destek ve hızlı onboarding. Bu hafta canlıya çık.
@@ -769,13 +773,7 @@ export default function HomeLanding({
           <div className="grid gap-10 lg:grid-cols-[1.2fr_1fr_1fr_1fr]">
             <div>
               <Link href="/" className="inline-flex items-center gap-2">
-                <Image
-                  src="/logo.svg"
-                  alt="Lieferzonen"
-                  width={140}
-                  height={34}
-                  className="h-8 w-auto brightness-0 invert"
-                />
+                <PlatformLogo apiBaseUrl={apiBaseUrl} height={32} />
               </Link>
               <p className="mt-4 max-w-[360px] text-[13.5px] leading-[1.7] text-white/70">
                 Mahallenin sıcak yemeği, dakikalar içinde kapına. Yerel restoranlar, eğitimli
@@ -842,7 +840,7 @@ export default function HomeLanding({
           </div>
 
           <div className="mt-12 flex flex-wrap items-center justify-between gap-3 border-t border-white/10 pt-6 text-[12.5px] text-white/55">
-            <p>© {new Date().getFullYear()} Lieferzonen — Tüm hakları saklıdır.</p>
+            <p>© {new Date().getFullYear()} {platformName} — Tüm hakları saklıdır.</p>
             <p>Made with 🌱 in Türkiye</p>
           </div>
         </div>

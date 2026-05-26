@@ -1,9 +1,9 @@
 'use client';
 
 import { useCallback, useEffect, useMemo, useRef } from 'react';
-import Image from 'next/image';
 import { usePathname, useRouter } from 'next/navigation';
-import logoUrl from '@lieferzonen/assets/logo.svg';
+import { PlatformLogo } from '@lieferzonen/ui';
+import { apiBaseUrl } from '@/lib/http/tenant-http';
 import { AddressStep } from '@/components/tenant/onboarding/AddressStep';
 import { AuthorizedPersonStep } from '@/components/tenant/onboarding/AuthorizedPersonStep';
 import { BankDetailsStep } from '@/components/tenant/onboarding/BankDetailsStep';
@@ -279,7 +279,7 @@ export default function TenantOnboardingWorkspace({
       <div className="min-h-screen bg-[#f3f5f8] p-3 sm:p-6 lg:p-10">
         <section className="box-border mx-auto min-h-[calc(100vh-1.5rem)] max-w-[1280px] overflow-hidden rounded-[8px] border border-[#e6eaf0] bg-white sm:min-h-[calc(100vh-3rem)] lg:min-h-[calc(100vh-5rem)]">
           <header className="flex h-[72px] items-center border-b border-[#e6eaf0] px-6 sm:px-10">
-            <Image alt="Lieferzonen" className="h-7 w-auto" height={28} priority src={logoUrl} width={132} />
+            <PlatformLogo apiBaseUrl={apiBaseUrl} height={28} />
           </header>
           <div className="flex min-h-[420px] items-center justify-center">
             <span className="h-7 w-7 animate-spin rounded-full border-2 border-primary border-t-transparent" />
@@ -304,7 +304,7 @@ export default function TenantOnboardingWorkspace({
     <div className="min-h-screen bg-[#f3f5f8] p-3 sm:p-6 lg:p-10">
       <section className="box-border mx-auto flex min-h-[calc(100vh-1.5rem)] w-full max-w-[1280px] flex-col overflow-hidden rounded-[8px] border border-[#e6eaf0] bg-white shadow-[0_20px_55px_rgba(15,23,42,0.06)] sm:min-h-[calc(100vh-3rem)] lg:min-h-[calc(100vh-5rem)]">
         <header className="flex h-[72px] min-w-0 shrink-0 items-center justify-between gap-4 border-b border-[#e6eaf0] px-5 sm:px-10 lg:px-12">
-          <Image alt="Lieferzonen" className="h-7 w-auto min-w-0 shrink" height={28} priority src={logoUrl} width={132} />
+          <PlatformLogo apiBaseUrl={apiBaseUrl} height={28} />
           <div
             aria-label="Seçili dil"
             className="inline-flex h-10 shrink-0 items-center gap-2 rounded-[4px] border border-[#dfe4ea] bg-white px-3 text-[13px] font-medium text-ink-700"

@@ -201,6 +201,32 @@ export const apiGroups: ApiGroup[] = [
     ],
   },
   {
+    id: 'platformConfig',
+    label: 'Public — Platform Config (branding + country)',
+    actions: [
+      {
+        id: 'getPlatformBranding',
+        method: 'GET',
+        path: '/config/branding',
+      },
+      {
+        id: 'getPlatformCountry',
+        method: 'GET',
+        path: '/config/country',
+      },
+      {
+        id: 'getPlatformPack',
+        method: 'GET',
+        path: '/platform/pack',
+      },
+      {
+        id: 'getSetupStatus',
+        method: 'GET',
+        path: '/setup/status',
+      },
+    ],
+  },
+  {
     id: 'systemTaxonomy',
     label: 'Public — System Taxonomy (currency / language / payment / service)',
     actions: [

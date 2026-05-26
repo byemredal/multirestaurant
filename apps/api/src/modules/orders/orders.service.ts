@@ -1428,7 +1428,9 @@ export class OrdersService {
     if (!row) {
       throw new NotFoundException('Order could not be found for this customer.');
     }
-    return { order: this.mapOrder(row), storeName: row.storeName ?? 'Lieferzonen' };
+    // `storeName` is captured at order creation; falling back to a generic
+    // label keeps the brand string from leaking when the join is somehow null.
+    return { order: this.mapOrder(row), storeName: row.storeName ?? 'Mağaza' };
   }
 
   /**

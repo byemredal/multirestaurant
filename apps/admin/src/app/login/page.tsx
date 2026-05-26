@@ -2,16 +2,17 @@
 
 import { useRouter } from 'next/navigation';
 import { useEffect, useState } from 'react';
+import { Logo } from '@lieferzonen/ui';
 import { useAdminLanguage } from '@/lib/i18n/AdminLanguageProvider';
 import { loginAdmin } from '@/lib/admin-api/admin-auth-client';
 import { readAdminSession, writeAdminSession } from '@/lib/storage/admin-session';
-import { adminAppName } from '@/lib/config';
-import logoUrl from '@lieferzonen/assets/logo.svg';
-import Image from 'next/image';
+import { useBranding } from '@/lib/branding/BrandingProvider';
 
 export default function AdminLoginPage() {
   const router = useRouter();
   const { t } = useAdminLanguage();
+  const branding = useBranding();
+  const platformLabel = branding?.platformName?.trim() || 'Platform';
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
@@ -66,7 +67,12 @@ export default function AdminLoginPage() {
         {/* ── Left: form panel ──────────────────────────────── */}
         <section className="admin-login-form-panel">
           <header className="admin-login-topbar">
-            <Image src={logoUrl} alt={`${adminAppName} logo`} width={120} height={36} />
+            <Logo
+              src={branding?.logoUrl || undefined}
+              fallbackText={platformLabel}
+              alt={`${platformLabel} logo`}
+              height={36}
+            />
             <span className="admin-login-topbar__hint">
               {t('admin.login.helper', 'Yalnızca operasyon ekibi')}
             </span>
@@ -80,7 +86,7 @@ export default function AdminLoginPage() {
             <p className="admin-login-card__subtitle">
               {t(
                 'admin.login.description',
-                'Lieferzonen operasyon paneline yetkili hesabınızla giriş yapın.',
+                `${platformLabel} operasyon paneline yetkili hesabınızla giriş yapın.`,
               )}
             </p>
 

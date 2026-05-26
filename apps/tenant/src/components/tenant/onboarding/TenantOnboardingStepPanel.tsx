@@ -6,7 +6,9 @@ import { Input } from '@lieferzonen/ui';
 import { Select } from '@lieferzonen/ui';
 import { Textarea } from '@lieferzonen/ui';
 import { FileDropzone } from '@lieferzonen/ui';
+import { usePlatformBranding } from '@lieferzonen/ui';
 import { useWebLanguage } from '@/lib/i18n/WebLanguageProvider';
+import { apiBaseUrl } from '@/lib/http/tenant-http';
 import {
   sendTenantOnboardingPhoneVerification,
   verifyTenantOnboardingPhone,
@@ -215,6 +217,8 @@ export function TenantOnboardingStepPanel({
   workspace,
 }: StepPanelProps) {
   const { t } = useWebLanguage();
+  const branding = usePlatformBranding(apiBaseUrl);
+  const platformName = branding?.platformName?.trim() || 'Platform';
   const activeBackendStep = getBackendStepForWorkflowStep(activeStep);
   const activeEntry = useMemo(
     () =>
@@ -498,7 +502,7 @@ export function TenantOnboardingStepPanel({
           totalSteps={totalSteps}
           status="in_progress"
           updatedAt={workspace.application.updatedAt}
-          title="Lieferzonen başvurunuza hoş geldiniz"
+          title={`${platformName} başvurunuza hoş geldiniz`}
           description="Bu akış işletme konumunuzu, yasal bilgileri, paket seçimini ve doğrulama hazırlığını tek tek tamamlatır."
         />
         <div className="grid gap-3 text-[14px] text-[#586575] sm:grid-cols-3">

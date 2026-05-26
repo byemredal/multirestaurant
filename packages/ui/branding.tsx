@@ -110,10 +110,15 @@ export type PlatformLogoProps = Omit<LogoProps, 'src'> & {
  */
 export function PlatformLogo({ apiBaseUrl, alt, ...rest }: PlatformLogoProps) {
   const branding = usePlatformBranding(apiBaseUrl);
+  const platformName = branding?.platformName?.trim() || 'Platform';
   return (
     <Logo
       src={branding?.logoUrl || undefined}
-      alt={alt ?? branding?.platformName ?? 'Lieferzonen'}
+      // `fallbackText` powers the text-mark path inside <Logo> — when setup
+      // hasn't uploaded a logo (or it fails to load) we render the current
+      // platform name instead of falling back to a stale bundled brand asset.
+      fallbackText={platformName}
+      alt={alt ?? platformName}
       {...rest}
     />
   );

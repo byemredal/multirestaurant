@@ -53,11 +53,18 @@ export default function Sidebar({
   return (
     <aside className="app-sidebar" aria-label="Primary navigation">
       <div className="app-sidebar__brand">
-        <Logo src={branding?.logoUrl || undefined} height={28} />
-        {/* <div className="app-sidebar__brand-text">
-          <div className="app-sidebar__brand-name">{platformName}</div>
-          <div className="app-sidebar__brand-meta">Operations Console</div>
-        </div> */}
+        <Logo
+          src={branding?.logoUrl || undefined}
+          fallbackText={platformName}
+          alt={platformName}
+          height={28}
+        />
+        {!collapsed && (
+          <div className="app-sidebar__brand-text">
+            <div className="app-sidebar__brand-name">{platformName}</div>
+            <div className="app-sidebar__brand-meta">Operations Console</div>
+          </div>
+        )}
         <button
           type="button"
           className="app-sidebar__collapse"
