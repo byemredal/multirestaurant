@@ -9,6 +9,7 @@ import Stripe from 'stripe';
 import { LegalConsentService } from '../legal-consent/legal-consent.service';
 import { OrderStatus } from '../orders/entities/order.entity';
 import { OrdersService, PaymentOutcome } from '../orders/orders.service';
+import { InstallationProfileService } from '../setup/installation-profile.service';
 import { PaymentStatus } from './entities/payment.entity';
 import { PaymentsStore } from './payments.store';
 import { StripeService } from './stripe.service';
@@ -41,7 +42,28 @@ export class PaymentsService {
     private readonly paymentsStore: PaymentsStore,
     private readonly ordersService: OrdersService,
     private readonly legalConsentService: LegalConsentService,
+    private readonly installationProfileService: InstallationProfileService,
   ) {}
+
+  /**
+   * Resolve the currency for a Stripe Checkout session. We ALWAYS prefer
+   * the order's frozen `currencySnapshot` so historical orders pay in their
+   * original currency (TR install reopening a CH order would not flip the
+   * receipt). When the snapshot is missing, fall back to the active
+   * InstallationProfile's currency — replaces the previous hardcoded 'CHF'.
+   */
+  private async resolveCheckoutCurrency(orderCurrencySnapshot: string | null): Promise<string> {
+    if (orderCurrencySnapshot && orderCurrencySnapshot.trim().length > 0) {
+      return orderCurrencySnapshot;
+    }
+    const policy = await this.installationProfileService.findActiveCountryPolicy();
+    if (policy) {
+      return policy.currencyCode;
+    }
+    // Pre-setup payments must not happen — but keep a defensive belt for
+    // tests / dev DBs that exercise this path without a profile row.
+    return 'CHF';
+  }
 
   /**
    * Create (or reuse) a Stripe Checkout Session for a customer-owned order
@@ -101,7 +123,8 @@ export class PaymentsService {
       throw new BadRequestException('Order amount is not payable.');
     }
 
-    const currency = (order.currencySnapshot || 'CHF').toLowerCase();
+    const resolvedCurrency = await this.resolveCheckoutCurrency(order.currencySnapshot);
+    const currency = resolvedCurrency.toLowerCase();
     const shortId = orderId.slice(0, 8).toUpperCase();
     const webBase = this.stripeService.webAppBaseUrl.replace(/\/+$/, '');
 
@@ -139,7 +162,7 @@ export class PaymentsService {
     await this.paymentsStore.upsertForCheckout({
       orderId,
       amount: order.totalAmount,
-      currency: order.currencySnapshot || 'CHF',
+      currency: resolvedCurrency,
       stripeCheckoutSessionId: session.id,
     });
 

@@ -9,6 +9,7 @@ import { createHash } from 'crypto';
 import { plainToInstance } from 'class-transformer';
 import { validateSync } from 'class-validator';
 import { AdminAuditLogService } from '../admin-audit-log/admin-audit-log.service';
+import { InstallationProfileService } from '../setup/installation-profile.service';
 import { TenantAccountsStore } from '../tenants/tenants.store';
 import { SharedFileStorageService } from '../shared-file-storage/shared-file-storage.service';
 import { EmailService } from '../notification/email.service';
@@ -120,7 +121,44 @@ export class TenantOnboardingService {
     private readonly fileStorageService: SharedFileStorageService,
     private readonly auditLogService: AdminAuditLogService,
     private readonly emailService: EmailService,
+    private readonly installationProfileService: InstallationProfileService,
   ) { }
+
+  /**
+   * Resolve the country/locale/currency triple that drives onboarding
+   * compliance + plan defaults. Reads the active InstallationProfile so a
+   * TR installation runs through TR compliance instead of falling back to
+   * de-CH. The partner's `business_info.country` is informational — the
+   * authoritative installation country comes from the install profile.
+   *
+   * Falls back to `business_info.country` (or hardcoded CH/de-CH/CHF) only
+   * when the install profile is missing, which should never happen on a
+   * READY system but is kept as a defensive belt for legacy dev DBs.
+   */
+  private async resolveActiveCountryPack(
+    workspace?: Awaited<ReturnType<TenantOnboardingService['getWorkspace']>>,
+  ): Promise<{ country: string; language: string; currency: string }> {
+    const profile = await this.installationProfileService.findActiveCountryPolicy();
+    if (profile) {
+      return {
+        country: profile.countryCode,
+        language: profile.locale,
+        currency: profile.currencyCode,
+      };
+    }
+
+    // Defensive fallback for legacy pre-MR-ARCH-03 dev DBs — production
+    // installs always have the profile (setup writes it transactionally).
+    const businessInfo = workspace?.steps.find((step) => step.stepKey === 'business_info')
+      ?.data as { country?: string | null } | null | undefined;
+    const candidate = businessInfo?.country?.trim().toUpperCase();
+    const country = candidate && /^[A-Z]{2}$/.test(candidate) ? candidate : 'CH';
+    return {
+      country,
+      language: 'de-CH',
+      currency: 'CHF',
+    };
+  }
 
   async start(dto: Dto.StartTenantOnboardingDto) {
     const email = dto.email.trim().toLowerCase();
@@ -287,7 +325,7 @@ export class TenantOnboardingService {
       redirectStep,
       allowedSteps,
       completedSteps,
-      countryPack: this.getCountryPackSnapshot(workspace),
+      countryPack: await this.getCountryPackSnapshot(workspace),
       stepData: this.getSessionStepData(workspace, normalizedRequestedStep ?? currentStep),
       workspace,
     };
@@ -539,7 +577,9 @@ export class TenantOnboardingService {
     return {
       accepted: true,
       registrationNumber,
-      country: dto.country?.trim().toUpperCase() || this.getCountryPackSnapshot(workspace).country,
+      country:
+        dto.country?.trim().toUpperCase() ||
+        (await this.getCountryPackSnapshot(workspace)).country,
       verificationMode: 'mock',
       message: 'Kayıt numarası başvuru taslağı kontrolü için kabul edildi.',
       session: await this.resolveSessionByStateToken(workspace.stateToken, 'business-details'),
@@ -666,7 +706,9 @@ export class TenantOnboardingService {
       bankName: dto.bankName.trim(),
       accountHolderName: dto.accountHolderName.trim(),
       iban: this.normalizeIban(dto.iban),
-      currency: dto.currency?.trim().toUpperCase() || this.getCountryPackSnapshot(workspaceBefore).currency,
+      currency:
+        dto.currency?.trim().toUpperCase() ||
+        (await this.getCountryPackSnapshot(workspaceBefore)).currency,
     });
 
     await this.assertStepReadyForCompletion(application.id, 'bank_details');
@@ -736,7 +778,7 @@ export class TenantOnboardingService {
   async getPlansByStateToken(stateToken: string) {
     const application = await this.resolveApplicationFromStateToken(stateToken);
     const workspace = await this.getWorkspace(application.tenantAccountId);
-    const countryPack = this.getCountryPackSnapshot(workspace);
+    const countryPack = await this.getCountryPackSnapshot(workspace);
     const accessible = this.isWorkspaceStepCompleted(workspace, 'billing_address');
     const redirectStep = accessible ? null : this.getCurrentSessionStep(workspace);
 
@@ -770,7 +812,7 @@ export class TenantOnboardingService {
     }
 
     const dto = this.validateDto(Dto.SaveTenantOnboardingPlanSelectionDto, input);
-    const countryPack = this.getCountryPackSnapshot(workspaceBefore);
+    const countryPack = await this.getCountryPackSnapshot(workspaceBefore);
     const selectedPlan = getTenantOnboardingPlanCatalog(countryPack.country, countryPack.currency)
       .find((plan) => plan.active && plan.planKey === dto.planKey.trim());
     if (!selectedPlan) {
@@ -848,7 +890,7 @@ export class TenantOnboardingService {
         stateToken: workspace.stateToken,
         status: workspace.application.status,
         redirectStep: this.getCurrentSessionStep(workspace),
-        countryPack: this.getCountryPackSnapshot(workspace),
+        countryPack: await this.getCountryPackSnapshot(workspace),
         documentRequirements: null,
         consentDefinitions: [],
         acceptedConsents: [],
@@ -860,7 +902,7 @@ export class TenantOnboardingService {
       stateToken: workspace.stateToken,
       status: workspace.application.status,
       redirectStep: null,
-      countryPack: this.getCountryPackSnapshot(workspace),
+      countryPack: await this.getCountryPackSnapshot(workspace),
       ...(await this.buildComplianceSnapshot(workspace)),
     };
   }
@@ -880,7 +922,7 @@ export class TenantOnboardingService {
     }
 
     const dto = this.validateDto(Dto.SaveTenantOnboardingConsentsDto, input);
-    const countryPack = this.getCountryPackSnapshot(workspace);
+    const countryPack = await this.getCountryPackSnapshot(workspace);
     const catalog = await this.resolveComplianceCatalog(countryPack.country, countryPack.language);
     const knownDefinitions = new Map(catalog.consents.map((definition) => [definition.consentKey, definition]));
     const unknownKeys = dto.acceptedConsentKeys.filter((key) => !knownDefinitions.has(key));
@@ -911,7 +953,7 @@ export class TenantOnboardingService {
   async getReviewByStateToken(stateToken: string) {
     const application = await this.resolveApplicationFromStateToken(stateToken);
     const workspace = await this.getWorkspace(application.tenantAccountId);
-    const countryPack = this.getCountryPackSnapshot(workspace);
+    const countryPack = await this.getCountryPackSnapshot(workspace);
     const accessible = this.isWorkspaceStepCompleted(workspace, 'membership_plan');
     const redirectStep = accessible ? null : this.getCurrentSessionStep(workspace);
 
@@ -1273,30 +1315,52 @@ export class TenantOnboardingService {
     return workspace.steps.some((step) => step.stepKey === stepKey && step.status === 'completed');
   }
 
-  private getCountryPackSnapshot(
+  /**
+   * Backwards-compatible alias for the many call sites that read the
+   * country/language/currency triple for the active onboarding workspace.
+   * Delegates to `resolveActiveCountryPack` so the active install profile
+   * wins; the legacy "business_info.country" path is only a defensive
+   * fallback for legacy dev DBs without an InstallationProfile row.
+   */
+  private async getCountryPackSnapshot(
     workspace: Awaited<ReturnType<TenantOnboardingService['getWorkspace']>>,
-  ) {
-    const businessInfo = workspace.steps.find((step) => step.stepKey === 'business_info')?.data as
-      | { country?: string | null }
-      | null
-      | undefined;
-    const countryCandidate = businessInfo?.country?.trim().toUpperCase();
-    const country = countryCandidate && /^[A-Z]{2}$/.test(countryCandidate)
-      ? countryCandidate
-      : 'CH';
-
-    return {
-      country,
-      language: country === 'CH' ? 'de-CH' : 'de-CH',
-      currency: country === 'CH' ? 'CHF' : 'CHF',
-    };
+  ): Promise<{ country: string; language: string; currency: string }> {
+    return this.resolveActiveCountryPack(workspace);
   }
 
   private async buildComplianceSnapshot(
     workspace: Awaited<ReturnType<TenantOnboardingService['getWorkspace']>>,
   ) {
-    const countryPack = this.getCountryPackSnapshot(workspace);
+    const countryPack = await this.resolveActiveCountryPack(workspace);
     return this.buildComplianceSnapshotForApplication(workspace.application.id, countryPack);
+  }
+
+  /**
+   * IBAN must start with the country prefix the active CountryPack expects
+   * AND match its declared total length. The check fires only when the
+   * caller is about to persist a non-empty IBAN, so intermediate saves
+   * (e.g. autosave with an empty form) keep working.
+   *
+   * The check is silently skipped when no installation profile is present
+   * (legacy dev DBs); production deployments always have one.
+   */
+  private async assertIbanMatchesActiveCountry(iban: string): Promise<void> {
+    const policy = await this.installationProfileService.findActiveCountryPolicy();
+    if (!policy) {
+      return;
+    }
+    const bank = policy.pack.bank;
+    const ibanCountry = iban.slice(0, 2);
+    if (ibanCountry !== bank.ibanCountryCode) {
+      throw new BadRequestException(
+        `IBAN ülke ön eki '${ibanCountry}' aktif kurulum ülkesi '${bank.ibanCountryCode}' ile eşleşmiyor.`,
+      );
+    }
+    if (iban.length !== bank.ibanLength) {
+      throw new BadRequestException(
+        `IBAN uzunluğu ${iban.length}; ${bank.ibanCountryCode} için beklenen uzunluk ${bank.ibanLength}.`,
+      );
+    }
   }
 
   private async resolveComplianceCatalog(country: string, language: string) {
@@ -1678,11 +1742,20 @@ export class TenantOnboardingService {
       case 'bank_details': {
         const dto = this.validateDto(Dto.SaveTenantOnboardingBankDetailsDto, input);
         const current = await this.store.getBankDetail(application.id);
+        const activePack = await this.resolveActiveCountryPack();
+        const normalizedIban = dto.iban ? this.normalizeIban(dto.iban) : current?.iban ?? '';
+        // IBAN validation against the active CountryPack — TR install rejects
+        // a CH-prefixed IBAN and vice versa. Empty IBAN is left alone so an
+        // intermediate save (before the field is filled) does not throw.
+        if (normalizedIban) {
+          await this.assertIbanMatchesActiveCountry(normalizedIban);
+        }
         data = await this.store.upsertBankDetail(application.id, {
           bankName: dto.bankName ?? current?.bankName ?? '',
           accountHolderName: dto.accountHolderName ?? current?.accountHolderName ?? '',
-          iban: dto.iban ? this.normalizeIban(dto.iban) : current?.iban ?? '',
-          currency: dto.currency?.trim().toUpperCase() ?? current?.currency ?? 'CHF',
+          iban: normalizedIban,
+          currency:
+            dto.currency?.trim().toUpperCase() ?? current?.currency ?? activePack.currency,
         });
         break;
       }
@@ -2089,12 +2162,7 @@ export class TenantOnboardingService {
         };
       }),
     );
-    const country = businessInfo?.country?.trim().toUpperCase() || 'CH';
-    const countryPack = {
-      country,
-      language: country === 'CH' ? 'de-CH' : 'de-CH',
-      currency: country === 'CH' ? 'CHF' : 'CHF',
-    };
+    const countryPack = await this.resolveActiveCountryPack();
     const onboardingCompliance = await this.buildComplianceSnapshotForApplication(
       application.id,
       countryPack,
@@ -2599,9 +2667,11 @@ export class TenantOnboardingService {
     if (currentRequiredDocuments.length === 0) {
       throw new BadRequestException('Göndermeden önce en az bir güncel zorunlu belge yüklenmelidir.');
     }
-    const businessInfo = await this.store.getBusinessDetail(applicationId);
-    const country = businessInfo?.country?.trim().toUpperCase() || 'CH';
-    const catalog = await this.resolveComplianceCatalog(country, country === 'CH' ? 'de-CH' : 'de-CH');
+    const activePack = await this.resolveActiveCountryPack();
+    const catalog = await this.resolveComplianceCatalog(
+      activePack.country,
+      activePack.language,
+    );
     const snapshots = await this.store.listConsentSnapshots(applicationId);
     const missingRequiredConsent = catalog.consents.some(
       (definition) =>

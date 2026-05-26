@@ -14,14 +14,23 @@ export class SaveTenantOnboardingBankDetailsDto {
   @Length(2, 200)
   accountHolderName: string;
 
-  @ApiProperty({ example: 'CH9300762011623852957' })
+  @ApiProperty({
+    description:
+      'IBAN. ISO-13616 outer shape only at the DTO layer; the service additionally ' +
+      'enforces the active CountryPack ibanCountryCode + ibanLength (e.g. CH21 / TR26).',
+    example: 'CH9300762011623852957',
+  })
   @IsString()
   @IsNotEmpty()
   @Length(8, 34)
   @Matches(/^[A-Z]{2}\d{2}[A-Z0-9]{4,30}$/)
   iban: string;
 
-  @ApiProperty({ example: 'CHF', required: false })
+  @ApiProperty({
+    description: 'ISO-4217 currency. Defaults to the active CountryPack currency.',
+    example: 'CHF',
+    required: false,
+  })
   @IsOptional()
   @IsString()
   @Length(3, 3)

@@ -12,6 +12,22 @@ import {
 } from './installation-profile.store';
 
 /**
+ * Small, immutable snapshot of the active CountryPack — enough for typical
+ * consumers (currency fallback, default locale, IBAN/phone validation)
+ * without dragging the whole `ActiveInstallationProfile` shape through.
+ *
+ * Returned by `getActiveCountryPolicy()` and ALWAYS resolved from
+ * `getActive()` so it inherits the same cache and fail-closed behavior.
+ */
+export interface ActiveCountryPolicy {
+  countryCode: string;
+  locale: string;
+  currencyCode: string;
+  timezone: string;
+  pack: CountryPack;
+}
+
+/**
  * Merged view: the DB-pinned profile (what was activated at setup time)
  * combined with the code-driven `CountryPack` it refers to.
  *
@@ -77,6 +93,32 @@ export class InstallationProfileService {
       return null;
     }
     return toCountryPackClientView(profile.pack);
+  }
+
+  /**
+   * Small policy snapshot for runtime consumers (onboarding, payments,
+   * store-settings). Throws when setup has not run — fail-closed default;
+   * callers with a safe fallback path should use `findActiveCountryPolicy`.
+   */
+  async getActiveCountryPolicy(): Promise<ActiveCountryPolicy> {
+    const profile = await this.getActive();
+    return this.toPolicy(profile);
+  }
+
+  /** Null-safe variant for code that can run in a pre-setup state. */
+  async findActiveCountryPolicy(): Promise<ActiveCountryPolicy | null> {
+    const profile = await this.findActive();
+    return profile ? this.toPolicy(profile) : null;
+  }
+
+  private toPolicy(profile: ActiveInstallationProfile): ActiveCountryPolicy {
+    return {
+      countryCode: profile.countryCode,
+      locale: profile.locale,
+      currencyCode: profile.currencyCode,
+      timezone: profile.timezone,
+      pack: profile.pack,
+    };
   }
 
   /** Invalidates the cache — called by SetupService after a successful init. */

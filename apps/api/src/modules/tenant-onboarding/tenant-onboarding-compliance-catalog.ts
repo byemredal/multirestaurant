@@ -30,9 +30,15 @@ export type TenantOnboardingComplianceCatalog = {
   consents: TenantOnboardingConsentDefinition[];
 };
 
+/**
+ * Fallback compliance catalog used when the DB-backed
+ * `ComplianceDocumentRequirement` table has no rows for the active
+ * `country` + `language` combination. Callers MUST pass values resolved
+ * from the active InstallationProfile — no CH/de-CH defaults are baked in.
+ */
 export function getTenantOnboardingComplianceCatalog(
-  country = 'CH',
-  language = 'de-CH',
+  country: string,
+  language: string,
 ): TenantOnboardingComplianceCatalog {
   const placeholderNote = 'Taslak yönlendirme metnidir; gereksinimler yayına alınmadan önce incelenmelidir.';
 

@@ -1,4 +1,5 @@
 import { Module } from '@nestjs/common';
+import { SetupModule } from '../setup/setup.module';
 import { StoresModule } from '../stores/stores.module';
 import { SystemTaxonomyModule } from '../system-taxonomy/system-taxonomy.module';
 import {
@@ -9,7 +10,7 @@ import { StoreSettingsService } from './store-settings.service';
 import { StoreSettingsStore } from './store-settings.store';
 
 @Module({
-  imports: [StoresModule, SystemTaxonomyModule],
+  imports: [StoresModule, SystemTaxonomyModule, SetupModule],
   controllers: [StoreSettingsController, PublicStoreCommerceController],
   providers: [StoreSettingsStore, StoreSettingsService],
   exports: [StoreSettingsStore, StoreSettingsService],

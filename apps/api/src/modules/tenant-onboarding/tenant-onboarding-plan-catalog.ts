@@ -14,9 +14,16 @@ export type TenantOnboardingPlanCatalogEntry = {
   sortOrder: number;
 };
 
+/**
+ * Returns the onboarding plan catalog stamped with the supplied `country`
+ * and `currency` values. Callers MUST resolve these from the active
+ * InstallationProfile / CountryPack — no more CH/CHF defaults baked into
+ * this catalog. Keeping the signature explicit also makes it impossible
+ * to silently render a TR onboarding flow with CHF plan rows.
+ */
 export function getTenantOnboardingPlanCatalog(
-  country = 'CH',
-  currency = 'CHF',
+  country: string,
+  currency: string,
 ): TenantOnboardingPlanCatalogEntry[] {
   const disclaimer = 'Fiyatlandırma ve komisyon metinleri yalnızca yapılandırılabilir taslak içeriktir.';
 

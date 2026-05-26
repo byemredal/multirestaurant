@@ -1,5 +1,6 @@
 import { Module } from '@nestjs/common';
 import { AdminAuditLogModule } from '../admin-audit-log/admin-audit-log.module';
+import { SetupModule } from '../setup/setup.module';
 import { TenantsModule } from '../tenants/tenants.module';
 import { SharedFileStorageModule } from '../shared-file-storage/shared-file-storage.module';
 import { NotificationModule } from '../notification/notification.module';
@@ -8,7 +9,13 @@ import { TenantOnboardingService } from './tenant-onboarding.service';
 import { TenantOnboardingStore } from './tenant-onboarding.store';
 
 @Module({
-  imports: [TenantsModule, SharedFileStorageModule, AdminAuditLogModule, NotificationModule],
+  imports: [
+    TenantsModule,
+    SharedFileStorageModule,
+    AdminAuditLogModule,
+    NotificationModule,
+    SetupModule,
+  ],
   controllers: [TenantOnboardingController],
   providers: [TenantOnboardingStore, TenantOnboardingService],
   exports: [TenantOnboardingStore, TenantOnboardingService],

@@ -19,7 +19,10 @@ export class UpdateOrderingPolicyDto {
   @IsBoolean()
   acceptsPickup?: boolean;
 
-  @ApiPropertyOptional({ example: 'CHF' })
+  @ApiPropertyOptional({
+    description: 'ISO-4217 currency code. Defaults to the active InstallationProfile currency.',
+    example: 'CHF',
+  })
   @IsOptional()
   @IsString()
   @Matches(/^[A-Z]{3}$/)

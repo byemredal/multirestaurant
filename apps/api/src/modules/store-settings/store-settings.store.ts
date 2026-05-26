@@ -1,6 +1,7 @@
 import { Injectable } from '@nestjs/common';
 import { randomUUID } from 'crypto';
 import { DatabaseService } from '../../database/database.service';
+import { InstallationProfileService } from '../setup/installation-profile.service';
 import {
   StoreContentSetting,
   StoreDeliveryFeeSetting,
@@ -27,7 +28,26 @@ import {
 
 @Injectable()
 export class StoreSettingsStore {
-  constructor(private readonly databaseService: DatabaseService) {}
+  constructor(
+    private readonly databaseService: DatabaseService,
+    private readonly installationProfileService: InstallationProfileService,
+  ) {}
+
+  /**
+   * Resolve the installation's currency code (fail-closed via getActive),
+   * with a CHF defensive fallback for legacy dev DBs that pre-date the
+   * InstallationProfile row.
+   */
+  private async resolveInstallCurrencyCode(): Promise<string> {
+    const policy = await this.installationProfileService.findActiveCountryPolicy();
+    return policy?.currencyCode ?? 'CHF';
+  }
+
+  /** Resolve the installation's default locale (e.g. de-CH / tr-TR). */
+  private async resolveInstallLocale(): Promise<string> {
+    const policy = await this.installationProfileService.findActiveCountryPolicy();
+    return policy?.locale ?? 'tr-TR';
+  }
 
   async getOrCreateStoreSetting(storeId: string) {
     const existing = await this.findStoreSetting(storeId);
@@ -35,13 +55,18 @@ export class StoreSettingsStore {
       return existing;
     }
 
+    const installCurrency = await this.resolveInstallCurrencyCode();
+    const installLocale = await this.resolveInstallLocale();
     const defaults = await this.databaseService
       .prepare(
         `SELECT
-           (SELECT "id" FROM "Currency" WHERE "code" = 'CHF')   AS "defaultCurrencyId",
-           (SELECT "id" FROM "Language" WHERE "code" = 'tr-TR') AS "defaultLanguageId"`,
+           (SELECT "id" FROM "Currency" WHERE "code" = $currency) AS "defaultCurrencyId",
+           (SELECT "id" FROM "Language" WHERE "code" = $locale)   AS "defaultLanguageId"`,
       )
-      .get<{ defaultCurrencyId: string; defaultLanguageId: string }>({});
+      .get<{ defaultCurrencyId: string; defaultLanguageId: string }>({
+        $currency: installCurrency,
+        $locale: installLocale,
+      });
 
     if (!defaults?.defaultCurrencyId || !defaults?.defaultLanguageId) {
       throw new Error('Currency/Language catalog must be seeded before creating settings.');
@@ -1486,7 +1511,7 @@ export class StoreSettingsStore {
       minOrderAmount: 0,
       acceptsDelivery: true,
       acceptsPickup: true,
-      currencyCode: 'CHF',
+      currencyCode: await this.resolveInstallCurrencyCode(),
     });
   }
 

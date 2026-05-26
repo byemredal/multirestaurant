@@ -71,11 +71,16 @@ describe('PaymentsService — Stripe webhook lifecycle', () => {
       ensureAcceptanceForConfirmation: jest.fn().mockResolvedValue(undefined),
     };
 
+    const installationProfileService = {
+      findActiveCountryPolicy: jest.fn().mockResolvedValue(null),
+    };
+
     const service = new PaymentsService(
       stripeService,
       paymentsStore as any,
       ordersService as any,
       legalConsentService as any,
+      installationProfileService as any,
     );
 
     return { service, paymentsStore, ordersService };
@@ -244,6 +249,7 @@ describe('PaymentsService — unconfigured Stripe', () => {
       {} as any,
       {} as any,
       {} as any,
+      { findActiveCountryPolicy: jest.fn().mockResolvedValue(null) } as any,
     );
 
     await expect(
