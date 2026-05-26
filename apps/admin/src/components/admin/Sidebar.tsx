@@ -4,6 +4,7 @@ import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { useMemo, useState } from 'react';
 import { Logo } from '@lieferzonen/ui';
+import { defaultPlatformMarkDataUrl } from '@lieferzonen/assets';
 import { adminAppName } from '@/lib/config';
 import { useBranding } from '@/lib/branding/BrandingProvider';
 import { Icon } from '@/lib/icons';
@@ -55,6 +56,7 @@ export default function Sidebar({
       <div className="app-sidebar__brand">
         <Logo
           src={branding?.logoUrl || undefined}
+          fallbackSrc={defaultPlatformMarkDataUrl}
           fallbackText={platformName}
           alt={platformName}
           height={28}

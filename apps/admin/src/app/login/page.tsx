@@ -3,6 +3,7 @@
 import { useRouter } from 'next/navigation';
 import { useEffect, useState } from 'react';
 import { Logo } from '@lieferzonen/ui';
+import { defaultPlatformMarkDataUrl } from '@lieferzonen/assets';
 import { useAdminLanguage } from '@/lib/i18n/AdminLanguageProvider';
 import { loginAdmin } from '@/lib/admin-api/admin-auth-client';
 import { readAdminSession, writeAdminSession } from '@/lib/storage/admin-session';
@@ -69,6 +70,7 @@ export default function AdminLoginPage() {
           <header className="admin-login-topbar">
             <Logo
               src={branding?.logoUrl || undefined}
+              fallbackSrc={defaultPlatformMarkDataUrl}
               fallbackText={platformLabel}
               alt={`${platformLabel} logo`}
               height={36}

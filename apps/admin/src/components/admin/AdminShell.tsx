@@ -3,6 +3,7 @@
 import { usePathname, useRouter } from 'next/navigation';
 import { useCallback, useEffect, useState, type ReactNode } from 'react';
 import { Logo } from '@lieferzonen/ui';
+import { defaultPlatformMarkDataUrl } from '@lieferzonen/assets';
 import { useBranding } from '@/lib/branding/BrandingProvider';
 import { findNavItemByPath, isLiveNavItem } from '@/lib/admin-navigation';
 import Sidebar, { type SidebarBadgeMap } from './Sidebar';
@@ -124,6 +125,7 @@ export default function AdminShell({
           <div className="app-sidebar__brand">
             <Logo
               src={branding?.logoUrl || undefined}
+              fallbackSrc={defaultPlatformMarkDataUrl}
               fallbackText={platformLabel}
               alt={platformLabel}
               height={28}
