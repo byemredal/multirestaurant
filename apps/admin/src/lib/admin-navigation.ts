@@ -356,6 +356,13 @@ export const adminNavSections: AdminNavSection[] = [
         icon: 'shield',
         matches: startsWith('/system/compliance-catalog'),
       },
+      {
+        id: 'geo-provider',
+        label: 'Adres Arama Sağlayıcısı',
+        href: '/system/geo-provider',
+        icon: 'map',
+        matches: startsWith('/system/geo-provider'),
+      },
     ],
   },
 ];

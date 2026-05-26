@@ -355,10 +355,10 @@ export class TenantOnboardingStore {
       await this.databaseService.prepare(
         `INSERT INTO "TenantOnboardingLocationSelection" (
           "id","applicationId","locationLabel","rawInput","country","city","postalCode",
-          "latitude","longitude","createdAt","updatedAt"
+          "street","latitude","longitude","provider","providerPlaceId","createdAt","updatedAt"
         ) VALUES (
           $id,$applicationId,$locationLabel,$rawInput,$country,$city,$postalCode,
-          $latitude,$longitude,$createdAt,$updatedAt
+          $street,$latitude,$longitude,$provider,$providerPlaceId,$createdAt,$updatedAt
         )`,
       ).run(this.locationSelectionParams(created));
       return created;
@@ -372,8 +372,10 @@ export class TenantOnboardingStore {
     await this.databaseService.prepare(
       `UPDATE "TenantOnboardingLocationSelection"
        SET "locationLabel" = $locationLabel, "rawInput" = $rawInput, "country" = $country,
-           "city" = $city, "postalCode" = $postalCode, "latitude" = $latitude,
-           "longitude" = $longitude, "updatedAt" = $updatedAt
+           "city" = $city, "postalCode" = $postalCode, "street" = $street,
+           "latitude" = $latitude, "longitude" = $longitude,
+           "provider" = $provider, "providerPlaceId" = $providerPlaceId,
+           "updatedAt" = $updatedAt
        WHERE "applicationId" = $applicationId`,
     ).run(this.locationSelectionParams(updated));
     return updated;
@@ -1148,8 +1150,11 @@ export class TenantOnboardingStore {
       $country: detail.country,
       $city: detail.city,
       $postalCode: detail.postalCode,
+      $street: detail.street,
       $latitude: detail.latitude,
       $longitude: detail.longitude,
+      $provider: detail.provider,
+      $providerPlaceId: detail.providerPlaceId,
       $createdAt: detail.createdAt.toISOString(),
       $updatedAt: detail.updatedAt.toISOString(),
     };
@@ -1291,6 +1296,10 @@ export class TenantOnboardingStore {
   }
 
   private mapLocationSelection(row: LocationSelectionRow): TenantOnboardingLocationSelection {
+    const normalizedProvider =
+      row.provider === 'locationiq' || row.provider === 'manual' || row.provider === 'none'
+        ? row.provider
+        : null;
     return {
       id: row.id,
       applicationId: row.applicationId,
@@ -1299,8 +1308,11 @@ export class TenantOnboardingStore {
       country: row.country,
       city: row.city,
       postalCode: row.postalCode,
+      street: row.street ?? null,
       latitude: row.latitude === null ? null : Number(row.latitude),
       longitude: row.longitude === null ? null : Number(row.longitude),
+      provider: normalizedProvider,
+      providerPlaceId: row.providerPlaceId ?? null,
       createdAt: new Date(row.createdAt),
       updatedAt: new Date(row.updatedAt),
     };
@@ -1430,7 +1442,7 @@ interface BankRow { id: string; applicationId: string; bankName: string; account
 interface BillingRow { id: string; applicationId: string; useBusinessAddress: boolean; billingName: string; country: string; city: string; postalCode: string; addressLine1: string; addressLine2: string | null; createdAt: string; updatedAt: string; }
 interface PlanSelectionRow { id: string; applicationId: string; planKey: string; planNameSnapshot: string; commissionSummarySnapshot: string; currency: string; selectedAt: string; createdAt: string; updatedAt: string; }
 interface PhoneVerificationRow { id: string; applicationId: string; phoneNumber: string; otpCodeHash: string | null; expiresAt: string | null; verifiedAt: string | null; resendCount: number; attemptCount: number; lastSentAt: string | null; createdAt: string; updatedAt: string; }
-interface LocationSelectionRow { id: string; applicationId: string; locationLabel: string; rawInput: string; country: string; city: string | null; postalCode: string | null; latitude: number | null; longitude: number | null; createdAt: string; updatedAt: string; }
+interface LocationSelectionRow { id: string; applicationId: string; locationLabel: string; rawInput: string; country: string; city: string | null; postalCode: string | null; street: string | null; latitude: number | null; longitude: number | null; provider: string | null; providerPlaceId: string | null; createdAt: string; updatedAt: string; }
 interface OperationsRow { id: string; applicationId: string; primaryCity: string; primaryPostalCode: string; deliveryModel: string; supportsPickup: boolean; openingHoursSummary: string | null; estimatedGoLiveDate: string | null; createdAt: string; updatedAt: string; }
 interface DocumentRow { id: string; applicationId: string; fileAssetId: string; type: string; status: string; isRequired: boolean; version: number; isCurrent: boolean; uploadedAt: string; reviewedAt: string | null; reviewedByAdminId: string | null; rejectionReason: string | null; expiresAt: string | null; createdAt: string; updatedAt: string; }
 interface ConsentSnapshotRow { id: string; applicationId: string; consentKey: string; consentLabelSnapshot: string; documentCode: string; documentVersion: string; language: string; accepted: boolean; acceptedAt: string; ipAddress: string | null; userAgent: string | null; createdAt: string; updatedAt: string; }

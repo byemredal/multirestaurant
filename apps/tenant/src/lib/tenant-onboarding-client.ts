@@ -18,6 +18,18 @@ type TenantPayload = {
   * TenantOnboardingClient, tenant onboarding sürecinde kullanılan API çağrılarını içeren bir modüldür.
   * Bu modül, tenant onboarding sürecinin farklı adımlarında gerekli olan API çağrılarını yaparak, tenant'ın onboarding sürecini yönetir.
 */
+export type StartTenantOnboardingAddressMeta = {
+  label: string;
+  street?: string | null;
+  city?: string | null;
+  postalCode?: string | null;
+  countryCode?: string | null;
+  latitude?: number | null;
+  longitude?: number | null;
+  provider: 'locationiq' | 'manual' | 'none';
+  providerPlaceId?: string | null;
+};
+
 type StartOnboardingInput = {
   firstName: string;
   lastName: string;
@@ -27,6 +39,16 @@ type StartOnboardingInput = {
   companyAddress: string;
   tenantType: 'food_service' | 'retail' | 'other';
   deliveryModel: 'own_fleet' | 'platform_fleet' | 'hybrid';
+  /** Required: initial Terms + Privacy checkbox from the partner form. */
+  acceptedTerms: boolean;
+  /** BCP-47 locale captured at the moment of acceptance. */
+  acceptedLocale?: string;
+  /**
+   * Normalized parts of the autocomplete suggestion. Optional so a free-text
+   * submission still works; backend persists this into the location-selection
+   * row with provider attribution.
+   */
+  addressMeta?: StartTenantOnboardingAddressMeta;
 };
 
 // Onboarding sürecinin farklı adımlarında tenant'ın durumunu ve gerekli bilgileri içeren tipler tanımlanır.

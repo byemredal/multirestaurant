@@ -74,6 +74,8 @@ export interface TenantOnboardingPhoneVerification {
   updatedAt: Date;
 }
 
+export type TenantOnboardingLocationProvider = 'locationiq' | 'manual' | 'none';
+
 export interface TenantOnboardingLocationSelection {
   id: string;
   applicationId: string;
@@ -82,8 +84,11 @@ export interface TenantOnboardingLocationSelection {
   country: string;
   city: string | null;
   postalCode: string | null;
+  street: string | null;
   latitude: number | null;
   longitude: number | null;
+  provider: TenantOnboardingLocationProvider | null;
+  providerPlaceId: string | null;
   createdAt: Date;
   updatedAt: Date;
 }

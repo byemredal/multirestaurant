@@ -21,6 +21,7 @@ import { MenuModule } from './modules/menu/menu.module';
 import { OrdersModule } from './modules/orders/orders.module';
 import { PaymentsModule } from './modules/payments/payments.module';
 import { PlatformConfigModule } from './modules/platform-config/platform-config.module';
+import { PlatformSettingsModule } from './modules/platform-settings/platform-settings.module';
 import { TenantsModule } from './modules/tenants/tenants.module';
 import { TenantOnboardingModule } from './modules/tenant-onboarding/tenant-onboarding.module';
 import { StoresModule } from './modules/stores/stores.module';
@@ -44,6 +45,7 @@ import { SystemTaxonomyModule } from './modules/system-taxonomy/system-taxonomy.
     CommonModule,
     SetupModule,
     PlatformConfigModule,
+    PlatformSettingsModule,
     SystemTaxonomyModule,
     SharedFileStorageModule,
     AdminAuditLogModule,

@@ -187,9 +187,17 @@ export class TenantOnboardingService {
     };
   }
 
-  async start(dto: Dto.StartTenantOnboardingDto) {
+  async start(
+    dto: Dto.StartTenantOnboardingDto,
+    context?: { ipAddress?: string | null; userAgent?: string | null },
+  ) {
     const email = dto.email.trim().toLowerCase();
     const existing = await this.tenantAccountsStore.findByEmail(email);
+
+    // Backend enforces the phone country prefix against the active CountryPack
+    // so a manipulated client (the locked-prefix UI is just visual) can't
+    // sneak a foreign country code through the start contract.
+    const enforcedPhoneNumber = await this.enforceActiveCountryPhoneNumber(dto.phoneNumber);
 
     if (existing) {
       const resumable =
@@ -218,7 +226,7 @@ export class TenantOnboardingService {
       passwordHash: '',
       firstName: dto.firstName,
       lastName: dto.lastName,
-      phoneNumber: dto.phoneNumber,
+      phoneNumber: enforcedPhoneNumber,
       companyName: dto.companyName,
       companyAddress: dto.companyAddress,
       tenantType: dto.tenantType,
@@ -232,6 +240,8 @@ export class TenantOnboardingService {
 
     const application = await this.getOrCreateApplication(tenant.account.id);
     await this.seedApplicationFromStart(application.id, dto);
+    await this.persistInitialApplicationLocationSelection(application.id, dto);
+    await this.persistInitialApplicationConsents(application.id, dto, context);
 
     const workspace = await this.getWorkspace(tenant.account.id);
     const currentStepKey = currentStepFromSteps(
@@ -244,6 +254,149 @@ export class TenantOnboardingService {
       currentStepKey,
       nextStepKey: nextStepAfter(currentStepKey),
     };
+  }
+
+  /**
+   * Server-side phone normalization. The partner application form ships a
+   * locked dial-code badge in the UI, but the badge is presentational only —
+   * any HTTP client could submit a different prefix. Refuse and rewrite here:
+   *   * strip non-digits and the country prefix (`+41`, `0041`, `0`, etc.)
+   *   * re-attach the active CountryPack's `e164Country`
+   *   * reject when the digit count is implausible
+   *
+   * Setup not yet run (no active profile) → trust whatever the caller sent.
+   * Production setups always have a profile, so this is a defensive belt.
+   */
+  private async enforceActiveCountryPhoneNumber(input: string): Promise<string> {
+    const trimmed = input.trim();
+    if (!trimmed) {
+      throw new BadRequestException('Telefon numarası gereklidir.');
+    }
+
+    const policy = await this.installationProfileService.findActiveCountryPolicy();
+    if (!policy) {
+      return trimmed;
+    }
+
+    const e164 = policy.pack.phone.e164Country;
+    const expectedPrefixDigits = e164.replace(/[^\d]/g, '');
+    if (!expectedPrefixDigits) {
+      return trimmed;
+    }
+
+    // Pull every digit out of the user input — most permissive normalization,
+    // matches every realistic format (`+41 79 …`, `0041…`, `079 …`, `79 …`).
+    const allDigits = trimmed.replace(/[^\d]/g, '');
+    let national = allDigits;
+    if (national.startsWith('00' + expectedPrefixDigits)) {
+      national = national.slice(2 + expectedPrefixDigits.length);
+    } else if (national.startsWith(expectedPrefixDigits)) {
+      national = national.slice(expectedPrefixDigits.length);
+    }
+    // Local "0" prefix (e.g. CH "079 …") is dropped: the e164 canonical form
+    // has no leading zero after the country code.
+    if (national.startsWith('0')) {
+      national = national.replace(/^0+/, '');
+    }
+
+    if (national.length < 6 || national.length > 14) {
+      throw new BadRequestException(
+        'Telefon numarası geçerli görünmüyor. Lütfen ülke kodu olmadan ulusal telefon numaranızı girin.',
+      );
+    }
+
+    return `+${expectedPrefixDigits}${national}`;
+  }
+
+  /**
+   * If the partner application form submitted a normalized address from the
+   * autocomplete provider, mirror it into the TenantOnboardingLocationSelection
+   * row up front. This lets the later location/address step prefill the
+   * picker AND gives audit a single canonical row of "what was first
+   * captured" with provider attribution.
+   */
+  private async persistInitialApplicationLocationSelection(
+    applicationId: string,
+    dto: Dto.StartTenantOnboardingDto,
+  ): Promise<void> {
+    if (!dto.addressMeta) {
+      return;
+    }
+    const meta = dto.addressMeta;
+    const policy = await this.installationProfileService.findActiveCountryPolicy();
+    const country =
+      meta.countryCode?.trim().toUpperCase() ||
+      policy?.countryCode ||
+      'CH';
+    await this.store.upsertLocationSelection(applicationId, {
+      locationLabel: meta.label.trim(),
+      rawInput: dto.companyAddress.trim(),
+      country,
+      city: meta.city?.trim() || null,
+      postalCode: meta.postalCode?.trim() || null,
+      street: meta.street?.trim() || null,
+      latitude: meta.latitude ?? null,
+      longitude: meta.longitude ?? null,
+      provider: meta.provider,
+      providerPlaceId: meta.providerPlaceId?.trim() || null,
+    });
+  }
+
+  /**
+   * Persist the partner application form's initial Terms + Privacy checkbox
+   * acceptance into the TenantOnboardingConsentSnapshot table so a later
+   * legal/audit review can prove WHAT was accepted, WHEN, and against WHICH
+   * document version. Reuses the same table the final review consent step
+   * writes to — the `consentKey` namespace keeps them distinguishable.
+   */
+  private async persistInitialApplicationConsents(
+    applicationId: string,
+    dto: Dto.StartTenantOnboardingDto,
+    context?: { ipAddress?: string | null; userAgent?: string | null },
+  ) {
+    const pack = await this.resolveActiveCountryPack();
+    const language = (dto.acceptedLocale?.trim() || pack.language || 'de-CH');
+    const acceptedAt = new Date();
+
+    // Pull legal-document versions from the active CountryPack so the
+    // snapshot pins the exact version-string the user saw on this device.
+    const profile = await this.installationProfileService.findActive();
+    const legalDocs = profile?.pack.legalDocuments ?? [];
+    const findVersion = (typeCode: string) =>
+      legalDocs.find((doc) => doc.typeCode === typeCode)?.versionLabel ?? 'unversioned';
+
+    // IP + user agent are captured for audit. We trim to the table's
+    // expected TEXT bounds defensively — no max length in schema but a
+    // pathological UA shouldn't be persisted untouched.
+    const ipAddress = context?.ipAddress?.trim().slice(0, 64) || null;
+    const userAgent = context?.userAgent?.trim().slice(0, 512) || null;
+
+    await Promise.all([
+      this.store.upsertConsentSnapshot(applicationId, {
+        consentKey: 'application_terms_of_service',
+        consentLabelSnapshot:
+          'Devam ederek Kullanım Şartlarını kabul ettim (partner başvuru formu).',
+        documentCode: 'terms_of_service',
+        documentVersion: findVersion('terms_of_service'),
+        language,
+        accepted: dto.acceptedTerms === true,
+        acceptedAt,
+        ipAddress,
+        userAgent,
+      }),
+      this.store.upsertConsentSnapshot(applicationId, {
+        consentKey: 'application_privacy_policy',
+        consentLabelSnapshot:
+          'Devam ederek Gizlilik Politikasını kabul ettim (partner başvuru formu).',
+        documentCode: 'privacy_policy',
+        documentVersion: findVersion('privacy_policy'),
+        language,
+        accepted: dto.acceptedTerms === true,
+        acceptedAt,
+        ipAddress,
+        userAgent,
+      }),
+    ]);
   }
 
   private async seedApplicationFromStart(applicationId: string, dto: Dto.StartTenantOnboardingDto) {
@@ -560,8 +713,11 @@ export class TenantOnboardingService {
       country: dto.country?.trim().toUpperCase() || 'CH',
       city: dto.city?.trim() || null,
       postalCode: dto.postalCode?.trim() || null,
+      street: null,
       latitude: dto.latitude ?? null,
       longitude: dto.longitude ?? null,
+      provider: 'manual' as const,
+      providerPlaceId: null,
     };
     const locationSelection = await this.store.upsertLocationSelection(application.id, normalizedLocation);
 

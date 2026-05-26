@@ -43,8 +43,22 @@ export class TenantOnboardingController {
   @Public()
   @Post('start')
   @ApiOperation({ summary: 'Start a stateless tenant onboarding application.' })
-  start(@Body() dto: Dto.StartTenantOnboardingDto) {
-    return this.onboardingService.start(dto);
+  start(@Req() request: AuthenticatedRequest, @Body() dto: Dto.StartTenantOnboardingDto) {
+    return this.onboardingService.start(dto, {
+      ipAddress: this.extractClientIp(request),
+      userAgent: typeof request.headers['user-agent'] === 'string' ? request.headers['user-agent'] : null,
+    });
+  }
+
+  private extractClientIp(request: AuthenticatedRequest): string | null {
+    const forwarded = request.headers['x-forwarded-for'];
+    if (typeof forwarded === 'string' && forwarded.trim()) {
+      return forwarded.split(',')[0]!.trim();
+    }
+    if (Array.isArray(forwarded) && forwarded.length > 0) {
+      return forwarded[0]!.split(',')[0]!.trim();
+    }
+    return (request as { ip?: string }).ip ?? null;
   }
 
   @Public()

@@ -227,6 +227,38 @@ export const apiGroups: ApiGroup[] = [
     ],
   },
   {
+    id: 'geo',
+    label: 'Public — Geo (address suggestion proxy)',
+    actions: [
+      {
+        id: 'geoSuggest',
+        method: 'GET',
+        path: '/geo/suggest',
+        queryParams: [
+          { key: 'q', label: 'query (min. 2 chars)' },
+          { key: 'country', label: 'ISO-2 (optional bias)' },
+        ],
+      },
+    ],
+  },
+  {
+    id: 'adminPlatformSettings',
+    label: 'Admin — Platform Settings (geo provider selector)',
+    actions: [
+      {
+        id: 'getAdminGeoProvider',
+        method: 'GET',
+        path: '/admin/platform-settings/geo-provider',
+      },
+      {
+        id: 'setAdminGeoProvider',
+        method: 'PUT',
+        path: '/admin/platform-settings/geo-provider',
+        bodyFields: [{ key: 'provider', label: 'locationiq | none' }],
+      },
+    ],
+  },
+  {
     id: 'systemTaxonomy',
     label: 'Public — System Taxonomy (currency / language / payment / service)',
     actions: [

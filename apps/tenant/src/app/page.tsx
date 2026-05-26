@@ -9,6 +9,8 @@ import { PlatformLogo, usePlatformBranding } from '@lieferzonen/ui';
 import { useTenantAuth } from '@/lib/auth/tenant-auth-context';
 import { useRouter } from 'next/navigation';
 import { apiBaseUrl } from '@/lib/http/tenant-http';
+import { usePlatformPack } from '@/lib/platform-pack-context';
+import { AddressAutocomplete, type AddressSuggestion } from '@/components/tenant/AddressAutocomplete';
 import {
   getTenantOnboardingWorkspaceByStateToken,
   startTenantOnboarding,
@@ -68,12 +70,13 @@ export default function TenantEntryPage() {
 
   const [companyName, setCompanyName] = useState('');
   const [companyAddress, setCompanyAddress] = useState('');
+  const [companyAddressMeta, setCompanyAddressMeta] = useState<AddressSuggestion | null>(null);
   const [tenantType, setTenantType] = useState<'food_service' | 'retail' | 'other'>('food_service');
   const [deliveryModel, setDeliveryModel] = useState<'own_fleet' | 'platform_fleet' | 'hybrid'>('platform_fleet');
   const [fullName, setFullName] = useState('');
   const [email, setEmail] = useState('');
-  const [countryCode, setCountryCode] = useState('+41');
   const [phoneNumber, setPhoneNumber] = useState('');
+  const [acceptedTerms, setAcceptedTerms] = useState(false);
   const [loading, setLoading] = useState(false);
   const [resumeLoading, setResumeLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -82,6 +85,11 @@ export default function TenantEntryPage() {
   const [fieldErrors, setFieldErrors] = useState<Partial<Record<FieldKey, string>>>({});
   const branding = usePlatformBranding(apiBaseUrl);
   const platformName = branding?.platformName?.trim() || 'Platform';
+  // Active CountryPack drives the phone prefix + address-search country bias.
+  // Setup not yet run → fall back to nothing (don't burn a CH default into UI).
+  const platformPack = usePlatformPack();
+  const dialCode = platformPack?.phone.e164Country ?? '';
+  const packCountry = platformPack?.country ?? '';
 
   // Stale resume token cleanup: a token in localStorage MUST be backend-validated
   // before we hint at a "resume your onboarding" affordance. Without this guard a
@@ -193,26 +201,70 @@ export default function TenantEntryPage() {
     }
     setFieldErrors({});
 
+    if (!acceptedTerms) {
+      setError('Devam etmek için Kullanım Şartları ve Gizlilik Politikası onayını işaretleyin.');
+      scrollToForm();
+      return;
+    }
+
+    if (!dialCode) {
+      setError('Platform yapılandırması yüklenemedi. Lütfen sayfayı yenileyin.');
+      return;
+    }
+
     try {
       setLoading(true);
       const { firstName, lastName } = splitName(fullName);
-      const normalizedPhoneNumber = `${countryCode}${phoneNumber.replace(/[^\d]/g, '')}`;
+      const normalizedPhoneNumber = `${dialCode}${phoneNumber.replace(/[^\d]/g, '')}`;
+
+      // The user may have typed the address without selecting a suggestion;
+      // when they did select, the meta captured at that moment matches the
+      // label currently in the input. Forward meta only when both still align
+      // — otherwise fall back to a `provider: 'manual'` payload so backend
+      // attribution stays honest.
+      const trimmedAddress = companyAddress.trim();
+      const addressMeta =
+        companyAddressMeta && companyAddressMeta.label.trim() === trimmedAddress
+          ? {
+              label: companyAddressMeta.label,
+              city: companyAddressMeta.city ?? null,
+              postalCode: companyAddressMeta.postalCode ?? null,
+              countryCode: companyAddressMeta.country ?? null,
+              latitude: companyAddressMeta.latitude ?? null,
+              longitude: companyAddressMeta.longitude ?? null,
+              provider: 'locationiq' as const,
+              providerPlaceId: companyAddressMeta.id ?? null,
+            }
+          : trimmedAddress
+            ? {
+                label: trimmedAddress,
+                provider: 'manual' as const,
+              }
+            : undefined;
+
       const onboarding = await startTenantOnboarding({
         firstName,
         lastName,
         email: email.trim(),
         phoneNumber: normalizedPhoneNumber,
         companyName: companyName.trim(),
-        companyAddress: companyAddress.trim(),
+        companyAddress: trimmedAddress,
         tenantType,
         deliveryModel,
+        acceptedTerms: true,
+        acceptedLocale: platformPack?.locale,
+        addressMeta,
       });
 
       writeOnboardingStateToken(onboarding.stateToken);
       setStoredStateToken(onboarding.stateToken);
       router.push(getTenantOnboardingStepUrl(onboarding.stateToken, 'welcome'));
-    } catch {
-      setError('Kayıt başarısız. Lütfen bilgilerinizi kontrol edip tekrar deneyin.');
+    } catch (joinError) {
+      const message =
+        joinError instanceof Error && joinError.message && !joinError.message.startsWith('tenant_onboarding_')
+          ? joinError.message
+          : 'Kayıt başarısız. Lütfen bilgilerinizi kontrol edip tekrar deneyin.';
+      setError(message);
       scrollToForm();
     } finally {
       setLoading(false);
@@ -549,13 +601,17 @@ export default function TenantEntryPage() {
                 Sadece temel bilgiler. Belgeler ve detaylı ayarlar onboarding ekranında.
               </p>
 
-              <div className="mt-6 grid gap-3.5">
+              <div className="mt-6 grid gap-4">
                 <div>
+                  <label htmlFor="tenant-company-name" className="mb-1.5 block text-[13px] font-semibold text-ink-700">
+                    İşletme adı <span className="text-danger-600" aria-hidden>*</span>
+                  </label>
                   <Input
+                    id="tenant-company-name"
                     aria-invalid={Boolean(fieldErrors.companyName)}
                     className={inputErrorClass('companyName')}
                     onChange={(e) => { setCompanyName(e.target.value); clearField('companyName'); }}
-                    placeholder="İşletme adı"
+                    placeholder="ör. Bistro Vita"
                     value={companyName}
                   />
                   {fieldErrors.companyName ? (
@@ -564,45 +620,75 @@ export default function TenantEntryPage() {
                 </div>
 
                 <div>
-                  <Input
-                    aria-invalid={Boolean(fieldErrors.companyAddress)}
-                    className={inputErrorClass('companyAddress')}
-                    onChange={(e) => { setCompanyAddress(e.target.value); clearField('companyAddress'); }}
-                    placeholder="İşletme adresi"
+                  <label htmlFor="tenant-company-address" className="mb-1.5 block text-[13px] font-semibold text-ink-700">
+                    İşletme adresi <span className="text-danger-600" aria-hidden>*</span>
+                  </label>
+                  <AddressAutocomplete
+                    id="tenant-company-address"
                     value={companyAddress}
+                    onChange={(next) => {
+                      setCompanyAddress(next);
+                      clearField('companyAddress');
+                      if (companyAddressMeta && next !== companyAddressMeta.label) {
+                        setCompanyAddressMeta(null);
+                      }
+                    }}
+                    onSelect={(suggestion) => setCompanyAddressMeta(suggestion)}
+                    countryCode={packCountry || undefined}
+                    placeholder="Adres, sokak, cadde veya posta kodu"
+                    invalid={Boolean(fieldErrors.companyAddress)}
                   />
+                  <p className="mt-1.5 text-[12px] text-ink-500">
+                    Yazdıkça önerilen adreslerden birini seçin. Detayları onboarding adımında netleştirebilirsiniz.
+                  </p>
                   {fieldErrors.companyAddress ? (
                     <p className="mt-1 text-[12px] text-danger-700">{fieldErrors.companyAddress}</p>
                   ) : null}
                 </div>
 
-                <div className="grid gap-3.5 sm:grid-cols-2">
-                  <Select
-                    className="h-12 rounded-2xl border-ink-200 px-4 text-[15px]"
-                    onChange={(e) => setTenantType(e.target.value as 'food_service' | 'retail' | 'other')}
-                    value={tenantType}
-                  >
-                    <option value="food_service">Yemek servisi</option>
-                    <option value="retail">Perakende</option>
-                    <option value="other">Diğer</option>
-                  </Select>
-                  <Select
-                    className="h-12 rounded-2xl border-ink-200 px-4 text-[15px]"
-                    onChange={(e) => setDeliveryModel(e.target.value as 'own_fleet' | 'platform_fleet' | 'hybrid')}
-                    value={deliveryModel}
-                  >
-                    <option value="platform_fleet">Platform filosu</option>
-                    <option value="own_fleet">Kendi filom</option>
-                    <option value="hybrid">Hibrit</option>
-                  </Select>
+                <div className="grid gap-4 sm:grid-cols-2">
+                  <div>
+                    <label htmlFor="tenant-type" className="mb-1.5 block text-[13px] font-semibold text-ink-700">
+                      İşletme türü
+                    </label>
+                    <Select
+                      id="tenant-type"
+                      className="h-12 rounded-2xl border-ink-200 px-4 text-[15px]"
+                      onChange={(e) => setTenantType(e.target.value as 'food_service' | 'retail' | 'other')}
+                      value={tenantType}
+                    >
+                      <option value="food_service">Yemek servisi</option>
+                      <option value="retail">Perakende</option>
+                      <option value="other">Diğer</option>
+                    </Select>
+                  </div>
+                  <div>
+                    <label htmlFor="tenant-delivery-model" className="mb-1.5 block text-[13px] font-semibold text-ink-700">
+                      Teslimat modeli
+                    </label>
+                    <Select
+                      id="tenant-delivery-model"
+                      className="h-12 rounded-2xl border-ink-200 px-4 text-[15px]"
+                      onChange={(e) => setDeliveryModel(e.target.value as 'own_fleet' | 'platform_fleet' | 'hybrid')}
+                      value={deliveryModel}
+                    >
+                      <option value="platform_fleet">Platform filosu</option>
+                      <option value="own_fleet">Kendi filom</option>
+                      <option value="hybrid">Hibrit</option>
+                    </Select>
+                  </div>
                 </div>
 
                 <div>
+                  <label htmlFor="tenant-full-name" className="mb-1.5 block text-[13px] font-semibold text-ink-700">
+                    Yetkili ad soyad <span className="text-danger-600" aria-hidden>*</span>
+                  </label>
                   <Input
+                    id="tenant-full-name"
                     aria-invalid={Boolean(fieldErrors.fullName)}
                     className={inputErrorClass('fullName')}
                     onChange={(e) => { setFullName(e.target.value); clearField('fullName'); }}
-                    placeholder="Yetkili ad soyad"
+                    placeholder="ör. Aylin Demir"
                     value={fullName}
                   />
                   {fieldErrors.fullName ? (
@@ -610,13 +696,17 @@ export default function TenantEntryPage() {
                   ) : null}
                 </div>
 
-                <div className="grid gap-3.5 sm:grid-cols-2">
+                <div className="grid gap-4 sm:grid-cols-2">
                   <div>
+                    <label htmlFor="tenant-email" className="mb-1.5 block text-[13px] font-semibold text-ink-700">
+                      E-posta <span className="text-danger-600" aria-hidden>*</span>
+                    </label>
                     <Input
+                      id="tenant-email"
                       aria-invalid={Boolean(fieldErrors.email)}
                       className={inputErrorClass('email')}
                       onChange={(e) => { setEmail(e.target.value); clearField('email'); }}
-                      placeholder="E-posta"
+                      placeholder="ornek@isletmeniz.com"
                       type="email"
                       value={email}
                     />
@@ -625,28 +715,31 @@ export default function TenantEntryPage() {
                     ) : null}
                   </div>
                   <div>
-                    <div className="grid grid-cols-[110px_minmax(0,1fr)] gap-2">
-                      <Select
-                        className="h-12 rounded-2xl border-ink-200 px-3 text-[15px]"
-                        onChange={(e) => setCountryCode(e.target.value)}
-                        value={countryCode}
+                    <label htmlFor="tenant-phone" className="mb-1.5 block text-[13px] font-semibold text-ink-700">
+                      Telefon <span className="text-danger-600" aria-hidden>*</span>
+                    </label>
+                    <div className="grid grid-cols-[88px_minmax(0,1fr)] gap-2">
+                      <div
+                        aria-label="Ülke kodu"
+                        className="flex h-12 items-center justify-center rounded-2xl border border-ink-200 bg-ink-50 px-3 text-[14px] font-semibold text-ink-700"
                       >
-                        <option value="+41">+41 CH</option>
-                        <option value="+49">+49 DE</option>
-                        <option value="+43">+43 AT</option>
-                        <option value="+31">+31 NL</option>
-                        <option value="+44">+44 GB</option>
-                        <option value="+90">+90 TR</option>
-                      </Select>
+                        {dialCode || '—'}
+                      </div>
                       <Input
+                        id="tenant-phone"
                         aria-invalid={Boolean(fieldErrors.phoneNumber)}
+                        aria-describedby="tenant-phone-help"
                         className={inputErrorClass('phoneNumber')}
                         inputMode="tel"
+                        autoComplete="tel-national"
                         onChange={(e) => { setPhoneNumber(e.target.value); clearField('phoneNumber'); }}
-                        placeholder="Telefon"
+                        placeholder="79 123 45 67"
                         value={phoneNumber}
                       />
                     </div>
+                    <p id="tenant-phone-help" className="mt-1 text-[12px] text-ink-500">
+                      Ülke kodu platform yapılandırmasından otomatik gelir.
+                    </p>
                     {fieldErrors.phoneNumber ? (
                       <p className="mt-1 text-[12px] text-danger-700">{fieldErrors.phoneNumber}</p>
                     ) : null}
@@ -667,6 +760,29 @@ export default function TenantEntryPage() {
                     belirlersiniz.
                   </span>
                 </div>
+
+                <label
+                  htmlFor="tenant-accept-terms"
+                  className={`flex items-start gap-3 rounded-2xl border px-4 py-3 text-[13px] leading-5 transition ${
+                    acceptedTerms
+                      ? 'border-primary-200 bg-primary-50/50 text-ink-700'
+                      : 'border-ink-200 bg-white text-ink-600'
+                  }`}
+                >
+                  <input
+                    id="tenant-accept-terms"
+                    type="checkbox"
+                    className="mt-0.5 h-4 w-4 shrink-0 rounded border-ink-300 text-primary focus:ring-2 focus:ring-primary/30"
+                    checked={acceptedTerms}
+                    onChange={(event) => setAcceptedTerms(event.target.checked)}
+                  />
+                  <span>
+                    <strong className="font-semibold text-ink-800">Kullanım Şartları ve Gizlilik Politikası</strong>'nı okudum ve kabul ediyorum.{' '}
+                    <a href="/me/legal" className="underline-offset-2 hover:underline">
+                      Belgeleri görüntüle →
+                    </a>
+                  </span>
+                </label>
               </div>
 
               {error ? (
@@ -680,23 +796,24 @@ export default function TenantEntryPage() {
 
               <Button
                 className="mt-6 h-12 w-full rounded-full text-[15px]"
-                disabled={loading}
+                disabled={loading || !acceptedTerms || !dialCode}
                 onClick={join}
               >
-                {loading ? 'Başvuru gönderiliyor…' : 'Başvuruyu gönder'}
+                {loading ? (
+                  <span className="inline-flex items-center gap-2">
+                    <span className="h-4 w-4 animate-spin rounded-full border-2 border-white/40 border-t-white" aria-hidden />
+                    Başvuru gönderiliyor…
+                  </span>
+                ) : (
+                  'Başvuruyu gönder'
+                )}
               </Button>
 
-              <p className="mt-4 text-[11.5px] leading-5 text-ink-500">
-                Devam ederek{' '}
-                <a href="/me/legal" className="font-medium text-ink-700 underline-offset-2 hover:underline">
-                  Kullanım Şartları
-                </a>
-                {' '}ve{' '}
-                <a href="/me/legal" className="font-medium text-ink-700 underline-offset-2 hover:underline">
-                  Gizlilik Politikası
-                </a>
-                'nı kabul etmiş olursun.
-              </p>
+              {!dialCode ? (
+                <p className="mt-3 text-[12px] text-ink-500">
+                  Platform yapılandırması yükleniyor… Form birkaç saniye içinde aktif olacak.
+                </p>
+              ) : null}
             </div>
           </div>
         </section>
