@@ -22,6 +22,7 @@ import {
   type UploadTenantOnboardingDocumentInput,
   getTenantOnboardingWorkspaceByStateToken,
   resolveTenantOnboardingSession,
+  TenantOnboardingSessionError,
 } from '@/lib/tenant-onboarding-client';
 import {
   getNextTenantOnboardingStepKey,
@@ -227,11 +228,22 @@ export function useTenantOnboardingWorkspace(stateToken?: string, requestedStep?
         replaceWorkspace(keepRouteTokenInWorkspace(nextWorkspace), requestSeq, { rememberToken: false });
       }
     } catch (loadError) {
-      setError(
-        loadError instanceof Error
-          ? loadError.message
-          : 'Tenant onboarding state could not be loaded.',
-      );
+      // Soften the raw `tenant_onboarding_session_failed_403` code into a
+      // user-readable message. The backend now allows terminal-status reads,
+      // so a remaining 403 here means the link is genuinely invalid/expired.
+      let message = 'Tenant onboarding state could not be loaded.';
+      if (loadError instanceof TenantOnboardingSessionError) {
+        if (loadError.status === 403) {
+          message = loadError.message && !loadError.message.startsWith('tenant_onboarding_')
+            ? loadError.message
+            : 'Bu başvuru bağlantısı geçersiz veya süresi dolmuş.';
+        } else if (loadError.message) {
+          message = loadError.message;
+        }
+      } else if (loadError instanceof Error) {
+        message = loadError.message;
+      }
+      setError(message);
     } finally {
       if (requestSeq === null || requestSeq >= loadingRequestSeqRef.current) {
         setLoading(false);
@@ -244,6 +256,54 @@ export function useTenantOnboardingWorkspace(stateToken?: string, requestedStep?
   useEffect(() => {
     void loadWorkspace();
   }, [loadWorkspace, onboardingStatus]);
+
+  // Lightweight polling for the public state-token flow (no auth session, so
+  // no SSE). Only ticks while the application sits in a waiting status, and
+  // stops as soon as it transitions to a closed lifecycle. Authenticated
+  // sessions ignore this — they already receive live updates via SSE.
+  const currentStatus = workspace?.application.status ?? null;
+  useEffect(() => {
+    if (session) {
+      return;
+    }
+    if (!currentStateToken) {
+      return;
+    }
+    const waitingStatuses = ['submitted', 'under_review', 'revision_required'] as const;
+    if (!currentStatus || !waitingStatuses.includes(currentStatus as typeof waitingStatuses[number])) {
+      return;
+    }
+
+    let cancelled = false;
+    const interval = setInterval(() => {
+      if (cancelled || document.hidden) {
+        return;
+      }
+      const token = currentStateTokenRef.current ?? currentStateToken;
+      if (!token) {
+        return;
+      }
+      const requestSeq = workspaceRequestSeqRef.current + 1;
+      workspaceRequestSeqRef.current = requestSeq;
+      void getTenantOnboardingWorkspaceByStateToken(token)
+        .then((nextWorkspace) => {
+          if (cancelled) {
+            return;
+          }
+          replaceWorkspace(keepRouteTokenInWorkspace(nextWorkspace), requestSeq, {
+            rememberToken: false,
+          });
+        })
+        .catch(() => {
+          // Polling is best-effort; ignore transient failures.
+        });
+    }, 15000);
+
+    return () => {
+      cancelled = true;
+      clearInterval(interval);
+    };
+  }, [currentStateToken, currentStatus, keepRouteTokenInWorkspace, replaceWorkspace, session]);
 
   const ensureSession = useCallback(() => {
     if (!session) {

@@ -568,6 +568,18 @@ export async function getTenantOnboardingWorkspaceByStateToken(stateToken: strin
   return (await response.json()) as TenantOnboardingWorkspace;
 }
 
+export class TenantOnboardingSessionError extends Error {
+  readonly status: number;
+  readonly code: string;
+
+  constructor(status: number, code: string, message?: string) {
+    super(message ?? code);
+    this.name = 'TenantOnboardingSessionError';
+    this.status = status;
+    this.code = code;
+  }
+}
+
 export async function resolveTenantOnboardingSession(
   stateToken: string,
   requestedStep?: string,
@@ -583,7 +595,19 @@ export async function resolveTenantOnboardingSession(
   );
 
   if (!response.ok) {
-    throw new Error(`tenant_onboarding_session_failed_${response.status}`);
+    const fallbackCode = `tenant_onboarding_session_failed_${response.status}`;
+    let userMessage: string | undefined;
+    try {
+      const payload = await response.json();
+      if (typeof payload?.message === 'string' && payload.message) {
+        userMessage = payload.message;
+      } else if (Array.isArray(payload?.message) && payload.message.length > 0) {
+        userMessage = payload.message.join(', ');
+      }
+    } catch {
+      // Body is not JSON — keep the status-derived fallback.
+    }
+    throw new TenantOnboardingSessionError(response.status, fallbackCode, userMessage);
   }
 
   return (await response.json()) as TenantOnboardingResolvedSession;

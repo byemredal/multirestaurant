@@ -350,11 +350,20 @@ export function getPreviousTenantOnboardingStepKey(stepKey: TenantOnboardingWork
 export function getTenantOnboardingResumeUrl(workspace: TenantOnboardingWorkspace) {
   const status = workspace.application.status;
 
-  if (status === 'approved' || status === 'active') {
-    return '/dashboard';
-  }
-
-  if (status === 'submitted' || status === 'under_review' || status === 'rejected' || status === 'suspended') {
+  // Closed lifecycle (approved/active/rejected/suspended) and pending review
+  // (submitted/under_review) all land on the in-flow submitted screen, which
+  // now renders status-specific copy (approved CTA, revision notes, etc.).
+  // Keeping the user inside `/onboarding/[stateToken]/submitted` avoids
+  // bouncing an unauthenticated state-token visitor to /login when their
+  // application was just approved.
+  if (
+    status === 'approved' ||
+    status === 'active' ||
+    status === 'submitted' ||
+    status === 'under_review' ||
+    status === 'rejected' ||
+    status === 'suspended'
+  ) {
     return getTenantOnboardingStepUrl(workspace.stateToken, 'submitted');
   }
 

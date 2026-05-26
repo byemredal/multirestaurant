@@ -67,37 +67,51 @@ export default function TenantOnboardingWaitingPage() {
     }
 
     let cancelled = false;
-    void getTenantOnboardingWorkspaceByStateToken(stateToken)
-      .then((nextWorkspace) => {
-        if (cancelled) {
-          return;
-        }
-        // This compatibility alias is read-only. Keep the route token stable
-        // instead of persisting a refreshed token from a workspace read.
-        const stableWorkspace = {
-          ...nextWorkspace,
-          stateToken,
-          application: {
-            ...nextWorkspace.application,
+    const TERMINAL = new Set(['approved', 'active', 'rejected', 'suspended']);
+
+    const loadOnce = () =>
+      getTenantOnboardingWorkspaceByStateToken(stateToken)
+        .then((nextWorkspace) => {
+          if (cancelled) {
+            return;
+          }
+          const stableWorkspace = {
+            ...nextWorkspace,
             stateToken,
-          },
-        };
-        const resumeUrl = getTenantOnboardingResumeUrl(stableWorkspace);
-        if (!resumeUrl.endsWith('/waiting')) {
-          router.replace(resumeUrl);
-          return;
-        }
-        setWorkspace(stableWorkspace);
-      })
-      .catch(() => {
-        if (!cancelled) {
-          clearOnboardingStateToken();
-          setError('Devam linki gecersiz veya suresi dolmus.');
-        }
-      });
+            application: {
+              ...nextWorkspace.application,
+              stateToken,
+            },
+          };
+          const status = stableWorkspace.application.status;
+          const resumeUrl = getTenantOnboardingResumeUrl(stableWorkspace);
+          if (!resumeUrl.endsWith('/waiting') || TERMINAL.has(status) || status === 'revision_required') {
+            router.replace(resumeUrl);
+            return;
+          }
+          setWorkspace(stableWorkspace);
+        })
+        .catch(() => {
+          if (!cancelled) {
+            clearOnboardingStateToken();
+            setError('Devam linki gecersiz veya suresi dolmus.');
+          }
+        });
+
+    void loadOnce();
+
+    // Light polling so an admin status change (approval / revision request)
+    // becomes visible without a manual refresh.
+    const interval = setInterval(() => {
+      if (cancelled || document.hidden) {
+        return;
+      }
+      void loadOnce();
+    }, 15000);
 
     return () => {
       cancelled = true;
+      clearInterval(interval);
     };
   }, [router, stateToken]);
 

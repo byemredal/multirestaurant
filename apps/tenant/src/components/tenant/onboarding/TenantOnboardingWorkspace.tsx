@@ -363,15 +363,35 @@ export default function TenantOnboardingWorkspace({
             <div className={`mx-auto box-border w-full [&_input]:box-border [&_select]:box-border [&_textarea]:box-border ${widerContentStep ? 'max-w-[820px]' : 'max-w-[650px]'}`}>
               <TenantContinuationBanner stateToken={workspace.stateToken} stepKey={activeStep} />
 
-              {!workspace.editable && workspace.application.status !== 'rejected' && (
-                <div className="mb-4 flex items-start gap-2.5 rounded-[8px] border border-warning-200 bg-warning-50 px-4 py-3 text-[13px] text-warning-600">
-                  <span className="mt-0.5 h-2 w-2 shrink-0 rounded-full bg-warning-400" />
-                  <span>
-                    <strong className="font-semibold">Başvurunuz inceleniyor.</strong>{' '}
-                    Form şu anda salt-okunur; inceleme tamamlanana kadar düzenleme yapılamaz.
-                  </span>
+              {workspace.application.status === 'revision_required' && (
+                <div className="mb-4 flex items-start gap-2.5 rounded-[8px] border border-warning-300 bg-warning-50 px-4 py-3 text-[13px] text-warning-700">
+                  <span className="mt-0.5 h-2 w-2 shrink-0 rounded-full bg-warning-500" />
+                  <div>
+                    <strong className="block font-semibold">Başvurunuz için revizyon istendi.</strong>
+                    <span className="mt-0.5 block leading-5">
+                      Lütfen istenen belgeleri güncelleyin ve başvuruyu yeniden gönderin.
+                      {workspace.revisionRequests.length > 0 ? (
+                        <span className="mt-1 block">
+                          Notlar: {workspace.revisionRequests.join(' · ')}
+                        </span>
+                      ) : null}
+                    </span>
+                  </div>
                 </div>
               )}
+
+              {!workspace.editable &&
+                workspace.application.status !== 'rejected' &&
+                workspace.application.status !== 'approved' &&
+                workspace.application.status !== 'active' && (
+                  <div className="mb-4 flex items-start gap-2.5 rounded-[8px] border border-warning-200 bg-warning-50 px-4 py-3 text-[13px] text-warning-600">
+                    <span className="mt-0.5 h-2 w-2 shrink-0 rounded-full bg-warning-400" />
+                    <span>
+                      <strong className="font-semibold">Başvurunuz inceleniyor.</strong>{' '}
+                      Form şu anda salt-okunur; inceleme tamamlanana kadar düzenleme yapılamaz.
+                    </span>
+                  </div>
+                )}
 
               {workspace.application.status === 'rejected' && (
                 <div className="mb-4 rounded-[8px] border border-danger-200 bg-danger-50 px-4 py-3 text-[13px] text-danger-600">
@@ -478,7 +498,11 @@ export default function TenantOnboardingWorkspace({
                     onWorkspaceResolved={applyMutationWorkspace}
                   />
                 ) : activeStep === 'submitted' ? (
-                  <SubmittedStep resolvedSession={resolvedSession} workspace={workspace} />
+                  <SubmittedStep
+                    resolvedSession={resolvedSession}
+                    workspace={workspace}
+                    onNavigate={navigateToUrl}
+                  />
                 ) : (
                   <TenantOnboardingStepPanel
                     activeStep={activeStep}

@@ -3,7 +3,9 @@ import {
   ConflictException,
   ForbiddenException,
   Injectable,
+  Logger,
   NotFoundException,
+  ServiceUnavailableException,
 } from '@nestjs/common';
 import { createHash } from 'crypto';
 import { plainToInstance } from 'class-transformer';
@@ -113,8 +115,21 @@ const TERMINAL_WAITING_STATUSES = new Set<TenantOnboardingApplicationStatus>([
   'suspended',
 ]);
 
+// Statuses where the application has reached a closed lifecycle and the
+// `tokenSalt` is intentionally wiped (see crypto-util.isTerminalStatus).
+// Read-only resolvers must still let the tenant view the closed screen
+// instead of leaking a raw 403 after admin approval/activation.
+const TERMINAL_CLOSED_STATUSES = new Set<TenantOnboardingApplicationStatus>([
+  'approved',
+  'active',
+  'rejected',
+  'suspended',
+]);
+
 @Injectable()
 export class TenantOnboardingService {
+  private readonly logger = new Logger(TenantOnboardingService.name);
+
   constructor(
     private readonly store: TenantOnboardingStore,
     private readonly tenantAccountsStore: TenantAccountsStore,
@@ -298,12 +313,16 @@ export class TenantOnboardingService {
   }
 
   async resolveStateToken(stateToken: string) {
-    const application = await this.resolveApplicationFromStateToken(stateToken);
+    const application = await this.resolveApplicationFromStateToken(stateToken, {
+      allowTerminal: true,
+    });
     return this.getWorkspace(application.tenantAccountId);
   }
 
   async resolveSessionByStateToken(stateToken: string, requestedStep?: string) {
-    const application = await this.resolveApplicationFromStateToken(stateToken);
+    const application = await this.resolveApplicationFromStateToken(stateToken, {
+      allowTerminal: true,
+    });
     const workspace = await this.getWorkspace(application.tenantAccountId);
     const normalizedRequestedStep = this.normalizeSessionStep(requestedStep);
     const currentStep = this.getCurrentSessionStep(workspace);
@@ -369,6 +388,26 @@ export class TenantOnboardingService {
       throw new BadRequestException('Doğrulama kodu gönderilmeden önce telefon numarası gereklidir.');
     }
 
+    // Refuse to advance the UI when there is no real delivery channel in
+    // production. Otherwise the OTP is hashed into the DB but never reaches
+    // the user — the smoke test path that surfaced this fix.
+    const allowsStubDelivery = this.shouldExposeDebugVerificationCode();
+    if (this.emailService.isStubTransport() && !allowsStubDelivery) {
+      this.logger.error(
+        JSON.stringify({
+          event: 'phone_verification_blocked_no_provider',
+          applicationId: application.id,
+          isResend,
+          transport: this.emailService.resolveTransport(),
+        }),
+      );
+      throw new ServiceUnavailableException({
+        message:
+          'Doğrulama kodu gönderilemedi. Lütfen birkaç dakika içinde tekrar deneyin veya destek ekibimizle iletişime geçin.',
+        code: 'otp_provider_unavailable',
+      });
+    }
+
     const code = String(Math.floor(100000 + Math.random() * 900000));
     const expiresAt = new Date(Date.now() + 10 * 60 * 1000);
     await this.store.upsertPhoneVerificationChallenge(application.id, {
@@ -378,20 +417,64 @@ export class TenantOnboardingService {
       incrementResendCount: isResend,
     });
 
-    await this.emailService.send({
-      to: tenant.account.email,
-      subject: 'Lieferzonen telefon doğrulama kodunuz',
-      text: `Telefon doğrulama kodunuz: ${code}. Bu kod 10 dakika geçerlidir.`,
-    });
+    let deliveryResult: { delivered: boolean; transport: string; stub: boolean };
+    try {
+      deliveryResult = await this.emailService.send({
+        to: tenant.account.email,
+        subject: 'Lieferzonen telefon doğrulama kodunuz',
+        text: `Telefon doğrulama kodunuz: ${code}. Bu kod 10 dakika geçerlidir.`,
+      });
+    } catch (deliveryError) {
+      this.logger.error(
+        JSON.stringify({
+          event: 'phone_verification_delivery_failed',
+          applicationId: application.id,
+          isResend,
+          error: deliveryError instanceof Error ? deliveryError.message : String(deliveryError),
+        }),
+      );
+      throw new ServiceUnavailableException({
+        message:
+          'Doğrulama kodu gönderilemedi. Lütfen birkaç dakika içinde tekrar deneyin.',
+        code: 'otp_delivery_failed',
+      });
+    }
+
+    if (!deliveryResult.delivered && !allowsStubDelivery) {
+      this.logger.error(
+        JSON.stringify({
+          event: 'phone_verification_delivery_not_acknowledged',
+          applicationId: application.id,
+          isResend,
+          transport: deliveryResult.transport,
+        }),
+      );
+      throw new ServiceUnavailableException({
+        message:
+          'Doğrulama kodu gönderilemedi. Lütfen birkaç dakika içinde tekrar deneyin.',
+        code: 'otp_delivery_not_acknowledged',
+      });
+    }
+
+    this.logger.log(
+      JSON.stringify({
+        event: 'phone_verification_code_dispatched',
+        applicationId: application.id,
+        isResend,
+        delivered: deliveryResult.delivered,
+        transport: deliveryResult.transport,
+        stub: deliveryResult.stub,
+      }),
+    );
 
     const workspace = await this.getWorkspace(application.tenantAccountId);
     return {
       maskedPhoneNumber: this.maskPhoneNumber(normalizedPhoneNumber),
       expiresAt: expiresAt.toISOString(),
-      delivery: 'email_fallback',
+      delivery: deliveryResult.stub ? 'email_fallback' : deliveryResult.transport,
       nextStep: 'otp',
       session: await this.resolveSessionByStateToken(workspace.stateToken, 'otp'),
-      debugCode: this.shouldExposeDebugVerificationCode() ? code : undefined,
+      debugCode: allowsStubDelivery ? code : undefined,
     };
   }
 
@@ -1116,7 +1199,10 @@ export class TenantOnboardingService {
     };
   }
 
-  private async resolveApplicationFromStateToken(stateToken: string) {
+  private async resolveApplicationFromStateToken(
+    stateToken: string,
+    options?: { allowTerminal?: boolean },
+  ) {
     let payload: ReturnType<typeof validateStateTokenPayload>;
 
     try {
@@ -1130,7 +1216,18 @@ export class TenantOnboardingService {
       throw new ForbiddenException('Invalid state token.');
     }
 
-    if (!application.tokenSalt || application.tokenSalt !== payload.tokenSalt) {
+    // Closed-status applications intentionally wipe `tokenSalt` so further
+    // writes are rejected. Reads (workspace/session GETs) still need to
+    // succeed so the tenant sees an "approved/closed" screen instead of a
+    // raw 403 after admin approval/activation.
+    if (!application.tokenSalt) {
+      if (options?.allowTerminal && TERMINAL_CLOSED_STATUSES.has(application.status)) {
+        return application;
+      }
+      throw new ForbiddenException('Invalid state token.');
+    }
+
+    if (application.tokenSalt !== payload.tokenSalt) {
       throw new ForbiddenException('Invalid state token.');
     }
 
@@ -1148,8 +1245,34 @@ export class TenantOnboardingService {
   private getCurrentSessionStep(
     workspace: Awaited<ReturnType<TenantOnboardingService['getWorkspace']>>,
   ): OnboardingSessionStepKey {
-    if (TERMINAL_WAITING_STATUSES.has(workspace.application.status)) {
+    if (
+      TERMINAL_WAITING_STATUSES.has(workspace.application.status) ||
+      TERMINAL_CLOSED_STATUSES.has(workspace.application.status)
+    ) {
       return 'submitted';
+    }
+
+    // When admin requests revision, drop the tenant onto the verification
+    // step if documents are flagged, otherwise back to the final review.
+    if (workspace.application.status === 'revision_required') {
+      const documentsNeedRevision = workspace.steps.some(
+        (step) => step.stepKey === 'documents' && step.status === 'needs_revision',
+      );
+      if (documentsNeedRevision) {
+        return 'verification';
+      }
+      const otherRevisionStep = workspace.steps.find(
+        (step) => step.stepKey !== 'final_review' && step.status === 'needs_revision',
+      );
+      if (otherRevisionStep) {
+        const slug = ONBOARDING_SESSION_STEP_ALIASES[
+          workflowSlugFromBackendStep(otherRevisionStep.stepKey)
+        ];
+        if (slug) {
+          return slug;
+        }
+      }
+      return 'review';
     }
 
     if (!workspace.phoneVerification?.verified) {
@@ -1194,7 +1317,10 @@ export class TenantOnboardingService {
   private getAllowedSessionSteps(
     workspace: Awaited<ReturnType<TenantOnboardingService['getWorkspace']>>,
   ): OnboardingSessionStepKey[] {
-    if (TERMINAL_WAITING_STATUSES.has(workspace.application.status)) {
+    if (
+      TERMINAL_WAITING_STATUSES.has(workspace.application.status) ||
+      TERMINAL_CLOSED_STATUSES.has(workspace.application.status)
+    ) {
       return ['submitted'];
     }
 
@@ -1578,7 +1704,10 @@ export class TenantOnboardingService {
   }
 
   private shouldExposeDebugVerificationCode() {
-    return process.env.NODE_ENV !== 'production' || process.env.EMAIL_TRANSPORT === 'log';
+    // Strictly non-production. Stub email transport is the default, so the
+    // previous OR-clause meant production silently surfaced OTPs in the
+    // response body whenever EMAIL_TRANSPORT was unset.
+    return process.env.NODE_ENV !== 'production';
   }
 
   async getSummary(tenantAccountId: string) {
