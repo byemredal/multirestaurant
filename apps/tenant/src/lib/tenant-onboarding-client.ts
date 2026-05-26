@@ -1,12 +1,23 @@
 import type { StoredTenantSession } from '@/lib/storage/tenant-session';
 import { apiBaseUrl, tenantRequest as request } from '@/lib/http/tenant-http';
 
+
+/*
+  * Onboarding sürecinde tenant ile ilgili bilgileri taşıyan bir yapıdır.
+  * Bu payload, onboarding işlemleri sırasında tenant'ın kimlik doğrulaması ve yetkilendirmesi için kullanılır.
+  * Ayrıca, onboarding sürecinin farklı adımlarında tenant'a özel bilgilerin taşınmasını sağlar.
+  * Örneğin, onboarding sürecinin belirli bir adımında tenant'ın iletişim bilgileri veya işletme detayları gibi bilgilerin bu payload üzerinden iletilmesi mümkün olabilir.
+*/
 type TenantPayload = {
   accessToken: string;
   csrfToken: string;
   tenant: StoredTenantSession['tenant'];
 };
 
+/*
+  * TenantOnboardingClient, tenant onboarding sürecinde kullanılan API çağrılarını içeren bir modüldür.
+  * Bu modül, tenant onboarding sürecinin farklı adımlarında gerekli olan API çağrılarını yaparak, tenant'ın onboarding sürecini yönetir.
+*/
 type StartOnboardingInput = {
   firstName: string;
   lastName: string;
@@ -18,10 +29,16 @@ type StartOnboardingInput = {
   deliveryModel: 'own_fleet' | 'platform_fleet' | 'hybrid';
 };
 
+// Onboarding sürecinin farklı adımlarında tenant'ın durumunu ve gerekli bilgileri içeren tipler tanımlanır.
 type OnboardingPayload = TenantPayload & { continuationToken: string };
 
+/**
+ * OnboardingSession tipi, tenant'ın onboarding sürecinde geçici olarak saklanan bilgileri içerir.
+ * Bu bilgiler, tenant'ın onboarding sürecinde ilerlemesini sağlamak için kullanılır.
+ */
 export type OnboardingSession = StoredTenantSession & { continuationToken: string };
 
+// StartTenantOnboardingResult tipi, onboarding sürecinin başlangıcında dönen sonucu temsil eder.
 export type StartTenantOnboardingResult = {
   stateToken: string;
   status: TenantOnboardingApplicationStatus;
@@ -29,6 +46,11 @@ export type StartTenantOnboardingResult = {
   nextStepKey: TenantOnboardingStepKey | null;
 };
 
+/**
+ * startTenantOnboarding, tenant onboarding sürecinin başlangıcında kullanılan bir fonksiyondur.
+ * Bu fonksiyon, tenant'ın onboarding sürecini başlatmak için gerekli olan API çağrısını yapar.
+ * Fonksiyon, onboarding sürecinin başlangıcında tenant'ın sağladığı bilgileri alır ve API'ye gönderir.
+ */
 export async function startTenantOnboarding(
   input: StartOnboardingInput,
 ): Promise<StartTenantOnboardingResult> {
@@ -57,7 +79,10 @@ export async function startTenantOnboarding(
   return (await response.json()) as StartTenantOnboardingResult;
 }
 
-/** Exchanges an onboarding continuation token for an active session. */
+/**
+ * resumeTenantOnboarding, tenant onboarding sürecini devam ettirmek için kullanılan bir fonksiyondur.
+ * Bu fonksiyon, tenant'ın onboarding sürecini devam ettirmek için gerekli olan API çağrısını yapar.
+ */
 export async function resumeTenantOnboarding(
   token: string,
 ): Promise<OnboardingSession> {
@@ -81,39 +106,43 @@ export async function resumeTenantOnboarding(
   };
 }
 
+// TenantOnboardingStepKey, tenant onboarding sürecindeki adımları temsil eden bir türdür.
 export type TenantOnboardingStepKey =
-  | 'business_info'
-  | 'legal_tax_info'
-  | 'owner_contact_info'
-  | 'bank_details'
-  | 'billing_address'
-  | 'membership_plan'
-  | 'operations_info'
-  | 'documents'
-  | 'final_review';
+  | 'business_info' // işletme bilgileri
+  | 'legal_tax_info' // yasal ve vergi bilgileri
+  | 'owner_contact_info' // sahibi iletişim bilgileri
+  | 'bank_details' // banka bilgileri
+  | 'billing_address' // fatura adresi
+  | 'membership_plan' // üyelik planı
+  | 'operations_info' // operasyon bilgileri
+  | 'documents' // belgeler
+  | 'final_review'; // son inceleme
 
+// TenantOnboardingStepStatus, tenant onboarding sürecindeki adımların durumunu temsil eden bir türdür.
 export type TenantOnboardingStepStatus =
-  | 'not_started'
-  | 'in_progress'
-  | 'completed'
-  | 'needs_revision';
+  | 'not_started' // başlatılmadı
+  | 'in_progress' // devam ediyor
+  | 'completed' // tamamlandı
+  | 'needs_revision'; // düzeltme gerekiyor
 
+// TenantOnboardingApplicationStatus, tenant onboarding başvurusunun durumunu temsil eden bir türdür.
 export type TenantOnboardingApplicationStatus =
-  | 'draft'
-  | 'submitted'
-  | 'under_review'
-  | 'revision_required'
-  | 'approved'
-  | 'rejected'
-  | 'active'
-  | 'suspended';
+  | 'draft' // taslak
+  | 'submitted' // gönderildi
+  | 'under_review' // inceleme altında
+  | 'revision_required' // düzeltme gerekli
+  | 'approved' // onaylandı
+  | 'rejected' // reddedildi
+  | 'active' // etkin
+  | 'suspended'; // askıya alındı
 
+// TenantOnboardingDocumentStatus, tenant onboarding sürecindeki belgelerin durumunu temsil eden bir türdür.
 export type TenantOnboardingDocument = {
   id: string;
   applicationId: string;
   fileAssetId: string;
   type: string;
-  status: 'pending' | 'approved' | 'rejected' | 'revision_requested' | 'expired';
+  status: 'pending' | 'approved' | 'rejected' | 'revision_requested' | 'expired'; // bekliyor, onaylandı, reddedildi, düzeltme istendi, süresi dolmuş
   isRequired: boolean;
   version: number;
   isCurrent: boolean;
@@ -126,6 +155,7 @@ export type TenantOnboardingDocument = {
   updatedAt: string;
 };
 
+// TenantOnboardingWorkspace, tenant onboarding sürecinde tenant'a özel bilgilerin taşınmasını sağlayan bir yapıdır.
 export type TenantOnboardingWorkspace = {
   application: {
     id: string;
@@ -173,6 +203,7 @@ export type TenantOnboardingWorkspace = {
   }>;
 };
 
+// TenantLocationSelection, tenant onboarding sürecinde tenant'ın konum seçimini temsil eden bir yapıdır.
 export type TenantLocationSelection = {
   locationLabel: string;
   rawInput: string;
@@ -184,6 +215,7 @@ export type TenantLocationSelection = {
   updatedAt?: string;
 };
 
+// TenantOnboardingSessionStepKey, tenant onboarding sürecindeki adımları temsil eden bir türdür.
 export type TenantOnboardingSessionStepKey =
   | 'phone-verification'
   | 'otp'
@@ -200,12 +232,14 @@ export type TenantOnboardingSessionStepKey =
   | 'review'
   | 'submitted';
 
+// TenantOnboardingCountryPack, tenant onboarding sürecinde tenant'ın ülke, dil ve para birimi bilgilerini temsil eden bir yapıdır.
 export type TenantOnboardingCountryPack = {
   country: string;
   language: string;
   currency: string;
 };
 
+// TenantOnboardingDocumentRequirement, tenant onboarding sürecinde tenant'ın sağlaması gereken belge gereksinimlerini temsil eden bir yapıdır.
 export type TenantOnboardingDocumentRequirement = {
   type: string;
   label: string;
@@ -215,21 +249,28 @@ export type TenantOnboardingDocumentRequirement = {
   guidanceOnly: boolean;
 };
 
+// TenantOnboardingConsentDefinition, tenant onboarding sürecinde tenant'ın kabul etmesi gereken onay tanımlarını temsil eden bir yapıdır.
 export type TenantOnboardingConsentDefinition = {
   consentKey: string;
   label: string;
   description: string;
   documentCode: string;
   documentVersion: string;
+  documentUrl: string | null;
   required: boolean;
   language: string;
 };
 
+// TenantOnboardingConsentStatus, tenant onboarding sürecinde tenant'ın onay durumunu temsil eden bir yapıdır.
 export type TenantOnboardingConsentStatus = TenantOnboardingConsentDefinition & {
   accepted: boolean;
   acceptedAt: string | null;
+  reacceptanceRequired: boolean;
+  previouslyAcceptedVersion: string | null;
 };
 
+// TenantOnboardingComplianceResult, tenant onboarding sürecinde tenant'ın uyumluluk durumunu temsil eden bir yapıdır.
+// Bu yapı, tenant'ın onboarding sürecindeki mevcut durumunu, eksik belgeleri, gerekli onayları ve diğer uyumluluk gereksinimlerini içerir.
 export type TenantOnboardingComplianceResult = {
   stateToken: string;
   status: TenantOnboardingApplicationStatus;
@@ -248,6 +289,7 @@ export type TenantOnboardingComplianceResult = {
   missingRequiredConsentKeys: string[];
 };
 
+// TenantOnboardingResolvedSession, tenant onboarding sürecinde tenant'ın mevcut durumunu ve izin verilen adımları temsil eden bir yapıdır.
 export type TenantOnboardingResolvedSession = {
   stateToken: string;
   applicationId: string;
@@ -262,6 +304,7 @@ export type TenantOnboardingResolvedSession = {
   workspace: TenantOnboardingWorkspace;
 };
 
+// TenantBusinessInfoInput, tenant onboarding sürecinde tenant'ın işletme bilgilerini temsil eden bir yapıdır.
 export type TenantBusinessInfoInput = {
   businessName?: string;
   businessType?: string;
@@ -274,6 +317,7 @@ export type TenantBusinessInfoInput = {
   country?: string;
 };
 
+// TenantLegalTaxInfoInput, tenant onboarding sürecinde tenant'ın yasal ve vergi bilgilerini temsil eden bir yapıdır.
 export type TenantLegalTaxInfoInput = {
   legalEntityName?: string;
   taxId?: string | null;
@@ -282,6 +326,7 @@ export type TenantLegalTaxInfoInput = {
   registeredAddress?: string;
 };
 
+// TenantOwnerContactInfoInput, tenant onboarding sürecinde tenant'ın sahibi iletişim bilgilerini temsil eden bir yapıdır.
 export type TenantOwnerContactInfoInput = {
   fullName?: string;
   email?: string;
@@ -290,6 +335,7 @@ export type TenantOwnerContactInfoInput = {
   ownershipPercentage?: number | null;
 };
 
+// TenantOperationsInfoInput, tenant onboarding sürecinde tenant'ın operasyon bilgilerini temsil eden bir yapıdır.
 export type TenantOperationsInfoInput = {
   primaryCity?: string;
   primaryPostalCode?: string;
@@ -299,12 +345,14 @@ export type TenantOperationsInfoInput = {
   estimatedGoLiveDate?: string | null;
 };
 
+// UploadTenantOnboardingDocumentInput, tenant onboarding sürecinde tenant'ın belge yükleme işlemi için kullanılan bir yapıdır.
 export type UploadTenantOnboardingDocumentInput = {
   type: string;
   isRequired?: boolean;
   expiresAt?: string;
 };
 
+// TenantLocationSelectionInput, tenant onboarding sürecinde tenant'ın konum seçimi için kullanılan bir yapıdır.
 export type TenantLocationSelectionInput = {
   locationLabel: string;
   rawInput: string;
@@ -315,6 +363,7 @@ export type TenantLocationSelectionInput = {
   longitude?: number | null;
 };
 
+// TenantAddressInput, tenant onboarding sürecinde tenant'ın adres bilgileri için kullanılan bir yapıdır.
 export type TenantAddressInput = {
   country: string;
   city: string;
@@ -328,11 +377,13 @@ export type TenantAddressInput = {
   addressNote?: string | null;
 };
 
+// TenantBusinessDetailsRegistrationInput, tenant onboarding sürecinde tenant'ın işletme detaylarının doğrulanması için kullanılan bir yapıdır.
 export type TenantBusinessDetailsRegistrationInput = {
   registrationNumber: string;
   country?: string;
 };
 
+// TenantBusinessDetailsInput, tenant onboarding sürecinde tenant'ın işletme detayları için kullanılan bir yapıdır.
 export type TenantBusinessDetailsInput = {
   registrationNumber: string;
   registeredBusinessName: string;
@@ -345,6 +396,7 @@ export type TenantBusinessDetailsInput = {
   authorityName?: string | null;
 };
 
+// TenantAuthorizedPersonInput, tenant onboarding sürecinde tenant'ın yetkili kişisi için kullanılan bir yapıdır.
 export type TenantAuthorizedPersonInput = {
   fullName: string;
   email: string;
@@ -353,6 +405,7 @@ export type TenantAuthorizedPersonInput = {
   ownershipPercentage?: number | null;
 };
 
+// TenantBankDetailsInput, tenant onboarding sürecinde tenant'ın banka detayları için kullanılan bir yapıdır.
 export type TenantBankDetailsInput = {
   bankName: string;
   accountHolderName: string;
@@ -360,6 +413,7 @@ export type TenantBankDetailsInput = {
   currency?: string | null;
 };
 
+// TenantBillingAddressInput, tenant onboarding sürecinde tenant'ın fatura adresi için kullanılan bir yapıdır.
 export type TenantBillingAddressInput = {
   useBusinessAddress?: boolean;
   billingName: string;
@@ -370,6 +424,7 @@ export type TenantBillingAddressInput = {
   addressLine2?: string | null;
 };
 
+// TenantOnboardingPlanCatalogEntry, tenant onboarding sürecinde tenant'ın seçebileceği üyelik planlarını temsil eden bir yapıdır.
 export type TenantOnboardingPlanCatalogEntry = {
   planKey: string;
   title: string;
@@ -386,10 +441,12 @@ export type TenantOnboardingPlanCatalogEntry = {
   sortOrder: number;
 };
 
+// TenantPlanSelectionInput, tenant onboarding sürecinde tenant'ın üyelik planı seçimi için kullanılan bir yapıdır.
 export type TenantPlanSelectionInput = {
   planKey: string;
 };
 
+// TenantOnboardingReviewBlockKey, tenant onboarding sürecinde tenant'ın incelemesi gereken blokları temsil eden bir türdür.
 export type TenantOnboardingReviewBlockKey =
   | 'phone-verification'
   | 'location'
@@ -403,6 +460,7 @@ export type TenantOnboardingReviewBlockKey =
   | 'documents'
   | 'consents';
 
+// TenantOnboardingReviewSummary, tenant onboarding sürecinde tenant'ın incelemesi gereken bilgilerin özetini temsil eden bir yapıdır.
 export type TenantOnboardingReviewSummary = {
   phoneVerification: {
     verified: boolean;

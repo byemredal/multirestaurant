@@ -13,6 +13,7 @@ export type TenantOnboardingConsentDefinition = {
   description: string;
   documentCode: string;
   documentVersion: string;
+  documentUrl: string | null;
   required: boolean;
   language: string;
 };
@@ -76,6 +77,7 @@ export function getTenantOnboardingComplianceCatalog(
         description: placeholderNote,
         documentCode: 'partner_privacy_placeholder',
         documentVersion: 'placeholder-v1',
+        documentUrl: null,
         required: true,
         language,
       },
@@ -85,6 +87,7 @@ export function getTenantOnboardingComplianceCatalog(
         description: placeholderNote,
         documentCode: 'partner_terms_placeholder',
         documentVersion: 'placeholder-v1',
+        documentUrl: null,
         required: true,
         language,
       },

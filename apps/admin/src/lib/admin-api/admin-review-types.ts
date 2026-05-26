@@ -107,6 +107,33 @@ export type TenantDocumentQueueEntry = {
   fileUrl?: string | null;
 };
 
+export type TenantOnboardingConsentSnapshotRecord = {
+  id: string;
+  applicationId: string;
+  consentKey: string;
+  consentLabelSnapshot: string;
+  documentCode: string;
+  documentVersion: string;
+  language: string;
+  accepted: boolean;
+  acceptedAt: string;
+};
+
+export type TenantActiveConsentStatus = {
+  consentKey: string;
+  label: string;
+  description: string;
+  documentCode: string;
+  documentVersion: string;
+  documentUrl: string | null;
+  required: boolean;
+  language: string;
+  accepted: boolean;
+  acceptedAt: string | null;
+  reacceptanceRequired: boolean;
+  previouslyAcceptedVersion: string | null;
+};
+
 export type TenantApplicationDetail = {
   application: ApplicationListEntry['application'];
   tenantAccount: TenantDocumentQueueEntry['tenantAccount'];
@@ -162,6 +189,11 @@ export type TenantApplicationDetail = {
     updatedAt: string;
   } | null;
   documents: TenantDocumentRecord[];
+  consentSnapshots: TenantOnboardingConsentSnapshotRecord[];
+  onboardingCompliance: {
+    acceptedConsents: TenantActiveConsentStatus[];
+    missingRequiredConsentKeys: string[];
+  };
   applicationReviews: Array<{
     id: string;
     applicationId: string;

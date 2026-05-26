@@ -14,7 +14,7 @@ export async function tenantRequest<T>(
     headers: {
       Authorization: `Bearer ${session.accessToken}`,
       ...(
-        init?.body && !(init.body instanceof FormData)
+        init?.body && !(init.body instanceof FormData) // init.body FormData sınıfından değilse, Content-Type başlığını application/json olarak ayarla
           ? { 'Content-Type': 'application/json' }
           : {}
       ),

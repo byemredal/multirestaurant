@@ -13,6 +13,8 @@ import { DatabaseService } from '../../database/database.service';
 import { CryptoUtil } from '../../common/utility/crypto-util';
 import {
   AdminNote,
+  ComplianceConsentDefinition,
+  ComplianceDocumentRequirement,
   TenantApplicationReview,
   TenantBusinessDetail,
   TenantDocument,
@@ -662,6 +664,159 @@ export class TenantOnboardingStore {
     return rows.map((row) => this.mapConsentSnapshot(row));
   }
 
+  async listActiveComplianceDocumentRequirements(country: string, language: string) {
+    const rows = await this.databaseService.prepare(
+      `SELECT * FROM "ComplianceDocumentRequirement"
+       WHERE "country" = $country AND "language" = $language AND "active" = TRUE
+       ORDER BY "sortOrder" ASC, "documentType" ASC`,
+    ).all({ $country: country, $language: language }) as ComplianceDocumentRequirementRow[];
+    return rows.map((row) => this.mapComplianceDocumentRequirement(row));
+  }
+
+  async listActiveComplianceConsentDefinitions(country: string, language: string) {
+    const rows = await this.databaseService.prepare(
+      `SELECT * FROM "ComplianceConsentDefinition"
+       WHERE "country" = $country AND "language" = $language AND "active" = TRUE
+       ORDER BY "sortOrder" ASC, "consentKey" ASC`,
+    ).all({ $country: country, $language: language }) as ComplianceConsentDefinitionRow[];
+    return rows.map((row) => this.mapComplianceConsentDefinition(row));
+  }
+
+  async listComplianceDocumentRequirements() {
+    const rows = await this.databaseService.prepare(
+      `SELECT * FROM "ComplianceDocumentRequirement"
+       ORDER BY "country" ASC, "language" ASC, "sortOrder" ASC, "documentType" ASC`,
+    ).all() as ComplianceDocumentRequirementRow[];
+    return rows.map((row) => this.mapComplianceDocumentRequirement(row));
+  }
+
+  async findComplianceDocumentRequirementById(id: string) {
+    const row = await this.databaseService.prepare(
+      `SELECT * FROM "ComplianceDocumentRequirement" WHERE "id" = $id`,
+    ).get({ $id: id }) as ComplianceDocumentRequirementRow | undefined;
+    return row ? this.mapComplianceDocumentRequirement(row) : null;
+  }
+
+  async createComplianceDocumentRequirement(
+    input: Omit<ComplianceDocumentRequirement, 'id' | 'createdAt' | 'updatedAt'>,
+  ) {
+    const requirement: ComplianceDocumentRequirement = {
+      ...input,
+      id: randomUUID(),
+      createdAt: new Date(),
+      updatedAt: new Date(),
+    };
+    await this.databaseService.prepare(
+      `INSERT INTO "ComplianceDocumentRequirement" (
+        "id","country","language","documentType","label","description","required",
+        "acceptedFormatsJson","guidanceOnly","active","sortOrder","createdAt","updatedAt"
+      ) VALUES (
+        $id,$country,$language,$documentType,$label,$description,$required,
+        $acceptedFormatsJson,$guidanceOnly,$active,$sortOrder,$createdAt,$updatedAt
+      )`,
+    ).run(this.complianceDocumentRequirementParams(requirement));
+    return requirement;
+  }
+
+  async updateComplianceDocumentRequirement(
+    id: string,
+    input: Omit<ComplianceDocumentRequirement, 'id' | 'createdAt' | 'updatedAt'>,
+  ) {
+    const updatedAt = new Date();
+    await this.databaseService.prepare(
+      `UPDATE "ComplianceDocumentRequirement" SET
+        "country" = $country, "language" = $language, "documentType" = $documentType,
+        "label" = $label, "description" = $description, "required" = $required,
+        "acceptedFormatsJson" = $acceptedFormatsJson, "guidanceOnly" = $guidanceOnly,
+        "active" = $active, "sortOrder" = $sortOrder, "updatedAt" = $updatedAt
+       WHERE "id" = $id`,
+    ).run(this.complianceDocumentRequirementParams({
+      ...input,
+      id,
+      createdAt: updatedAt,
+      updatedAt,
+    }));
+    return this.findComplianceDocumentRequirementById(id);
+  }
+
+  async listComplianceConsentDefinitions() {
+    const rows = await this.databaseService.prepare(
+      `SELECT * FROM "ComplianceConsentDefinition"
+       ORDER BY "country" ASC, "language" ASC, "sortOrder" ASC, "consentKey" ASC, "documentVersion" DESC`,
+    ).all() as ComplianceConsentDefinitionRow[];
+    return rows.map((row) => this.mapComplianceConsentDefinition(row));
+  }
+
+  async findComplianceConsentDefinitionById(id: string) {
+    const row = await this.databaseService.prepare(
+      `SELECT * FROM "ComplianceConsentDefinition" WHERE "id" = $id`,
+    ).get({ $id: id }) as ComplianceConsentDefinitionRow | undefined;
+    return row ? this.mapComplianceConsentDefinition(row) : null;
+  }
+
+  async createComplianceConsentDefinition(
+    input: Omit<ComplianceConsentDefinition, 'id' | 'createdAt' | 'updatedAt'>,
+  ) {
+    const definition: ComplianceConsentDefinition = {
+      ...input,
+      id: randomUUID(),
+      createdAt: new Date(),
+      updatedAt: new Date(),
+    };
+    await this.databaseService.prepare(
+      `INSERT INTO "ComplianceConsentDefinition" (
+        "id","country","language","consentKey","label","description","documentCode",
+        "documentVersion","documentUrl","required","active","sortOrder","createdAt","updatedAt"
+      ) VALUES (
+        $id,$country,$language,$consentKey,$label,$description,$documentCode,
+        $documentVersion,$documentUrl,$required,$active,$sortOrder,$createdAt,$updatedAt
+      )`,
+    ).run(this.complianceConsentDefinitionParams(definition));
+    return definition;
+  }
+
+  async updateComplianceConsentDefinition(
+    id: string,
+    input: Omit<ComplianceConsentDefinition, 'id' | 'createdAt' | 'updatedAt'>,
+  ) {
+    const updatedAt = new Date();
+    await this.databaseService.prepare(
+      `UPDATE "ComplianceConsentDefinition" SET
+        "country" = $country, "language" = $language, "consentKey" = $consentKey,
+        "label" = $label, "description" = $description, "documentCode" = $documentCode,
+        "documentVersion" = $documentVersion, "documentUrl" = $documentUrl,
+        "required" = $required, "active" = $active, "sortOrder" = $sortOrder,
+        "updatedAt" = $updatedAt
+       WHERE "id" = $id`,
+    ).run(this.complianceConsentDefinitionParams({
+      ...input,
+      id,
+      createdAt: updatedAt,
+      updatedAt,
+    }));
+    return this.findComplianceConsentDefinitionById(id);
+  }
+
+  async deactivateComplianceConsentDefinitions(
+    country: string,
+    language: string,
+    consentKey: string,
+    exceptId: string,
+  ) {
+    await this.databaseService.prepare(
+      `UPDATE "ComplianceConsentDefinition"
+       SET "active" = FALSE, "updatedAt" = $updatedAt
+       WHERE "country" = $country AND "language" = $language
+         AND "consentKey" = $consentKey AND "active" = TRUE AND "id" <> $exceptId`,
+    ).run({
+      $country: country,
+      $language: language,
+      $consentKey: consentKey,
+      $exceptId: exceptId,
+      $updatedAt: new Date().toISOString(),
+    });
+  }
+
   async upsertConsentSnapshot(
     applicationId: string,
     input: Omit<TenantOnboardingConsentSnapshot, 'id' | 'applicationId' | 'createdAt' | 'updatedAt'>,
@@ -1186,6 +1341,30 @@ export class TenantOnboardingStore {
     };
   }
 
+  private mapComplianceDocumentRequirement(row: ComplianceDocumentRequirementRow): ComplianceDocumentRequirement {
+    return {
+      ...row,
+      required: Boolean(row.required),
+      guidanceOnly: Boolean(row.guidanceOnly),
+      active: Boolean(row.active),
+      acceptedFormats: JSON.parse(row.acceptedFormatsJson) as string[],
+      sortOrder: Number(row.sortOrder),
+      createdAt: new Date(row.createdAt),
+      updatedAt: new Date(row.updatedAt),
+    };
+  }
+
+  private mapComplianceConsentDefinition(row: ComplianceConsentDefinitionRow): ComplianceConsentDefinition {
+    return {
+      ...row,
+      required: Boolean(row.required),
+      active: Boolean(row.active),
+      sortOrder: Number(row.sortOrder),
+      createdAt: new Date(row.createdAt),
+      updatedAt: new Date(row.updatedAt),
+    };
+  }
+
   private consentSnapshotParams(snapshot: TenantOnboardingConsentSnapshot) {
     return {
       $id: snapshot.id,
@@ -1203,6 +1382,43 @@ export class TenantOnboardingStore {
       $updatedAt: snapshot.updatedAt.toISOString(),
     };
   }
+
+  private complianceDocumentRequirementParams(requirement: ComplianceDocumentRequirement) {
+    return {
+      $id: requirement.id,
+      $country: requirement.country,
+      $language: requirement.language,
+      $documentType: requirement.documentType,
+      $label: requirement.label,
+      $description: requirement.description,
+      $required: requirement.required,
+      $acceptedFormatsJson: JSON.stringify(requirement.acceptedFormats),
+      $guidanceOnly: requirement.guidanceOnly,
+      $active: requirement.active,
+      $sortOrder: requirement.sortOrder,
+      $createdAt: requirement.createdAt.toISOString(),
+      $updatedAt: requirement.updatedAt.toISOString(),
+    };
+  }
+
+  private complianceConsentDefinitionParams(definition: ComplianceConsentDefinition) {
+    return {
+      $id: definition.id,
+      $country: definition.country,
+      $language: definition.language,
+      $consentKey: definition.consentKey,
+      $label: definition.label,
+      $description: definition.description,
+      $documentCode: definition.documentCode,
+      $documentVersion: definition.documentVersion,
+      $documentUrl: definition.documentUrl,
+      $required: definition.required,
+      $active: definition.active,
+      $sortOrder: definition.sortOrder,
+      $createdAt: definition.createdAt.toISOString(),
+      $updatedAt: definition.updatedAt.toISOString(),
+    };
+  }
 }
 
 interface ApplicationRow { id: string; tenantAccountId: string; status: string; submittedAt: string | null; reviewStartedAt: string | null; approvedAt: string | null; rejectedAt: string | null; revisionRequestedAt: string | null; activatedAt: string | null; suspendedAt: string | null; lastSubmittedAt: string | null; currentRevisionNumber: number; createdAt: string; updatedAt: string; tokenSalt: string | null; }
@@ -1218,6 +1434,8 @@ interface LocationSelectionRow { id: string; applicationId: string; locationLabe
 interface OperationsRow { id: string; applicationId: string; primaryCity: string; primaryPostalCode: string; deliveryModel: string; supportsPickup: boolean; openingHoursSummary: string | null; estimatedGoLiveDate: string | null; createdAt: string; updatedAt: string; }
 interface DocumentRow { id: string; applicationId: string; fileAssetId: string; type: string; status: string; isRequired: boolean; version: number; isCurrent: boolean; uploadedAt: string; reviewedAt: string | null; reviewedByAdminId: string | null; rejectionReason: string | null; expiresAt: string | null; createdAt: string; updatedAt: string; }
 interface ConsentSnapshotRow { id: string; applicationId: string; consentKey: string; consentLabelSnapshot: string; documentCode: string; documentVersion: string; language: string; accepted: boolean; acceptedAt: string; ipAddress: string | null; userAgent: string | null; createdAt: string; updatedAt: string; }
+interface ComplianceDocumentRequirementRow { id: string; country: string; language: string; documentType: string; label: string; description: string; required: boolean; acceptedFormatsJson: string; guidanceOnly: boolean; active: boolean; sortOrder: number; createdAt: string; updatedAt: string; }
+interface ComplianceConsentDefinitionRow { id: string; country: string; language: string; consentKey: string; label: string; description: string; documentCode: string; documentVersion: string; documentUrl: string | null; required: boolean; active: boolean; sortOrder: number; createdAt: string; updatedAt: string; }
 interface ApplicationReviewRow { id: string; applicationId: string; adminId: string; decision: string; internalNote: string | null; tenantVisibleNote: string | null; createdAt: string; }
 interface DocumentReviewRow { id: string; documentId: string; adminId: string; decision: string; note: string | null; createdAt: string; }
 interface AdminNoteRow { id: string; applicationId: string; adminId: string; scope: string; body: string; createdAt: string; }

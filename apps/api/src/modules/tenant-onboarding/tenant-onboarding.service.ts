@@ -328,7 +328,7 @@ export class TenantOnboardingService {
       phoneNumber ?? existingVerification?.phoneNumber ?? ownerContact?.phoneNumber ?? tenant.account.phoneNumber,
     );
     if (normalizedPhoneNumber.length < 7) {
-      throw new BadRequestException('Phone number is required before sending a verification code.');
+      throw new BadRequestException('Doğrulama kodu gönderilmeden önce telefon numarası gereklidir.');
     }
 
     const code = String(Math.floor(100000 + Math.random() * 900000));
@@ -362,16 +362,16 @@ export class TenantOnboardingService {
     this.assertPhoneVerificationEditable(application.status);
     const challenge = await this.store.getPhoneVerification(application.id);
     if (!challenge || !challenge.otpCodeHash || !challenge.expiresAt || challenge.expiresAt < new Date()) {
-      throw new BadRequestException('Phone verification code expired.');
+      throw new BadRequestException('Telefon doğrulama kodunun süresi doldu.');
     }
 
     if (challenge.attemptCount >= 5) {
-      throw new BadRequestException('Phone verification attempts exceeded.');
+      throw new BadRequestException('Telefon doğrulaması için deneme sınırı aşıldı.');
     }
 
     if (challenge.otpCodeHash !== this.hashPhoneVerificationCode(application.id, code)) {
       await this.store.incrementPhoneVerificationAttempt(application.id);
-      throw new BadRequestException('Invalid phone verification code.');
+      throw new BadRequestException('Telefon doğrulama kodu geçersiz.');
     }
 
     await this.store.markPhoneVerificationVerified(application.id);
@@ -416,7 +416,7 @@ export class TenantOnboardingService {
     this.assertPhoneVerificationEditable(application.status);
     const workspaceBefore = await this.getWorkspace(application.tenantAccountId);
     if (!workspaceBefore.phoneVerification?.verified) {
-      throw new ForbiddenException('Phone verification must be completed before saving location.');
+      throw new ForbiddenException('Konum kaydedilmeden önce telefon doğrulaması tamamlanmalıdır.');
     }
 
     const dto = this.validateDto(Dto.SaveTenantOnboardingLocationSelectionDto, input);
@@ -465,7 +465,7 @@ export class TenantOnboardingService {
     this.assertPhoneVerificationEditable(application.status);
     const workspaceBefore = await this.getWorkspace(application.tenantAccountId);
     if (!workspaceBefore.phoneVerification?.verified) {
-      throw new ForbiddenException('Phone verification must be completed before saving address.');
+      throw new ForbiddenException('Adres kaydedilmeden önce telefon doğrulaması tamamlanmalıdır.');
     }
     if (!this.hasLocationSelection(workspaceBefore)) {
       return {
@@ -519,7 +519,7 @@ export class TenantOnboardingService {
     const application = await this.resolveApplicationFromStateToken(stateToken);
     const workspace = await this.getWorkspace(application.tenantAccountId);
     if (!workspace.phoneVerification?.verified) {
-      throw new ForbiddenException('Phone verification must be completed before business details.');
+      throw new ForbiddenException('İşletme bilgilerine geçmeden önce telefon doğrulaması tamamlanmalıdır.');
     }
     if (!this.isWorkspaceStepCompleted(workspace, 'business_info')) {
       return {
@@ -533,7 +533,7 @@ export class TenantOnboardingService {
     const dto = this.validateDto(Dto.VerifyTenantOnboardingBusinessRegistrationDto, input);
     const registrationNumber = dto.registrationNumber.trim();
     if (!/[A-Za-z0-9]/.test(registrationNumber)) {
-      throw new BadRequestException('Registration number must include letters or numbers.');
+      throw new BadRequestException('Kayıt numarası harf veya sayı içermelidir.');
     }
 
     return {
@@ -541,7 +541,7 @@ export class TenantOnboardingService {
       registrationNumber,
       country: dto.country?.trim().toUpperCase() || this.getCountryPackSnapshot(workspace).country,
       verificationMode: 'mock',
-      message: 'Registration number accepted for onboarding draft review.',
+      message: 'Kayıt numarası başvuru taslağı kontrolü için kabul edildi.',
       session: await this.resolveSessionByStateToken(workspace.stateToken, 'business-details'),
       workspace,
     };
@@ -555,7 +555,7 @@ export class TenantOnboardingService {
     this.assertPhoneVerificationEditable(application.status);
     const workspaceBefore = await this.getWorkspace(application.tenantAccountId);
     if (!workspaceBefore.phoneVerification?.verified) {
-      throw new ForbiddenException('Phone verification must be completed before saving business details.');
+      throw new ForbiddenException('İşletme bilgileri kaydedilmeden önce telefon doğrulaması tamamlanmalıdır.');
     }
     if (!this.isWorkspaceStepCompleted(workspaceBefore, 'business_info')) {
       return {
@@ -599,7 +599,7 @@ export class TenantOnboardingService {
     this.assertPhoneVerificationEditable(application.status);
     const workspaceBefore = await this.getWorkspace(application.tenantAccountId);
     if (!workspaceBefore.phoneVerification?.verified) {
-      throw new ForbiddenException('Phone verification must be completed before saving authorized person.');
+      throw new ForbiddenException('Yetkili kişi kaydedilmeden önce telefon doğrulaması tamamlanmalıdır.');
     }
     if (!this.isWorkspaceStepCompleted(workspaceBefore, 'business_info')) {
       const redirectStep = this.hasLocationSelection(workspaceBefore) ? 'address' : 'location';
@@ -881,11 +881,11 @@ export class TenantOnboardingService {
 
     const dto = this.validateDto(Dto.SaveTenantOnboardingConsentsDto, input);
     const countryPack = this.getCountryPackSnapshot(workspace);
-    const catalog = getTenantOnboardingComplianceCatalog(countryPack.country, countryPack.language);
+    const catalog = await this.resolveComplianceCatalog(countryPack.country, countryPack.language);
     const knownDefinitions = new Map(catalog.consents.map((definition) => [definition.consentKey, definition]));
     const unknownKeys = dto.acceptedConsentKeys.filter((key) => !knownDefinitions.has(key));
     if (unknownKeys.length > 0) {
-      throw new BadRequestException(`Unsupported onboarding consent: ${unknownKeys.join(', ')}.`);
+      throw new BadRequestException(`Desteklenmeyen başvuru onayı: ${unknownKeys.join(', ')}.`);
     }
 
     await Promise.all(
@@ -1296,8 +1296,50 @@ export class TenantOnboardingService {
     workspace: Awaited<ReturnType<TenantOnboardingService['getWorkspace']>>,
   ) {
     const countryPack = this.getCountryPackSnapshot(workspace);
-    const catalog = getTenantOnboardingComplianceCatalog(countryPack.country, countryPack.language);
-    const snapshots = await this.store.listConsentSnapshots(workspace.application.id);
+    return this.buildComplianceSnapshotForApplication(workspace.application.id, countryPack);
+  }
+
+  private async resolveComplianceCatalog(country: string, language: string) {
+    const fallback = getTenantOnboardingComplianceCatalog(country, language);
+    const [documentDefinitions, consentDefinitions] = await Promise.all([
+      this.store.listActiveComplianceDocumentRequirements(country, language),
+      this.store.listActiveComplianceConsentDefinitions(country, language),
+    ]);
+
+    return {
+      ...fallback,
+      documents: documentDefinitions.length > 0
+        ? documentDefinitions.map((definition) => ({
+            type: definition.documentType,
+            label: definition.label,
+            required: definition.required,
+            description: definition.description,
+            acceptedFormats: definition.acceptedFormats,
+            guidanceOnly: definition.guidanceOnly,
+          }))
+        : fallback.documents,
+      consents: consentDefinitions.length > 0
+        ? consentDefinitions.map((definition) => ({
+            consentKey: definition.consentKey,
+            label: definition.label,
+            description: definition.description,
+            documentCode: definition.documentCode,
+            documentVersion: definition.documentVersion,
+            documentUrl: definition.documentUrl,
+            required: definition.required,
+            language: definition.language,
+          }))
+        : fallback.consents,
+    };
+  }
+
+  private async buildComplianceSnapshotForApplication(
+    applicationId: string,
+    countryPack: { country: string; language: string; currency: string },
+    existingSnapshots?: Awaited<ReturnType<TenantOnboardingStore['listConsentSnapshots']>>,
+  ) {
+    const catalog = await this.resolveComplianceCatalog(countryPack.country, countryPack.language);
+    const snapshots = existingSnapshots ?? await this.store.listConsentSnapshots(applicationId);
     const acceptedConsents = catalog.consents.map((definition) => {
       const snapshot = snapshots.find(
         (entry) =>
@@ -1305,10 +1347,18 @@ export class TenantOnboardingService {
           entry.documentVersion === definition.documentVersion &&
           entry.accepted,
       );
+      const supersededSnapshot = snapshots.find(
+        (entry) =>
+          entry.consentKey === definition.consentKey &&
+          entry.documentVersion !== definition.documentVersion &&
+          entry.accepted,
+      );
       return {
         ...definition,
         accepted: Boolean(snapshot),
         acceptedAt: snapshot?.acceptedAt ?? null,
+        reacceptanceRequired: !snapshot && Boolean(supersededSnapshot),
+        previouslyAcceptedVersion: !snapshot ? supersededSnapshot?.documentVersion ?? null : null,
       };
     });
 
@@ -2013,7 +2063,7 @@ export class TenantOnboardingService {
 
     // Admin view: keep the flat shape (account + business merged in one
     // object) by reading through the dedicated lookup that joins both halves.
-    const [tenantAccount, steps, businessInfo, legalTaxInfo, ownerContactInfo, operationsInfo, documents, applicationReviews, documentReviews, notes] =
+    const [tenantAccount, steps, businessInfo, legalTaxInfo, ownerContactInfo, operationsInfo, documents, applicationReviews, documentReviews, notes, consentSnapshots] =
       await Promise.all([
         this.store.findTenantAccountByApplicationId(application.id),
         this.store.listStepProgress(application.id),
@@ -2025,6 +2075,7 @@ export class TenantOnboardingService {
         this.store.listApplicationReviews(application.id),
         this.store.listDocumentReviewsByApplication(application.id),
         this.store.listAdminNotes(application.id),
+        this.store.listConsentSnapshots(application.id),
       ]);
 
     const documentsWithAssets = await Promise.all(
@@ -2037,6 +2088,17 @@ export class TenantOnboardingService {
           fileUrl: fileAsset?.publicUrl ?? null,
         };
       }),
+    );
+    const country = businessInfo?.country?.trim().toUpperCase() || 'CH';
+    const countryPack = {
+      country,
+      language: country === 'CH' ? 'de-CH' : 'de-CH',
+      currency: country === 'CH' ? 'CHF' : 'CHF',
+    };
+    const onboardingCompliance = await this.buildComplianceSnapshotForApplication(
+      application.id,
+      countryPack,
+      consentSnapshots,
     );
 
     return {
@@ -2051,6 +2113,8 @@ export class TenantOnboardingService {
       applicationReviews,
       documentReviews,
       notes,
+      consentSnapshots,
+      onboardingCompliance,
     };
   }
 
@@ -2440,7 +2504,7 @@ export class TenantOnboardingService {
           throw new BadRequestException('Belge adımını tamamlamadan önce en az bir zorunlu belge yüklenmelidir.');
         }
         if (currentRequiredDocuments.some((document) => ['rejected', 'revision_requested', 'expired'].includes(document.status))) {
-          throw new BadRequestException('Current required documents must be re-uploaded before the documents step can be completed.');
+          throw new BadRequestException('Belge adımı tamamlanmadan önce güncel zorunlu belgeler yeniden yüklenmelidir.');
         }
         return;
       }
@@ -2453,7 +2517,7 @@ export class TenantOnboardingService {
 
   private assertRequiredFields<T extends object>(record: T | null, keys: Array<keyof T>) {
     if (!record) {
-      throw new BadRequestException('This onboarding step has not been started yet.');
+      throw new BadRequestException('Bu başvuru adımı henüz başlatılmadı.');
     }
 
     const missing = keys.filter((key) => {
@@ -2529,7 +2593,7 @@ export class TenantOnboardingService {
       .filter((key) => key !== 'final_review')
       .some((key) => steps.find((step) => step.stepKey === key)?.status !== 'completed');
     if (incomplete) {
-      throw new BadRequestException('All required onboarding steps must be completed before submission.');
+      throw new BadRequestException('Göndermeden önce tüm zorunlu başvuru adımları tamamlanmalıdır.');
     }
     const currentRequiredDocuments = documents.filter((document) => document.isCurrent && document.isRequired);
     if (currentRequiredDocuments.length === 0) {
@@ -2537,7 +2601,7 @@ export class TenantOnboardingService {
     }
     const businessInfo = await this.store.getBusinessDetail(applicationId);
     const country = businessInfo?.country?.trim().toUpperCase() || 'CH';
-    const catalog = getTenantOnboardingComplianceCatalog(country, country === 'CH' ? 'de-CH' : 'de-CH');
+    const catalog = await this.resolveComplianceCatalog(country, country === 'CH' ? 'de-CH' : 'de-CH');
     const snapshots = await this.store.listConsentSnapshots(applicationId);
     const missingRequiredConsent = catalog.consents.some(
       (definition) =>

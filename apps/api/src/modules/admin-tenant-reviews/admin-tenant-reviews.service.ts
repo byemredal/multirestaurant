@@ -1,7 +1,8 @@
-import { Injectable } from '@nestjs/common';
+import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
 import { AdminAuditLogService } from '../admin-audit-log/admin-audit-log.service';
 import { MenuService } from '../menu/menu.service';
 import { TenantOnboardingService } from '../tenant-onboarding/tenant-onboarding.service';
+import { TenantOnboardingStore } from '../tenant-onboarding/tenant-onboarding.store';
 import { TenantAccountsStore } from '../tenants/tenants.store';
 import { StoreSettingsService } from '../store-settings/store-settings.service';
 import { StoresService } from '../stores/stores.service';
@@ -19,11 +20,18 @@ import { UpdateStoreTaxSettingDto } from '../store-settings/dto/update-store-tax
 import { ListTenantApplicationsDto } from './dto/list-tenant-applications.dto';
 import { ReviewTenantApplicationDto } from './dto/review-application.dto';
 import { ReviewTenantDocumentDto } from './dto/review-document.dto';
+import {
+  CreateComplianceConsentDefinitionDto,
+  CreateComplianceDocumentRequirementDto,
+  UpdateComplianceConsentDefinitionDto,
+  UpdateComplianceDocumentRequirementDto,
+} from './dto/compliance-catalog.dto';
 
 @Injectable()
 export class AdminTenantReviewsService {
   constructor(
     private readonly onboardingService: TenantOnboardingService,
+    private readonly onboardingStore: TenantOnboardingStore,
     private readonly auditLogService: AdminAuditLogService,
     private readonly tenantAccountsStore: TenantAccountsStore,
     private readonly storesService: StoresService,
@@ -510,5 +518,187 @@ export class AdminTenantReviewsService {
 
   reopenReview(tenantId: string, adminId: string) {
     return this.onboardingService.reopenReview(tenantId, adminId);
+  }
+
+  listComplianceDocumentRequirements() {
+    return this.onboardingStore.listComplianceDocumentRequirements();
+  }
+
+  async createComplianceDocumentRequirement(adminId: string, dto: CreateComplianceDocumentRequirementDto) {
+    const created = await this.onboardingStore.createComplianceDocumentRequirement({
+      country: dto.country.trim().toUpperCase(),
+      language: dto.language.trim(),
+      documentType: dto.documentType.trim(),
+      label: dto.label.trim(),
+      description: dto.description.trim(),
+      required: dto.required,
+      acceptedFormats: dto.acceptedFormats.map((format) => format.trim().toLowerCase()),
+      guidanceOnly: dto.guidanceOnly ?? true,
+      active: dto.active,
+      sortOrder: dto.sortOrder,
+    });
+
+    await this.auditLogService.log({
+      actorType: 'admin',
+      actorId: adminId,
+      action: 'compliance_document_requirement_created',
+      entityType: 'compliance_document_requirement',
+      entityId: created.id,
+      metadata: {
+        country: created.country,
+        language: created.language,
+        documentType: created.documentType,
+        required: created.required,
+        active: created.active,
+      },
+    });
+    return created;
+  }
+
+  async updateComplianceDocumentRequirement(
+    id: string,
+    adminId: string,
+    dto: UpdateComplianceDocumentRequirementDto,
+  ) {
+    const existing = await this.onboardingStore.findComplianceDocumentRequirementById(id);
+    if (!existing) {
+      throw new NotFoundException('Compliance belge gereksinimi bulunamadı.');
+    }
+    const updated = await this.onboardingStore.updateComplianceDocumentRequirement(id, {
+      country: (dto.country ?? existing.country).trim().toUpperCase(),
+      language: (dto.language ?? existing.language).trim(),
+      documentType: (dto.documentType ?? existing.documentType).trim(),
+      label: (dto.label ?? existing.label).trim(),
+      description: (dto.description ?? existing.description).trim(),
+      required: dto.required ?? existing.required,
+      acceptedFormats: (dto.acceptedFormats ?? existing.acceptedFormats)
+        .map((format) => format.trim().toLowerCase()),
+      guidanceOnly: dto.guidanceOnly ?? existing.guidanceOnly,
+      active: dto.active ?? existing.active,
+      sortOrder: dto.sortOrder ?? existing.sortOrder,
+    });
+
+    await this.auditLogService.log({
+      actorType: 'admin',
+      actorId: adminId,
+      action: 'compliance_document_requirement_updated',
+      entityType: 'compliance_document_requirement',
+      entityId: id,
+      metadata: { changes: dto },
+    });
+    return updated;
+  }
+
+  listComplianceConsentDefinitions() {
+    return this.onboardingStore.listComplianceConsentDefinitions();
+  }
+
+  async createComplianceConsentDefinition(adminId: string, dto: CreateComplianceConsentDefinitionDto) {
+    const definition = {
+      country: dto.country.trim().toUpperCase(),
+      language: dto.language.trim(),
+      consentKey: dto.consentKey.trim(),
+      label: dto.label.trim(),
+      description: dto.description.trim(),
+      documentCode: dto.documentCode.trim(),
+      documentVersion: dto.documentVersion.trim(),
+      documentUrl: dto.documentUrl?.trim() || null,
+      required: dto.required,
+      active: false,
+      sortOrder: dto.sortOrder,
+    };
+    const created = await this.onboardingStore.createComplianceConsentDefinition(definition);
+    const finalDefinition = dto.active
+      ? await this.activateComplianceConsentDefinition(created.id, { ...definition, active: true })
+      : created;
+
+    await this.auditLogService.log({
+      actorType: 'admin',
+      actorId: adminId,
+      action: 'compliance_consent_definition_created',
+      entityType: 'compliance_consent_definition',
+      entityId: created.id,
+      metadata: {
+        country: created.country,
+        language: created.language,
+        consentKey: created.consentKey,
+        documentVersion: created.documentVersion,
+        active: dto.active,
+      },
+    });
+    return finalDefinition;
+  }
+
+  async updateComplianceConsentDefinition(
+    id: string,
+    adminId: string,
+    dto: UpdateComplianceConsentDefinitionDto,
+  ) {
+    const existing = await this.onboardingStore.findComplianceConsentDefinitionById(id);
+    if (!existing) {
+      throw new NotFoundException('Compliance onay tanımı bulunamadı.');
+    }
+    if (
+      (dto.country && dto.country.trim().toUpperCase() !== existing.country)
+      || (dto.language && dto.language.trim() !== existing.language)
+      || (dto.consentKey && dto.consentKey.trim() !== existing.consentKey)
+      || (dto.documentCode && dto.documentCode.trim() !== existing.documentCode)
+      || (dto.documentVersion && dto.documentVersion.trim() !== existing.documentVersion)
+    ) {
+      throw new BadRequestException(
+        'Onay kaynağı veya sürümü değiştirilemez. Yeni sürüm için yeni bir onay tanımı oluşturun.',
+      );
+    }
+    const input = {
+      country: (dto.country ?? existing.country).trim().toUpperCase(),
+      language: (dto.language ?? existing.language).trim(),
+      consentKey: (dto.consentKey ?? existing.consentKey).trim(),
+      label: (dto.label ?? existing.label).trim(),
+      description: (dto.description ?? existing.description).trim(),
+      documentCode: (dto.documentCode ?? existing.documentCode).trim(),
+      documentVersion: (dto.documentVersion ?? existing.documentVersion).trim(),
+      documentUrl: dto.documentUrl === undefined ? existing.documentUrl : dto.documentUrl?.trim() || null,
+      required: dto.required ?? existing.required,
+      active: dto.active ?? existing.active,
+      sortOrder: dto.sortOrder ?? existing.sortOrder,
+    };
+    const updated = input.active
+      ? await this.activateComplianceConsentDefinition(id, input)
+      : await this.onboardingStore.updateComplianceConsentDefinition(id, input);
+
+    await this.auditLogService.log({
+      actorType: 'admin',
+      actorId: adminId,
+      action: 'compliance_consent_definition_updated',
+      entityType: 'compliance_consent_definition',
+      entityId: id,
+      metadata: { changes: dto, activeVersion: input.documentVersion },
+    });
+    return updated;
+  }
+
+  private async activateComplianceConsentDefinition(
+    id: string,
+    definition: {
+      country: string;
+      language: string;
+      consentKey: string;
+      label: string;
+      description: string;
+      documentCode: string;
+      documentVersion: string;
+      documentUrl: string | null;
+      required: boolean;
+      active: boolean;
+      sortOrder: number;
+    },
+  ) {
+    await this.onboardingStore.deactivateComplianceConsentDefinitions(
+      definition.country,
+      definition.language,
+      definition.consentKey,
+      id,
+    );
+    return this.onboardingStore.updateComplianceConsentDefinition(id, definition);
   }
 }

@@ -1,3 +1,8 @@
+import { dirname, resolve } from 'node:path';
+import { fileURLToPath } from 'node:url';
+
+const appDirectory = dirname(fileURLToPath(import.meta.url));
+
 /** @type {import('next').NextConfig} */
 const nextConfig = {
   reactStrictMode: true,
@@ -7,6 +12,15 @@ const nextConfig = {
   experimental: {
     // Allow importing the shared @locales/* files from the repo root.
     externalDir: true,
+  },
+  webpack(config) {
+    config.resolve.alias = {
+      ...config.resolve.alias,
+      '@': resolve(appDirectory, 'src'),
+      '@locales': resolve(appDirectory, '../../locales'),
+      '@shared': resolve(appDirectory, '../../shared'),
+    };
+    return config;
   },
   images: {
     remotePatterns: [

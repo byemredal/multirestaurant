@@ -9,6 +9,7 @@ import { StoreSettingsModule } from '../store-settings/store-settings.module';
 import { StoresModule } from '../stores/stores.module';
 import { SharedFileStorageModule } from '../shared-file-storage/shared-file-storage.module';
 import { AdminDocumentReviewsController } from './admin-document-reviews.controller';
+import { AdminComplianceCatalogController } from './admin-compliance-catalog.controller';
 import { AdminTenantActivationController } from './admin-tenant-activation.controller';
 import { AdminTenantApplicationsController } from './admin-tenant-applications.controller';
 import { AdminTenantOversightController } from './admin-tenant-oversight.controller';
@@ -26,6 +27,7 @@ import { AdminTenantReviewsService } from './admin-tenant-reviews.service';
     SharedFileStorageModule,
   ],
   controllers: [
+    AdminComplianceCatalogController,
     AdminTenantApplicationsController,
     AdminDocumentReviewsController,
     AdminTenantActivationController,

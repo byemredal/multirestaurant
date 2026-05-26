@@ -300,6 +300,7 @@ export default function TenantApplicationModal({ entry, onClose, onChanged }: Pr
                 requiredApproved={requiredCurrentDocs.filter((d) => d.status === 'approved').length}
               />
               <BusinessInfoSection detail={detail} />
+              <ConsentSnapshotsSection detail={detail} />
               <DecisionSection
                 detail={detail}
                 saving={saving}
@@ -461,6 +462,52 @@ function BusinessInfoSection({ detail }: { detail: TenantApplicationDetail }) {
       <InfoBlock title="Sahip / iletişim" rows={owner} />
       <InfoBlock title="Operasyon" rows={ops} />
       <InfoBlock title="Vergi / hukuki" rows={legal} />
+    </div>
+  );
+}
+
+function ConsentSnapshotsSection({ detail }: { detail: TenantApplicationDetail }) {
+  const activeConsents = detail.onboardingCompliance.acceptedConsents;
+
+  return (
+    <div className="admin-card">
+      <div className="admin-card__header">
+        <div>
+          <h3 className="admin-card__title">Onboarding onay kayıtları</h3>
+          <div className="admin-card__subtitle">
+            Etkin onay sürümleri ve başvuruda saklanan kabul snapshot kayıtları.
+          </div>
+        </div>
+      </div>
+      <div className="admin-card__body" style={{ display: 'grid', gap: 10 }}>
+        {activeConsents.map((consent) => (
+          <div key={`${consent.consentKey}:${consent.documentVersion}`} className="admin-doc">
+            <div className="admin-doc__header">
+              <div>
+                <div className="admin-doc__title">{consent.label}</div>
+                <div className="admin-doc__meta">
+                  {consent.consentKey} · {consent.documentCode} · {consent.documentVersion} · {consent.language}
+                </div>
+              </div>
+              <span className={`admin-badge${consent.accepted ? ' admin-badge--success' : ''}`}>
+                {consent.accepted ? 'Kabul edildi' : consent.reacceptanceRequired ? 'Yeniden onay gerekli' : 'Eksik'}
+              </span>
+            </div>
+            <div className="admin-doc__meta">
+              {consent.acceptedAt ? `Kabul tarihi: ${formatDateTime(consent.acceptedAt)}` : 'Güncel sürüm kabul edilmedi.'}
+              {consent.previouslyAcceptedVersion ? ` Önceki sürüm: ${consent.previouslyAcceptedVersion}.` : ''}
+            </div>
+          </div>
+        ))}
+        {activeConsents.length === 0 ? (
+          <div className="admin-state">Bu ülke ve dil için etkin onay tanımı bulunmuyor.</div>
+        ) : null}
+        {detail.consentSnapshots.length > 0 ? (
+          <div className="admin-card__subtitle">
+            Geçmiş kabul snapshot sayısı: {detail.consentSnapshots.length}. Eski sürümler denetim izi olarak korunur.
+          </div>
+        ) : null}
+      </div>
     </div>
   );
 }

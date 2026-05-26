@@ -221,6 +221,39 @@ export interface TenantOnboardingConsentSnapshot {
   updatedAt: Date;
 }
 
+export interface ComplianceDocumentRequirement {
+  id: string;
+  country: string;
+  language: string;
+  documentType: string;
+  label: string;
+  description: string;
+  required: boolean;
+  acceptedFormats: string[];
+  guidanceOnly: boolean;
+  active: boolean;
+  sortOrder: number;
+  createdAt: Date;
+  updatedAt: Date;
+}
+
+export interface ComplianceConsentDefinition {
+  id: string;
+  country: string;
+  language: string;
+  consentKey: string;
+  label: string;
+  description: string;
+  documentCode: string;
+  documentVersion: string;
+  documentUrl: string | null;
+  required: boolean;
+  active: boolean;
+  sortOrder: number;
+  createdAt: Date;
+  updatedAt: Date;
+}
+
 export interface TenantApplicationReview {
   id: string;
   applicationId: string;

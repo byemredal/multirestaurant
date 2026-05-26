@@ -22,12 +22,14 @@ $testFileName = "slice101-smoke-$runId.txt"
 $testFile = Join-Path $env:TEMP $testFileName
 $profilePath = Join-Path $env:TEMP "lieferzonen-chrome-slice101-$runId"
 $cdpScript = Join-Path $env:TEMP "lieferzonen-cdp-slice101-$runId.js"
+$catalogScript = Join-Path $env:TEMP "lieferzonen-catalog-slice103-$runId.mjs"
 $apiLog = Join-Path $env:TEMP "lieferzonen-api-slice101-$runId.log"
 $apiErrorLog = Join-Path $env:TEMP "lieferzonen-api-slice101-$runId.err.log"
 $tenantLog = Join-Path $env:TEMP "lieferzonen-tenant-slice101-$runId.log"
 $tenantErrorLog = Join-Path $env:TEMP "lieferzonen-tenant-slice101-$runId.err.log"
 $ownedPids = [System.Collections.Generic.HashSet[int]]::new()
 $scriptSucceeded = $false
+$catalogMutated = $false
 
 function Wait-Port([int]$Port, [int]$TimeoutSeconds) {
   $deadline = (Get-Date).AddSeconds($TimeoutSeconds)
@@ -157,6 +159,67 @@ try {
     supportsPickup = $true
   })
 
+  $resolvedSession = Invoke-RestMethod -Method Get -Uri "$base/session?step=review" -TimeoutSec 10
+  $env:SLICE103_APPLICATION_ID = [string]$resolvedSession.applicationId
+  $env:SLICE103_API_DIRECTORY = $apiDirectory
+  @'
+import { randomUUID } from 'node:crypto';
+import { createRequire } from 'node:module';
+import { resolve } from 'node:path';
+const apiDirectory = process.env.SLICE103_API_DIRECTORY;
+if (!process.env.DATABASE_URL && typeof process.loadEnvFile === 'function') {
+  process.loadEnvFile(resolve(apiDirectory, '.env'));
+}
+const require = createRequire(resolve(apiDirectory, 'package.json'));
+const { Pool } = require('pg');
+const pool = new Pool({ connectionString: process.env.DATABASE_URL });
+try {
+  const action = process.argv[2];
+  if (action === 'seed-stale') {
+    await pool.query('BEGIN');
+    const updated = await pool.query(
+      `UPDATE "ComplianceConsentDefinition"
+       SET "documentVersion" = 'placeholder-v2', "updatedAt" = NOW()
+       WHERE "country" = 'CH' AND "language" = 'de-CH'
+         AND "consentKey" = 'privacy_acknowledgement' AND "documentVersion" = 'placeholder-v1'
+       RETURNING "id"`,
+    );
+    if (updated.rowCount !== 1) throw new Error('Unable to activate temporary consent v2 definition.');
+    const now = new Date().toISOString();
+    await pool.query(
+      `INSERT INTO "TenantOnboardingConsentSnapshot" (
+        "id","applicationId","consentKey","consentLabelSnapshot","documentCode","documentVersion",
+        "language","accepted","acceptedAt","ipAddress","userAgent","createdAt","updatedAt"
+      ) VALUES ($1,$2,$3,$4,$5,$6,$7,TRUE,$8,NULL,NULL,$8,$8)
+      ON CONFLICT DO NOTHING`,
+      [
+        randomUUID(), process.env.SLICE103_APPLICATION_ID, 'privacy_acknowledgement',
+        'Onceki gizlilik onayi test snapshot kaydi.', 'partner_privacy_placeholder',
+        'placeholder-v1', 'de-CH', now,
+      ],
+    );
+    await pool.query('COMMIT');
+  } else if (action === 'restore') {
+    await pool.query(
+      `UPDATE "ComplianceConsentDefinition"
+       SET "documentVersion" = 'placeholder-v1', "updatedAt" = NOW()
+       WHERE "country" = 'CH' AND "language" = 'de-CH'
+         AND "consentKey" = 'privacy_acknowledgement' AND "documentVersion" = 'placeholder-v2'`,
+    );
+  }
+} catch (error) {
+  await pool.query('ROLLBACK').catch(() => undefined);
+  throw error;
+} finally {
+  await pool.end();
+}
+'@ | Set-Content -LiteralPath $catalogScript -Encoding UTF8
+  & node $catalogScript seed-stale
+  if ($LASTEXITCODE -ne 0) {
+    throw 'Unable to prepare re-consent smoke state.'
+  }
+  $catalogMutated = $true
+
   Set-Content -LiteralPath $testFile -Value 'Bounded onboarding V2 document verification smoke file.' -Encoding ASCII
   $chrome = 'C:\Program Files\Google\Chrome\Application\chrome.exe'
   if (-not (Test-Path -LiteralPath $chrome)) {
@@ -226,9 +289,9 @@ async function openTab(url) {
   const verification = await waitForValue(
     send,
     '({ path: location.pathname, search: location.search, text: document.body.innerText })',
-    value => value && value.path.endsWith('/verification') && value.search === '' && value.text.includes('Belgeler ve doğrulama') && value.text.includes('Ülke paketine göre belge rehberi'),
+    value => value && value.path.endsWith('/verification') && value.search === '' && value.text.includes('Belgeler ve do\u011frulama') && value.text.includes('\u00dclke paketine g\u00f6re belge rehberi'),
   );
-  if (!verification.path.endsWith('/verification') || verification.search !== '' || !verification.text.includes('Belgeler ve doğrulama') || !verification.text.includes('Ülke paketine göre belge rehberi')) {
+  if (!verification.path.endsWith('/verification') || verification.search !== '' || !verification.text.includes('Belgeler ve do\u011frulama') || !verification.text.includes('\u00dclke paketine g\u00f6re belge rehberi')) {
     throw new Error(`Custom verification route did not render in forward flow. Last state: ${JSON.stringify(verification)}`);
   }
 
@@ -239,7 +302,7 @@ async function openTab(url) {
   await delay(500);
   const clickedUpload = await send('Runtime.evaluate', {
     expression: `(() => {
-      const button = Array.from(document.querySelectorAll('button')).find(x => x.innerText.includes('Belgeyi yükle'));
+      const button = Array.from(document.querySelectorAll('button')).find(x => x.innerText.includes('Belgeyi y\u00fckle'));
       if (!button || button.disabled) return false;
       button.click();
       return true;
@@ -250,12 +313,12 @@ async function openTab(url) {
   const uploadComplete = await waitForValue(
     send,
     'document.body.innerText',
-    text => (text || '').includes('Kontrole dön'),
+    text => (text || '').includes('Kontrole d\u00f6n'),
   );
-  if (!uploadComplete.includes('Kontrole dön')) throw new Error('Uploaded document did not enable review continuation.');
+  if (!uploadComplete.includes('Kontrole d\u00f6n')) throw new Error('Uploaded document did not enable review continuation.');
   const returnClicked = await send('Runtime.evaluate', {
     expression: `(() => {
-      const button = Array.from(document.querySelectorAll('button')).find(x => x.innerText.includes('Kontrole dön'));
+      const button = Array.from(document.querySelectorAll('button')).find(x => x.innerText.includes('Kontrole d\u00f6n'));
       if (!button || button.disabled) return false;
       button.click();
       return true;
@@ -266,15 +329,15 @@ async function openTab(url) {
   const reviewAfterUpload = await waitForValue(
     send,
     '({ path: location.pathname, text: document.body.innerText })',
-    value => value && value.path.endsWith('/review') && value.text.includes('Başvuruyu gönder') && value.text.includes('Onaylar ve izinler') && !value.text.includes('Zorunlu belgeler\nEksik'),
+    value => value && value.path.endsWith('/review') && value.text.includes('Ba\u015fvuruyu g\u00f6nder') && value.text.includes('Onaylar ve izinler') && !value.text.includes('Zorunlu belgeler\nEksik'),
   );
-  if (!reviewAfterUpload.path.endsWith('/review') || !reviewAfterUpload.text.includes('Başvuruyu gönder') || reviewAfterUpload.text.includes('Zorunlu belgeler,') || reviewAfterUpload.text.includes('Zorunlu belgeler\nEksik')) {
+  if (!reviewAfterUpload.path.endsWith('/review') || !reviewAfterUpload.text.includes('Ba\u015fvuruyu g\u00f6nder') || reviewAfterUpload.text.includes('Zorunlu belgeler,') || reviewAfterUpload.text.includes('Zorunlu belgeler\nEksik')) {
     throw new Error(`Upload did not return to a complete review screen. Last state: ${JSON.stringify(reviewAfterUpload)}`);
   }
   const clickedEditAgain = await send('Runtime.evaluate', {
     expression: `(() => {
       const card = Array.from(document.querySelectorAll('section')).find(x => x.querySelector('h3')?.innerText === 'Zorunlu belgeler');
-      const button = card && Array.from(card.querySelectorAll('button')).find(x => x.innerText.trim() === 'Edit');
+      const button = card && Array.from(card.querySelectorAll('button')).find(x => x.innerText.trim() === 'D\u00fczenle');
       if (!button) return false;
       button.click();
       return true;
@@ -285,7 +348,7 @@ async function openTab(url) {
   const repeatedEdit = await waitForValue(
     send,
     '({ path: location.pathname, search: location.search, text: document.body.innerText })',
-    value => value && value.path.endsWith('/verification') && value.search === '?returnTo=review' && value.text.includes('Belgeler ve doğrulama'),
+    value => value && value.path.endsWith('/verification') && value.search === '?returnTo=review' && value.text.includes('Belgeler ve do\u011frulama'),
   );
   if (!repeatedEdit.path.endsWith('/verification') || repeatedEdit.search !== '?returnTo=review') {
     throw new Error('Repeated returnToReview edit route was blocked.');
@@ -294,22 +357,27 @@ async function openTab(url) {
   await waitForValue(
     send,
     '({ path: location.pathname, text: document.body.innerText })',
-    value => value && value.path.endsWith('/review') && value.text.includes('Başvuruyu gönder'),
+    value => value && value.path.endsWith('/review') && value.text.includes('Ba\u015fvuruyu g\u00f6nder'),
   );
   const submitBlockedBeforeConsents = await send('Runtime.evaluate', {
     expression: `(() => {
-      const button = Array.from(document.querySelectorAll('button')).find(x => x.innerText.includes('Başvuruyu gönder'));
+      const button = Array.from(document.querySelectorAll('button')).find(x => x.innerText.includes('Ba\u015fvuruyu g\u00f6nder'));
       return Boolean(button && button.disabled);
     })()`,
     returnByValue: true,
   });
   if (!submitBlockedBeforeConsents.result.result.value) throw new Error('Submit was not blocked before required acknowledgements.');
+  const reconsentPrompt = await send('Runtime.evaluate', {
+    expression: `document.body.innerText.includes('G\u00fcncel s\u00fcr\u00fcm i\u00e7in yeniden onay gereklidir.')`,
+    returnByValue: true,
+  });
+  if (!reconsentPrompt.result.result.value) throw new Error('Changed consent version did not require re-acceptance.');
   const selectedConsents = await send('Runtime.evaluate', {
     expression: `(() => {
       const section = Array.from(document.querySelectorAll('section')).find(x => x.querySelector('h3')?.innerText === 'Onaylar ve izinler');
       const boxes = section ? Array.from(section.querySelectorAll('input[type="checkbox"]')) : [];
       boxes.filter(box => !box.checked && !box.disabled).forEach(box => box.click());
-      const save = section && Array.from(section.querySelectorAll('button')).find(x => x.innerText.includes('Save acknowledgements'));
+      const save = section && Array.from(section.querySelectorAll('button')).find(x => x.innerText.includes('Onaylar\u0131 kaydet'));
       if (!save || save.disabled) return false;
       save.click();
       return true;
@@ -320,14 +388,14 @@ async function openTab(url) {
   await waitForValue(
     send,
     `(() => {
-      const button = Array.from(document.querySelectorAll('button')).find(x => x.innerText.includes('Başvuruyu gönder'));
+      const button = Array.from(document.querySelectorAll('button')).find(x => x.innerText.includes('Ba\u015fvuruyu g\u00f6nder'));
       return { enabled: Boolean(button && !button.disabled), text: document.body.innerText };
     })()`,
-    value => value && value.enabled && value.text.includes('Accepted and saved'),
+    value => value && value.enabled && value.text.includes('Kabul edildi ve kaydedildi') && value.text.includes('S\u00fcr\u00fcm: placeholder-v2'),
   );
   const submitClicked = await send('Runtime.evaluate', {
     expression: `(() => {
-      const button = Array.from(document.querySelectorAll('button')).find(x => x.innerText.includes('Başvuruyu gönder'));
+      const button = Array.from(document.querySelectorAll('button')).find(x => x.innerText.includes('Ba\u015fvuruyu g\u00f6nder'));
       if (!button || button.disabled) return { clicked: false, disabled: button?.disabled ?? null, text: document.body.innerText };
       button.click();
       return { clicked: true, disabled: false, text: document.body.innerText };
@@ -340,16 +408,16 @@ async function openTab(url) {
   const submitted = await waitForValue(
     send,
     '({ path: location.pathname, text: document.body.innerText })',
-    value => value && value.path.endsWith('/submitted') && value.text.includes('Başvurunuz gönderildi'),
+    value => value && value.path.endsWith('/submitted') && value.text.includes('Ba\u015fvurunuz g\u00f6nderildi'),
   );
-  if (!submitted.path.endsWith('/submitted') || !submitted.text.includes('Başvurunuz gönderildi')) throw new Error('Submitted page did not render.');
+  if (!submitted.path.endsWith('/submitted') || !submitted.text.includes('Ba\u015fvurunuz g\u00f6nderildi')) throw new Error('Submitted page did not render.');
   await send('Page.reload', { ignoreCache: true });
   const submittedAfterRefresh = await waitForValue(
     send,
     '({ path: location.pathname, text: document.body.innerText })',
-    value => value && value.path.endsWith('/submitted') && value.text.includes('Başvurunuz gönderildi'),
+    value => value && value.path.endsWith('/submitted') && value.text.includes('Ba\u015fvurunuz g\u00f6nderildi'),
   );
-  if (!submittedAfterRefresh.path.endsWith('/submitted') || !submittedAfterRefresh.text.includes('Başvurunuz gönderildi')) throw new Error('Submitted refresh regressed.');
+  if (!submittedAfterRefresh.path.endsWith('/submitted') || !submittedAfterRefresh.text.includes('Ba\u015fvurunuz g\u00f6nderildi')) throw new Error('Submitted refresh regressed.');
   await send('Page.navigate', { url: waitingUrl });
   const waitingRedirectPath = await waitForValue(send, 'location.pathname', value => (value || '').endsWith('/submitted'));
   if (!waitingRedirectPath.endsWith('/submitted')) throw new Error('Waiting alias did not reach submitted.');
@@ -363,6 +431,7 @@ async function openTab(url) {
     uploadReturnedToReview: true,
     submitBlockedBeforeConsents: true,
     consentsSavedBeforeSubmit: true,
+    changedConsentRequiredReacceptance: true,
     submittedRendered: true,
     waitingRedirectedToSubmitted: true,
     sessionRequests: requests.filter(url => url.includes('/session?step=')).length,
@@ -375,7 +444,7 @@ async function openTab(url) {
   console.log(JSON.stringify(result));
   socket.close();
 })().catch(error => { console.error(error.stack || error); process.exit(1); });
-'@ | Set-Content -LiteralPath $cdpScript -Encoding ASCII
+'@ | Set-Content -LiteralPath $cdpScript -Encoding UTF8
   $result = & node $cdpScript
   if ($LASTEXITCODE -ne 0) {
     throw 'CDP smoke validation failed.'
@@ -384,6 +453,9 @@ async function openTab(url) {
   $scriptSucceeded = $true
 }
 finally {
+  if ($catalogMutated -and (Test-Path -LiteralPath $catalogScript)) {
+    & node $catalogScript restore
+  }
   foreach ($ownedProcessId in $ownedPids) {
     if ($ownedProcessId -ne $PID) {
       Stop-Process -Id $ownedProcessId -Force -ErrorAction SilentlyContinue
@@ -396,7 +468,7 @@ finally {
     ForEach-Object { Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue }
   Start-Sleep -Milliseconds 500
   $tempRoot = (Resolve-Path $env:TEMP).Path
-  foreach ($temporaryFile in @($testFile, $cdpScript)) {
+  foreach ($temporaryFile in @($testFile, $cdpScript, $catalogScript)) {
     if ($temporaryFile.StartsWith($tempRoot, [StringComparison]::OrdinalIgnoreCase) -and (Test-Path -LiteralPath $temporaryFile)) {
       Remove-Item -LiteralPath $temporaryFile -Force
     }

@@ -381,6 +381,29 @@ export function ReviewStep({
                       <span className="min-w-0">
                         <span className="block text-[13px] font-semibold text-ink-800">{consent.label}</span>
                         <span className="mt-1 block text-[12px] leading-5 text-ink-500">{consent.description}</span>
+                        <span className="mt-2 block text-[11px] leading-5 text-ink-500">
+                          Belge: {consent.documentCode} - Sürüm: {consent.documentVersion}
+                        </span>
+                        {consent.documentUrl ? (
+                          <a
+                            href={consent.documentUrl}
+                            target="_blank"
+                            rel="noreferrer"
+                            onClick={(event) => event.stopPropagation()}
+                            className="mt-1 inline-flex text-[12px] font-semibold text-primary hover:underline"
+                          >
+                            Belgeyi görüntüle
+                          </a>
+                        ) : (
+                          <span className="mt-1 block text-[11px] text-ink-500">
+                            Bağlantı henüz tanımlanmadı.
+                          </span>
+                        )}
+                        {consent.reacceptanceRequired ? (
+                          <span className="mt-2 block rounded-[8px] bg-amber-50 px-2.5 py-1.5 text-[11px] font-semibold text-amber-700">
+                            Daha önceki {consent.previouslyAcceptedVersion} sürümü kabul edilmiş. Güncel sürüm için yeniden onay gereklidir.
+                          </span>
+                        ) : null}
                         {stored ? (
                           <span className="mt-2 inline-flex rounded-full bg-success-50 px-2 py-0.5 text-[11px] font-semibold text-success-700">
                             Kabul edildi ve kaydedildi

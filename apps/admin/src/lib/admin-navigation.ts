@@ -349,6 +349,13 @@ export const adminNavSections: AdminNavSection[] = [
         icon: 'settings',
         matches: startsWith('/system/configuration'),
       },
+      {
+        id: 'compliance-catalog',
+        label: 'Onboarding Compliance Kataloğu',
+        href: '/system/compliance-catalog',
+        icon: 'shield',
+        matches: startsWith('/system/compliance-catalog'),
+      },
     ],
   },
 ];
@@ -383,6 +390,7 @@ export const liveNavItemIds = new Set<string>([
   'tenant-applications',
   'store-list',
   'orders',
+  'compliance-catalog',
 ]);
 
 export function isLiveNavItem(item: AdminNavItem): boolean {
