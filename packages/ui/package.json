@@ -8,6 +8,9 @@
   "peerDependencies": {
     "react": "^18.2.0"
   },
+  "dependencies": {
+    "@lieferzonen/assets": "workspace:*"
+  },
   "devDependencies": {
     "@types/react": "19.2.14",
     "typescript": "^5.7.3"

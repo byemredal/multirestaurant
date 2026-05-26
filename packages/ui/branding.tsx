@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useState } from 'react';
+import { defaultPlatformMarkDataUrl } from '@lieferzonen/assets';
 import { Logo, type LogoProps } from './logo';
 
 /**
@@ -114,9 +115,16 @@ export function PlatformLogo({ apiBaseUrl, alt, ...rest }: PlatformLogoProps) {
   return (
     <Logo
       src={branding?.logoUrl || undefined}
-      // `fallbackText` powers the text-mark path inside <Logo> — when setup
-      // hasn't uploaded a logo (or it fails to load) we render the current
-      // platform name instead of falling back to a stale bundled brand asset.
+      // Brand-neutral fallback: a wordless abstract mark shipped in
+      // `@lieferzonen/assets`. `logo.svg` / `logo_.svg` in that package are
+      // brand-baked (the SVG path itself spells "LIEFER ZONE") and CANNOT
+      // be used as a platform-agnostic default — they would leak the old
+      // brand on a "Yemekmarketi" install. The data-URL keeps this safe
+      // for `packages/ui`, which has no Next.js SVG loader of its own.
+      fallbackSrc={defaultPlatformMarkDataUrl}
+      // `fallbackText` powers the final text-mark path inside <Logo> —
+      // hit only when both the uploaded logoUrl AND the bundled mark fail
+      // to load, e.g. an offline CSP-blocked render.
       fallbackText={platformName}
       alt={alt ?? platformName}
       {...rest}
