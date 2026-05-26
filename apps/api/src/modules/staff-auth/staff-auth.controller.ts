@@ -20,7 +20,7 @@ import {
   ApiTags,
   ApiUnauthorizedResponse,
 } from '@nestjs/swagger';
-import { Request, Response } from 'express';
+import type { Request, Response } from 'express';
 import { AuthCookieService } from '../../common/security/auth-cookie.service';
 import { AuthTypes } from '../../common/security/decorators/auth-types.decorator';
 import { Public } from '../../common/security/decorators/public.decorator';

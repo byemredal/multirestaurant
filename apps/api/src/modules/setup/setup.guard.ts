@@ -7,7 +7,7 @@ import {
   UnauthorizedException,
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import { Request } from 'express';
+import type { Request } from 'express';
 import { BOOTSTRAP_KEY_HEADER } from './setup.constants';
 import { SystemStateService } from './system-state.service';
 

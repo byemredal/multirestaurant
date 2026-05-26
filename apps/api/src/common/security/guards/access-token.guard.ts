@@ -6,7 +6,7 @@ import {
   UnauthorizedException,
 } from '@nestjs/common';
 import { Reflector } from '@nestjs/core';
-import { Request } from 'express';
+import type { Request } from 'express';
 import { AuthService } from '../../../modules/auth/auth.service';
 import { AdminAuthService } from '../../../modules/admin-auth/admin-auth.service';
 import { StaffAuthService } from '../../../modules/staff-auth/staff-auth.service';

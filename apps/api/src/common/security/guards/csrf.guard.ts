@@ -5,7 +5,7 @@ import {
   Injectable,
   UnauthorizedException,
 } from '@nestjs/common';
-import { Request } from 'express';
+import type { Request } from 'express';
 import { AuthCookieService } from '../auth-cookie.service';
 import { SecurityLoggerService } from '../security-logger.service';
 

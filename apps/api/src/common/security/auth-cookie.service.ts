@@ -1,7 +1,7 @@
 import { Injectable } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { randomBytes } from 'crypto';
-import { Request, Response, CookieOptions } from 'express';
+import type { Request, Response, CookieOptions } from 'express';
 import { parseCookieHeader } from './cookie.util';
 
 @Injectable()

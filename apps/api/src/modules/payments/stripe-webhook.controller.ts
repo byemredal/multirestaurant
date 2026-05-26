@@ -8,7 +8,7 @@ import {
   Req,
 } from '@nestjs/common';
 import { ApiExcludeEndpoint } from '@nestjs/swagger';
-import { Request } from 'express';
+import type { Request } from 'express';
 import { Public } from '../../common/security/decorators/public.decorator';
 import { PaymentsService } from './payments.service';
 
