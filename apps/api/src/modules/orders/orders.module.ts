@@ -7,6 +7,7 @@ import { StoreSettingsModule } from '../store-settings/store-settings.module';
 import { SystemTaxonomyModule } from '../system-taxonomy/system-taxonomy.module';
 import { AdminOrdersController } from './admin-orders.controller';
 import { OrdersController } from './orders.controller';
+import { StaffOrdersController } from './staff-orders.controller';
 import { TenantOrdersController } from './tenant-orders.controller';
 import { TenantTestOrdersController } from './tenant-test-orders.controller';
 import { OrdersService } from './orders.service';
@@ -24,6 +25,7 @@ import { OrdersService } from './orders.service';
     OrdersController,
     TenantOrdersController,
     TenantTestOrdersController,
+    StaffOrdersController,
     AdminOrdersController,
   ],
   providers: [OrdersService],

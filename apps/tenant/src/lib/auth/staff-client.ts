@@ -131,6 +131,88 @@ export async function bootstrapStaffSession(session: StoredStaffSession): Promis
   return toStoredSession((await refreshResponse.json()) as StaffSessionPayload);
 }
 
+export type StaffOrderListItem = {
+  id: string;
+  status: string;
+  storeId: string;
+  storeName: string;
+  customerSummary: {
+    firstName: string;
+    lastName: string;
+    fullName: string;
+    email: string;
+    phone: string | null;
+  };
+  subtotalAmount: number;
+  totalAmount: number;
+  currencySnapshot: string;
+  serviceTypeSnapshot: string | null;
+  itemCount: number;
+  isActionable: boolean;
+  lastStatusChangedAt: string | null;
+  createdAt: string;
+  updatedAt: string;
+};
+
+export type StaffOrderListQuery = {
+  scope?: 'operational' | 'history';
+  status?: string;
+  storeId?: string;
+  createdFrom?: string;
+  createdTo?: string;
+};
+
+function buildStaffOrderListUrl(query: StaffOrderListQuery): string {
+  const params = new URLSearchParams();
+  if (query.scope) params.set('scope', query.scope);
+  if (query.status) params.set('status', query.status);
+  if (query.storeId) params.set('storeId', query.storeId);
+  if (query.createdFrom) params.set('createdFrom', query.createdFrom);
+  if (query.createdTo) params.set('createdTo', query.createdTo);
+  const search = params.toString();
+  return search ? `${apiBaseUrl}/staff/orders?${search}` : `${apiBaseUrl}/staff/orders`;
+}
+
+export async function listStaffOrders(
+  session: StoredStaffSession,
+  query: StaffOrderListQuery = {},
+): Promise<StaffOrderListItem[]> {
+  const response = await fetch(buildStaffOrderListUrl(query), {
+    credentials: 'include',
+    headers: { Authorization: `Bearer ${session.accessToken}` },
+  });
+  if (!response.ok) {
+    throw new Error(
+      await readJsonError(response, `staff_orders_failed_${response.status}`),
+    );
+  }
+  return (await response.json()) as StaffOrderListItem[];
+}
+
+export type StaffStoreSummary = {
+  id: string;
+  name: string;
+  slug: string;
+  status: string;
+  isActive: boolean;
+};
+
+export async function listStaffStores(
+  session: StoredStaffSession,
+): Promise<StaffStoreSummary[]> {
+  const response = await fetch(`${apiBaseUrl}/staff/me/stores`, {
+    credentials: 'include',
+    headers: { Authorization: `Bearer ${session.accessToken}` },
+  });
+  if (!response.ok) {
+    throw new Error(
+      await readJsonError(response, `staff_stores_failed_${response.status}`),
+    );
+  }
+  const payload = (await response.json()) as { stores: StaffStoreSummary[] };
+  return payload.stores;
+}
+
 /**
  * Public accept-invite — mirrors the existing tenant-staff-client export
  * but parses into the staff session shape so the workspace can persist

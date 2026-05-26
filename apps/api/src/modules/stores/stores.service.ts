@@ -675,6 +675,45 @@ export class StoresService {
     };
   }
 
+  /**
+   * Lightweight `{id, name, slug, status, isActive}` projection for a set of
+   * stores a staff session is currently scoped to. Used by the staff
+   * workspace to translate store UUIDs into operator-readable names.
+   *
+   * The caller MUST pass the live `staffStoreScope` (i.e. the value from
+   * `request.user.staffStoreScope` populated by AccessTokenGuard). This
+   * method does not consult StaffMembership itself — it just hydrates the
+   * already-validated scope.
+   */
+  async listForStaffScope(staffStoreScope: readonly string[]) {
+    if (staffStoreScope.length === 0) {
+      return [];
+    }
+
+    const rows = (await this.databaseService
+      .prepare(
+        `SELECT "id", "name", "slug", "status", "isActive"
+         FROM "Store"
+         WHERE "id" = ANY($storeIds::uuid[])
+         ORDER BY "name" ASC`,
+      )
+      .all({ $storeIds: [...staffStoreScope] })) as unknown as Array<{
+      id: string;
+      name: string;
+      slug: string;
+      status: string;
+      isActive: boolean | number;
+    }>;
+
+    return rows.map((row) => ({
+      id: row.id,
+      name: row.name,
+      slug: row.slug,
+      status: row.status,
+      isActive: Boolean(row.isActive),
+    }));
+  }
+
   async findOwnedStore(storeId: string, ownerTenantId: string) {
     const store = (await this.databaseService
       .prepare(

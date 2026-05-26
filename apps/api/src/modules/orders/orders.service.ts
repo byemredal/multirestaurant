@@ -25,6 +25,10 @@ import { CancelCustomerOrderDto } from './dto/cancel-customer-order.dto';
 import { CreateCustomerOrderDto } from './dto/create-customer-order.dto';
 import { ListAdminOrdersDto } from './dto/list-admin-orders.dto';
 import {
+  ListStaffOrdersDto,
+  StaffOrderListScope,
+} from './dto/list-staff-orders.dto';
+import {
   ListTenantOrdersDto,
   TenantOrderListScope,
 } from './dto/list-tenant-orders.dto';
@@ -1115,6 +1119,134 @@ export class OrdersService {
       customerSummary: this.mapCustomerSummary(row),
       itemCount: Number(row.itemCount ?? 0),
       isActionable: this.tenantDefaultOperationalStatuses.includes(row.status as OrderStatus),
+    }));
+  }
+
+  /**
+   * Staff order list, scoped to the assigned-store set on the staff JWT.
+   *
+   * The scope is supplied by the AccessTokenGuard from a live DB read of
+   * StaffMembership rows — NEVER from a client query — so revoking a
+   * membership takes effect on the next request. This method fails closed
+   * when the scope is empty and rejects any storeId filter that lies
+   * outside the scope, matching the tenant-list behavior of returning
+   * ForbiddenException on a cross-ownership filter.
+   */
+  async listForStaff(
+    staffStoreScope: readonly string[],
+    query: ListStaffOrdersDto,
+  ) {
+    if (staffStoreScope.length === 0) {
+      throw new ForbiddenException(
+        'Staff session has no assigned stores — contact your tenant owner.',
+      );
+    }
+
+    if (query.storeId && !staffStoreScope.includes(query.storeId)) {
+      throw new ForbiddenException(
+        'You can only access orders for stores assigned to you.',
+      );
+    }
+
+    if (query.createdFrom && query.createdTo) {
+      const createdFrom = new Date(query.createdFrom);
+      const createdTo = new Date(query.createdTo);
+      if (createdFrom.getTime() > createdTo.getTime()) {
+        throw new BadRequestException(
+          'createdFrom must be earlier than or equal to createdTo.',
+        );
+      }
+    }
+
+    const effectiveStoreIds = query.storeId ? [query.storeId] : [...staffStoreScope];
+
+    const clauses = [`o."storeId" = ANY($storeIds::uuid[])`];
+    const params: Record<string, unknown> = {
+      $storeIds: effectiveStoreIds,
+    };
+
+    if (query.status) {
+      clauses.push(`o."status" = $status`);
+      params.$status = query.status;
+    } else if (query.scope === StaffOrderListScope.HISTORY) {
+      clauses.push(
+        `o."status" IN ($completedStatus, $rejectedStatus, $cancelledStatus, $paymentFailedStatus, $pendingPaymentStatus)`,
+      );
+      params.$completedStatus = OrderStatus.COMPLETED;
+      params.$rejectedStatus = OrderStatus.REJECTED;
+      params.$cancelledStatus = OrderStatus.CANCELLED;
+      params.$paymentFailedStatus = OrderStatus.PAYMENT_FAILED;
+      params.$pendingPaymentStatus = OrderStatus.PENDING_PAYMENT;
+    } else {
+      clauses.push(
+        `o."status" IN ($pendingConfirmationStatus, $confirmedStatus, $preparingStatus, $readyStatus)`,
+      );
+      params.$pendingConfirmationStatus = OrderStatus.PENDING_CONFIRMATION;
+      params.$confirmedStatus = OrderStatus.CONFIRMED;
+      params.$preparingStatus = OrderStatus.PREPARING;
+      params.$readyStatus = OrderStatus.READY;
+    }
+
+    if (query.createdFrom) {
+      clauses.push(`o."createdAt" >= $createdFrom`);
+      params.$createdFrom = new Date(query.createdFrom).toISOString();
+    }
+
+    if (query.createdTo) {
+      clauses.push(`o."createdAt" <= $createdTo`);
+      params.$createdTo = new Date(query.createdTo).toISOString();
+    }
+
+    const rows = (await this.databaseService
+      .prepare(
+        `SELECT o.*, r."name" AS "storeName",
+                c."firstName" AS "customerFirstName",
+                c."lastName" AS "customerLastName",
+                c."email" AS "customerEmail",
+                COUNT(oi."id") AS "itemCount"
+         FROM "Order" o
+         INNER JOIN "Store" r ON r."id" = o."storeId"
+         INNER JOIN "CustomerAccount" c ON c."id" = o."customerAccountId"
+         LEFT JOIN "OrderItem" oi ON oi."orderId" = o."id"
+         WHERE ${clauses.join(' AND ')}
+         GROUP BY o."id", r."name", c."firstName", c."lastName", c."email"
+         ORDER BY
+           CASE
+             WHEN o."status" = $pendingConfirmationPriority THEN 0
+             WHEN o."status" = $confirmedPriority THEN 1
+             WHEN o."status" = $preparingPriority THEN 2
+             WHEN o."status" = $readyPriority THEN 3
+             WHEN o."status" = $completedPriority THEN 4
+             WHEN o."status" = $rejectedPriority THEN 5
+             WHEN o."status" = $cancelledPriority THEN 6
+             WHEN o."status" = $paymentFailedPriority THEN 7
+             WHEN o."status" = $pendingPaymentPriority THEN 8
+             ELSE 99
+           END ASC,
+           COALESCE(o."lastStatusChangedAt", o."createdAt") ASC,
+           o."createdAt" ASC`,
+      )
+      .all({
+        ...params,
+        $pendingConfirmationPriority: OrderStatus.PENDING_CONFIRMATION,
+        $confirmedPriority: OrderStatus.CONFIRMED,
+        $preparingPriority: OrderStatus.PREPARING,
+        $readyPriority: OrderStatus.READY,
+        $completedPriority: OrderStatus.COMPLETED,
+        $rejectedPriority: OrderStatus.REJECTED,
+        $cancelledPriority: OrderStatus.CANCELLED,
+        $paymentFailedPriority: OrderStatus.PAYMENT_FAILED,
+        $pendingPaymentPriority: OrderStatus.PENDING_PAYMENT,
+      })) as unknown as TenantOrderListRow[];
+
+    return rows.map((row) => ({
+      ...this.mapOrder(row),
+      storeName: row.storeName,
+      customerSummary: this.mapCustomerSummary(row),
+      itemCount: Number(row.itemCount ?? 0),
+      isActionable: this.tenantDefaultOperationalStatuses.includes(
+        row.status as OrderStatus,
+      ),
     }));
   }
 

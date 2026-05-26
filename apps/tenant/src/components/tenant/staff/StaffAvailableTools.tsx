@@ -1,3 +1,5 @@
+import Link from 'next/link';
+
 /**
  * Honest "available tools" list. Each entry is either ready or explicitly
  * marked as coming soon — we never advertise tools the staff cannot
@@ -8,14 +10,18 @@ type Tool = {
   title: string;
   description: string;
   status: 'available' | 'coming_soon';
+  href?: string;
+  cta?: string;
 };
 
 const TOOLS: Tool[] = [
   {
     title: 'Sipariş takip ekranı',
     description:
-      'Atanmış mağazalarınıza ait operasyonel siparişleri görme ve durum güncelleme.',
-    status: 'coming_soon',
+      'Atanmış mağazalarınıza ait operasyonel siparişleri görüntüleyin (durum güncelleme yakında).',
+    status: 'available',
+    href: '/staff/orders',
+    cta: 'Siparişleri aç',
   },
   {
     title: 'Mutfak / kasa modu',
@@ -64,6 +70,17 @@ export function StaffAvailableTools() {
               </span>
             </div>
             <p className="mt-1 text-[12px] leading-5 text-slate-600">{tool.description}</p>
+            {tool.status === 'available' && tool.href ? (
+              <div className="mt-2">
+                <Link
+                  href={tool.href}
+                  className="inline-flex items-center gap-1.5 rounded-[10px] bg-slate-900 px-3 py-1.5 text-[12px] font-semibold text-white transition hover:bg-slate-800"
+                >
+                  {tool.cta ?? 'Aç'}
+                  <span aria-hidden="true">→</span>
+                </Link>
+              </div>
+            ) : null}
           </li>
         ))}
       </ul>

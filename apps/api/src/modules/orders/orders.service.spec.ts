@@ -1,6 +1,7 @@
-import { BadRequestException } from '@nestjs/common';
+import { BadRequestException, ForbiddenException } from '@nestjs/common';
 import { OrdersService } from './orders.service';
 import { OrderStatus } from './entities/order.entity';
+import { StaffOrderListScope } from './dto/list-staff-orders.dto';
 
 describe('OrdersService payment-outcome handling', () => {
   function orderRow(
@@ -479,5 +480,158 @@ describe('OrdersService admin operational listing', () => {
     expect(all).toHaveBeenCalledWith(
       expect.objectContaining({ $status: OrderStatus.COMPLETED }),
     );
+  });
+});
+
+describe('OrdersService staff-scoped listing', () => {
+  function staffOrderRow(overrides: Record<string, unknown> = {}) {
+    return {
+      id: 'order-staff-1',
+      customerAccountId: 'customer-1',
+      storeId: 'store-A',
+      status: OrderStatus.PENDING_CONFIRMATION,
+      rejectedReason: null,
+      statusNote: null,
+      lastStatusChangedAt: null,
+      lastStatusChangedByType: null,
+      subtotalAmount: 32,
+      totalAmount: 32,
+      currencyId: null,
+      currencySnapshot: 'CHF',
+      serviceTypeId: null,
+      serviceTypeSnapshot: 'delivery',
+      paymentMethodId: null,
+      paymentMethodSnapshot: null,
+      deliveryFeeAmount: 0,
+      deliveryDistanceKm: null,
+      createdAt: '2026-05-25T00:00:00.000Z',
+      updatedAt: '2026-05-25T00:00:00.000Z',
+      storeName: 'Harbor Kitchen',
+      customerFirstName: 'Ada',
+      customerLastName: 'Lovelace',
+      customerEmail: 'ada@example.io',
+      itemCount: 2,
+      ...overrides,
+    };
+  }
+
+  function createService(rows: Array<Record<string, unknown>> = []) {
+    const all = jest.fn().mockResolvedValue(rows);
+    const databaseService = {
+      transaction: jest.fn(async (callback: () => unknown) => callback()),
+      prepare: jest.fn(() => ({ all })),
+    };
+    const service = new OrdersService(
+      databaseService as any,
+      {} as any,
+      { recordCompletedOrderReward: jest.fn() } as any,
+      {} as any,
+      { ensureAcceptanceForConfirmation: jest.fn() } as any,
+      {} as any,
+    );
+    return { service, all };
+  }
+
+  it('fails closed when the staff scope is empty', async () => {
+    const { service, all } = createService();
+
+    await expect(service.listForStaff([], {})).rejects.toBeInstanceOf(ForbiddenException);
+    expect(all).not.toHaveBeenCalled();
+  });
+
+  it('lists orders only for stores in the assigned scope (default scope = operational)', async () => {
+    const { service, all } = createService([staffOrderRow()]);
+
+    const result = await service.listForStaff(['store-A', 'store-B'], {});
+
+    expect(all).toHaveBeenCalledWith(
+      expect.objectContaining({ $storeIds: ['store-A', 'store-B'] }),
+    );
+    expect(result).toHaveLength(1);
+    expect(result[0]).toEqual(
+      expect.objectContaining({
+        id: 'order-staff-1',
+        storeId: 'store-A',
+        storeName: 'Harbor Kitchen',
+        itemCount: 2,
+        isActionable: true,
+      }),
+    );
+    expect(result[0].customerSummary).toEqual(
+      expect.objectContaining({ fullName: 'Ada Lovelace', email: 'ada@example.io' }),
+    );
+  });
+
+  it('denies a storeId filter that lies outside the assigned scope', async () => {
+    const { service, all } = createService();
+
+    await expect(
+      service.listForStaff(['store-A'], { storeId: 'store-OTHER' }),
+    ).rejects.toBeInstanceOf(ForbiddenException);
+    expect(all).not.toHaveBeenCalled();
+  });
+
+  it('narrows the query to a single storeId when it is in scope', async () => {
+    const { service, all } = createService([]);
+
+    await service.listForStaff(['store-A', 'store-B'], { storeId: 'store-A' });
+
+    expect(all).toHaveBeenCalledWith(
+      expect.objectContaining({ $storeIds: ['store-A'] }),
+    );
+  });
+
+  it('applies the history scope status set when scope=history is requested', async () => {
+    const { service, all } = createService([]);
+
+    await service.listForStaff(['store-A'], { scope: StaffOrderListScope.HISTORY });
+
+    expect(all).toHaveBeenCalledWith(
+      expect.objectContaining({
+        $storeIds: ['store-A'],
+        $completedStatus: OrderStatus.COMPLETED,
+        $rejectedStatus: OrderStatus.REJECTED,
+        $cancelledStatus: OrderStatus.CANCELLED,
+        $paymentFailedStatus: OrderStatus.PAYMENT_FAILED,
+        $pendingPaymentStatus: OrderStatus.PENDING_PAYMENT,
+      }),
+    );
+  });
+
+  it('passes an explicit status filter through to the query', async () => {
+    const { service, all } = createService([]);
+
+    await service.listForStaff(['store-A'], { status: OrderStatus.READY });
+
+    expect(all).toHaveBeenCalledWith(
+      expect.objectContaining({
+        $storeIds: ['store-A'],
+        $status: OrderStatus.READY,
+      }),
+    );
+  });
+
+  it('rejects an inverted createdFrom/createdTo window', async () => {
+    const { service } = createService();
+
+    await expect(
+      service.listForStaff(['store-A'], {
+        createdFrom: '2026-05-25T18:00:00.000Z',
+        createdTo: '2026-05-25T09:00:00.000Z',
+      }),
+    ).rejects.toBeInstanceOf(BadRequestException);
+  });
+
+  it('does not include passwordHash / tokenHash columns in returned rows', async () => {
+    const { service } = createService([staffOrderRow()]);
+
+    const result = await service.listForStaff(['store-A'], {});
+
+    const exposed = Object.keys(result[0]);
+    expect(exposed).not.toContain('passwordHash');
+    expect(exposed).not.toContain('tokenHash');
+    const customerSummaryKeys = Object.keys(result[0].customerSummary);
+    expect(customerSummaryKeys).not.toContain('passwordHash');
+    expect(customerSummaryKeys).not.toContain('tokenHash');
   });
 });

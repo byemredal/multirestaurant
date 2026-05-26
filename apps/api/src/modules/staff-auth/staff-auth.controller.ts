@@ -28,6 +28,7 @@ import { RateLimit } from '../../common/security/decorators/rate-limit.decorator
 import { CsrfGuard } from '../../common/security/guards/csrf.guard';
 import { RateLimitGuard } from '../../common/security/guards/rate-limit.guard';
 import { AuthenticatedRequest } from '../../common/types/authenticated-request.interface';
+import { StoresService } from '../stores/stores.service';
 import { AcceptStaffInviteDto } from './dto/accept-invite.dto';
 import { LoginStaffDto } from './dto/login-staff.dto';
 import { StaffAuthService } from './staff-auth.service';
@@ -39,6 +40,7 @@ export class StaffAuthController {
   constructor(
     private readonly staffAuthService: StaffAuthService,
     private readonly authCookieService: AuthCookieService,
+    private readonly storesService: StoresService,
   ) {}
 
   @Post('accept-invite')
@@ -186,5 +188,24 @@ export class StaffAuthController {
   @ApiUnauthorizedResponse({ description: 'Staff bearer token is missing or invalid.' })
   me(@Req() request: AuthenticatedRequest) {
     return this.staffAuthService.getProfile(request.user.id);
+  }
+
+  @Get('me/stores')
+  @ApiBearerAuth('bearer')
+  @ApiOperation({
+    summary: 'List operator-readable store metadata for the authenticated staff session.',
+    description:
+      'Hydrates the staff JWT store scope into `{id, name, slug, status, isActive}` rows so ' +
+      'the staff UI can render store names instead of UUIDs. Strictly limited to the live ' +
+      'scope from `request.user.staffStoreScope` — never returns tenant-wide stores.',
+  })
+  @ApiOkResponse({
+    description: 'Returns the assigned stores for this staff session.',
+  })
+  @ApiUnauthorizedResponse({ description: 'Staff bearer token is missing or invalid.' })
+  async myStores(@Req() request: AuthenticatedRequest) {
+    const scope = request.user.staffStoreScope ?? [];
+    const stores = await this.storesService.listForStaffScope(scope);
+    return { stores };
   }
 }
