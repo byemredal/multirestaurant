@@ -1,4 +1,4 @@
-import type { ButtonHTMLAttributes } from 'react';
+import type { ButtonHTMLAttributes, ReactNode } from 'react';
 
 type SetupButtonVariant = 'secondary' | 'primary';
 
@@ -50,6 +50,13 @@ type SetupButtonProps = ButtonHTMLAttributes<HTMLButtonElement> & {
   variant?: SetupButtonVariant;
   block?: boolean;
   grow?: boolean;
+  /**
+   * When true the button renders an inline spinner and is auto-disabled.
+   * Use this on actions that perform async work or navigate between wizard
+   * steps so the user gets immediate feedback that the click registered.
+   */
+  loading?: boolean;
+  loadingLabel?: ReactNode;
 };
 
 export function SetupButton({
@@ -58,6 +65,10 @@ export function SetupButton({
   grow = false,
   className,
   type = 'button',
+  loading = false,
+  loadingLabel,
+  disabled,
+  children,
   ...props
 }: SetupButtonProps) {
   return (
@@ -66,7 +77,21 @@ export function SetupButton({
       className={[setupButtonClass({ variant, block, grow }), className]
         .filter(Boolean)
         .join(' ')}
+      disabled={disabled || loading}
+      aria-busy={loading || undefined}
       {...props}
-    />
+    >
+      {loading ? (
+        <span className="inline-flex items-center gap-[7px]">
+          <span
+            aria-hidden
+            className="inline-block h-[14px] w-[14px] animate-spin rounded-full border-[2px] border-white/40 border-t-white"
+          />
+          <span>{loadingLabel ?? children}</span>
+        </span>
+      ) : (
+        children
+      )}
+    </button>
   );
 }

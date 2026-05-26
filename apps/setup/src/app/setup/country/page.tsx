@@ -1,6 +1,7 @@
 'use client';
 
 import { useRouter } from 'next/navigation';
+import { useState } from 'react';
 import { SETUP_COUNTRIES } from '@/lib/config';
 import { useSetup } from '@/lib/setup-context';
 import { SetupButton } from '@/components/SetupButton';
@@ -29,6 +30,16 @@ const COUNTRY_BASE =
 export default function CountryStepPage() {
   const router = useRouter();
   const { draft, update } = useSetup();
+  const [navTarget, setNavTarget] = useState<'back' | 'next' | null>(null);
+
+  const goBack = () => {
+    setNavTarget('back');
+    router.push('/setup/platform');
+  };
+  const goNext = () => {
+    setNavTarget('next');
+    router.push('/setup/admin');
+  };
 
   return (
     <div>
@@ -87,14 +98,20 @@ export default function CountryStepPage() {
       </div>
 
       <div className="mt-7 flex justify-between gap-3 max-[520px]:flex-col-reverse">
-        <SetupButton onClick={() => router.push('/setup/platform')}>
+        <SetupButton
+          onClick={goBack}
+          loading={navTarget === 'back'}
+          disabled={navTarget !== null}
+        >
           Geri
         </SetupButton>
         <SetupButton
           variant="primary"
           grow
-          disabled={!draft.primaryCountry}
-          onClick={() => router.push('/setup/admin')}
+          disabled={!draft.primaryCountry || navTarget !== null}
+          loading={navTarget === 'next'}
+          loadingLabel="Devam ediliyor…"
+          onClick={goNext}
         >
           Devam
         </SetupButton>

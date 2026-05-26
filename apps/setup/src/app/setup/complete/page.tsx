@@ -249,13 +249,19 @@ export default function CompleteStepPage() {
       ) : null}
 
       <div className="mt-7 flex justify-between gap-3 max-[520px]:flex-col-reverse">
-        <SetupButton onClick={() => router.push('/setup/admin')}>
+        <SetupButton
+          onClick={() => router.push('/setup/admin')}
+          disabled={submitting}
+        >
           Geri
         </SetupButton>
         <SetupButton
           variant="primary"
           grow
           onClick={() => void handleInitialize()}
+          loading={submitting}
+          loadingLabel="Platform başlatılıyor…"
+          disabled={submitting}
         >
           Platformı başlat
         </SetupButton>

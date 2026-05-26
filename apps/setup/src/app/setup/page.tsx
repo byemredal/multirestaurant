@@ -1,6 +1,7 @@
 'use client';
 
 import { useRouter } from 'next/navigation';
+import { useState } from 'react';
 import { SetupButton } from '@/components/SetupButton';
 
 /**
@@ -10,6 +11,7 @@ import { SetupButton } from '@/components/SetupButton';
  */
 export default function SetupWelcomePage() {
   const router = useRouter();
+  const [starting, setStarting] = useState(false);
 
   return (
     <div>
@@ -29,7 +31,12 @@ export default function SetupWelcomePage() {
         <SetupButton
           variant="primary"
           grow
-          onClick={() => router.push('/setup/platform')}
+          loading={starting}
+          loadingLabel="Açılıyor…"
+          onClick={() => {
+            setStarting(true);
+            router.push('/setup/platform');
+          }}
         >
           Begin setup
         </SetupButton>

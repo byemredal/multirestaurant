@@ -12,6 +12,7 @@ export default function AdminStepPage() {
   const { draft, update } = useSetup();
   const [showPassword, setShowPassword] = useState(false);
   const [errors, setErrors] = useState<Record<string, string>>({});
+  const [navTarget, setNavTarget] = useState<'back' | 'next' | null>(null);
 
   const handleContinue = () => {
     const next: Record<string, string> = {};
@@ -28,8 +29,14 @@ export default function AdminStepPage() {
 
     setErrors(next);
     if (Object.keys(next).length === 0) {
+      setNavTarget('next');
       router.push('/setup/complete');
     }
+  };
+
+  const handleBack = () => {
+    setNavTarget('back');
+    router.push('/setup/country');
   };
 
   return (
@@ -57,7 +64,7 @@ export default function AdminStepPage() {
             type="email"
             autoComplete="email"
             className={setupInputClass(Boolean(errors.adminEmail))}
-            placeholder="owner@lieferzonen.com"
+            placeholder="ör. yetkili@isletmeniz.com"
             value={draft.adminEmail}
             onChange={(e) => update({ adminEmail: e.target.value })}
           />
@@ -106,10 +113,21 @@ export default function AdminStepPage() {
       </div>
 
       <div className="mt-7 flex justify-between gap-3 max-[520px]:flex-col-reverse">
-        <SetupButton onClick={() => router.push('/setup/country')}>
+        <SetupButton
+          onClick={handleBack}
+          loading={navTarget === 'back'}
+          disabled={navTarget !== null}
+        >
           Geri
         </SetupButton>
-        <SetupButton variant="primary" grow onClick={handleContinue}>
+        <SetupButton
+          variant="primary"
+          grow
+          onClick={handleContinue}
+          loading={navTarget === 'next'}
+          loadingLabel="Devam ediliyor…"
+          disabled={navTarget !== null}
+        >
           Devam
         </SetupButton>
       </div>

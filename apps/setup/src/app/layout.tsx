@@ -6,7 +6,7 @@ import { setupAppName } from '@/lib/config';
 export const metadata: Metadata = {
   title: setupAppName,
   description:
-    'One-time bootstrap wizard for initializing the Lieferzonen platform.',
+    'One-time bootstrap wizard for initializing the platform.',
 };
 
 export default function RootLayout({

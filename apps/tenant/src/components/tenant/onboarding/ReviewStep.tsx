@@ -215,39 +215,48 @@ export function ReviewStep({
     navigateRef.current = onNavigate;
   }, [onNavigate]);
 
-  const loadReview = useCallback(async () => {
-    const requestSequence = requestSequenceRef.current + 1;
-    requestSequenceRef.current = requestSequence;
-    setLoadingReview(true);
-    setError(null);
+  const loadReview = useCallback(
+    async (options?: { silent?: boolean }) => {
+      const requestSequence = requestSequenceRef.current + 1;
+      requestSequenceRef.current = requestSequence;
+      // Silent refetches (post-save) MUST NOT toggle the loading flag — the
+      // outer section unmounts when `loadingReview` flips to true, which
+      // resets scroll position to the top and flashes the page. We capture
+      // the new payload in the background and React reconciles in place.
+      if (!options?.silent) {
+        setLoadingReview(true);
+      }
+      setError(null);
 
-    await getTenantOnboardingReview(workspace.stateToken)
-      .then((result) => {
-        if (requestSequence !== requestSequenceRef.current) {
-          return;
-        }
-        if (result.redirectStep) {
-          navigateRef.current(getTenantOnboardingStepUrl(workspace.stateToken, result.redirectStep));
-          return;
-        }
-        setReview(result);
-        setSelectedConsentKeys(
-          result.summary?.compliance.acceptedConsents
-            .filter((consent) => consent.accepted)
-            .map((consent) => consent.consentKey) ?? [],
-        );
-      })
-      .catch((caught: unknown) => {
-        if (requestSequence === requestSequenceRef.current) {
-          setError(caught instanceof Error ? caught.message : 'Başvuru özeti yüklenemedi.');
-        }
-      })
-      .finally(() => {
-        if (requestSequence === requestSequenceRef.current) {
-          setLoadingReview(false);
-        }
-      });
-  }, [workspace.stateToken]);
+      await getTenantOnboardingReview(workspace.stateToken)
+        .then((result) => {
+          if (requestSequence !== requestSequenceRef.current) {
+            return;
+          }
+          if (result.redirectStep) {
+            navigateRef.current(getTenantOnboardingStepUrl(workspace.stateToken, result.redirectStep));
+            return;
+          }
+          setReview(result);
+          setSelectedConsentKeys(
+            result.summary?.compliance.acceptedConsents
+              .filter((consent) => consent.accepted)
+              .map((consent) => consent.consentKey) ?? [],
+          );
+        })
+        .catch((caught: unknown) => {
+          if (requestSequence === requestSequenceRef.current) {
+            setError(caught instanceof Error ? caught.message : 'Başvuru özeti yüklenemedi.');
+          }
+        })
+        .finally(() => {
+          if (!options?.silent && requestSequence === requestSequenceRef.current) {
+            setLoadingReview(false);
+          }
+        });
+    },
+    [workspace.stateToken],
+  );
 
   useEffect(() => {
     void loadReview();
@@ -290,11 +299,23 @@ export function ReviewStep({
 
   async function saveConsents() {
     await runOnce(async () => {
+      // Capture the scroll position before the save so any layout shift
+      // from removing the "Onayları kaydet" action button does NOT bounce
+      // the user back to the top of the page.
+      const previousScroll = typeof window !== 'undefined' ? window.scrollY : 0;
       setSavingConsents(true);
       setError(null);
       try {
         await saveTenantOnboardingConsents(workspace.stateToken, selectedConsentKeys);
-        await loadReview();
+        // Silent refetch: do not flip the page back to the "yükleniyor"
+        // placeholder. After the data resolves, restore scroll so the user
+        // stays anchored on the consent card.
+        await loadReview({ silent: true });
+        if (typeof window !== 'undefined') {
+          window.requestAnimationFrame(() => {
+            window.scrollTo({ top: previousScroll, left: 0, behavior: 'auto' });
+          });
+        }
       } catch (caught) {
         setError(caught instanceof Error ? caught.message : 'Onaylar kaydedilemedi.');
       } finally {
@@ -369,48 +390,84 @@ export function ReviewStep({
                 {consentDefinitions.map((consent) => {
                   const stored = consent.accepted;
                   const checked = stored || selectedConsentKeys.includes(consent.consentKey);
+                  const previewBody = consent.documentBody?.trim() ?? '';
+                  const previewTitle = consent.documentTitle?.trim() || consent.label;
                   return (
-                    <label key={consent.consentKey} className="flex gap-3 rounded-[8px] border border-ink-100 bg-ink-50 px-4 py-3">
-                      <input
-                        type="checkbox"
-                        checked={checked}
-                        disabled={stored || savingConsents || submitting}
-                        onChange={(event) => toggleConsent(consent.consentKey, event.target.checked)}
-                        className="mt-1 h-4 w-4 accent-primary"
-                      />
-                      <span className="min-w-0">
-                        <span className="block text-[13px] font-semibold text-ink-800">{consent.label}</span>
-                        <span className="mt-1 block text-[12px] leading-5 text-ink-500">{consent.description}</span>
-                        <span className="mt-2 block text-[11px] leading-5 text-ink-500">
-                          Belge: {consent.documentCode} - Sürüm: {consent.documentVersion}
+                    <div
+                      key={consent.consentKey}
+                      className="rounded-[8px] border border-ink-100 bg-ink-50 px-4 py-3"
+                    >
+                      <label className="flex cursor-pointer gap-3">
+                        <input
+                          type="checkbox"
+                          checked={checked}
+                          disabled={stored || savingConsents || submitting}
+                          onChange={(event) => toggleConsent(consent.consentKey, event.target.checked)}
+                          className="mt-1 h-4 w-4 accent-primary"
+                        />
+                        <span className="min-w-0">
+                          <span className="block text-[13px] font-semibold text-ink-800">
+                            {consent.label}
+                          </span>
+                          <span className="mt-1 block text-[12px] leading-5 text-ink-500">
+                            {consent.description}
+                          </span>
+                          <span className="mt-2 block text-[11px] leading-5 text-ink-500">
+                            Belge: {consent.documentCode} · Sürüm: {consent.documentVersion}
+                          </span>
+                          {consent.reacceptanceRequired ? (
+                            <span className="mt-2 block rounded-[8px] bg-amber-50 px-2.5 py-1.5 text-[11px] font-semibold text-amber-700">
+                              Daha önceki {consent.previouslyAcceptedVersion} sürümü kabul edilmiş.
+                              Güncel sürüm için yeniden onay gereklidir.
+                            </span>
+                          ) : null}
+                          {stored ? (
+                            <span className="mt-2 inline-flex rounded-full bg-success-50 px-2 py-0.5 text-[11px] font-semibold text-success-700">
+                              Kabul edildi ve kaydedildi
+                            </span>
+                          ) : null}
                         </span>
-                        {consent.documentUrl ? (
-                          <a
-                            href={consent.documentUrl}
-                            target="_blank"
-                            rel="noreferrer"
-                            onClick={(event) => event.stopPropagation()}
-                            className="mt-1 inline-flex text-[12px] font-semibold text-primary hover:underline"
-                          >
-                            Belgeyi görüntüle
-                          </a>
-                        ) : (
-                          <span className="mt-1 block text-[11px] text-ink-500">
-                            Bağlantı henüz tanımlanmadı.
-                          </span>
-                        )}
-                        {consent.reacceptanceRequired ? (
-                          <span className="mt-2 block rounded-[8px] bg-amber-50 px-2.5 py-1.5 text-[11px] font-semibold text-amber-700">
-                            Daha önceki {consent.previouslyAcceptedVersion} sürümü kabul edilmiş. Güncel sürüm için yeniden onay gereklidir.
-                          </span>
-                        ) : null}
-                        {stored ? (
-                          <span className="mt-2 inline-flex rounded-full bg-success-50 px-2 py-0.5 text-[11px] font-semibold text-success-700">
-                            Kabul edildi ve kaydedildi
-                          </span>
-                        ) : null}
-                      </span>
-                    </label>
+                      </label>
+
+                      {previewBody || consent.documentUrl ? (
+                        <details className="mt-3 rounded-[8px] border border-ink-100 bg-white">
+                          <summary className="cursor-pointer list-none px-3 py-2 text-[12px] font-semibold text-primary-700 hover:underline">
+                            <span className="inline-flex items-center gap-1">
+                              <span aria-hidden>▸</span> Belgeyi inceleyin
+                            </span>
+                          </summary>
+                          <div className="border-t border-ink-100 px-3 py-3">
+                            <p className="text-[12px] font-semibold uppercase tracking-[0.12em] text-ink-500">
+                              {previewTitle}
+                            </p>
+                            {previewBody ? (
+                              <p className="mt-2 whitespace-pre-wrap text-[12.5px] leading-[1.65] text-ink-700">
+                                {previewBody}
+                              </p>
+                            ) : (
+                              <p className="mt-2 text-[12px] text-ink-500">
+                                Yerel inceleme metni bu sürüm için henüz yapılandırılmadı.
+                              </p>
+                            )}
+                            {consent.documentUrl ? (
+                              <a
+                                href={consent.documentUrl}
+                                target="_blank"
+                                rel="noreferrer"
+                                onClick={(event) => event.stopPropagation()}
+                                className="mt-3 inline-flex text-[12px] font-semibold text-primary hover:underline"
+                              >
+                                Tam metni görüntüle ↗
+                              </a>
+                            ) : null}
+                          </div>
+                        </details>
+                      ) : (
+                        <p className="mt-3 text-[11px] text-ink-500">
+                          Bu sürüm için henüz inceleme metni veya bağlantı tanımlanmadı.
+                        </p>
+                      )}
+                    </div>
                   );
                 })}
               </div>

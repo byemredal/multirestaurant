@@ -1,5 +1,8 @@
+// Generic fallback. The operator-configured platform name only becomes
+// available after this wizard finishes, so the setup app cannot dynamically
+// read it — but the fallback must NOT burn the previous brand back in.
 export const setupAppName =
-  process.env.NEXT_PUBLIC_SETUP_APP_NAME ?? 'Lieferzonen Setup';
+  process.env.NEXT_PUBLIC_SETUP_APP_NAME ?? 'Platform Setup';
 
 export const apiBaseUrl =
   process.env.NEXT_PUBLIC_API_BASE_URL ?? 'http://localhost:4000/api/v1';

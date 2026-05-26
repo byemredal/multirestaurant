@@ -1661,10 +1661,37 @@ export class TenantOnboardingService {
 
   private async resolveComplianceCatalog(country: string, language: string) {
     const fallback = getTenantOnboardingComplianceCatalog(country, language);
-    const [documentDefinitions, consentDefinitions] = await Promise.all([
+    const [documentDefinitions, consentDefinitions, profile] = await Promise.all([
       this.store.listActiveComplianceDocumentRequirements(country, language),
       this.store.listActiveComplianceConsentDefinitions(country, language),
+      this.installationProfileService.findActive(),
     ]);
+
+    // CountryPack legalDocuments carry the placeholder text the user actually
+    // SEES when they tick the consent box. We merge title + body into every
+    // consent definition so the review step can render an inline preview
+    // instead of forcing the user out to an external URL.
+    const legalDocs = profile?.pack.legalDocuments ?? [];
+    const lookupLegal = (documentCode: string) =>
+      legalDocs.find((doc) => doc.typeCode === documentCode) ?? null;
+
+    const decorate = (definition: {
+      consentKey: string;
+      label: string;
+      description: string;
+      documentCode: string;
+      documentVersion: string;
+      documentUrl: string | null;
+      required: boolean;
+      language: string;
+    }) => {
+      const legal = lookupLegal(definition.documentCode);
+      return {
+        ...definition,
+        documentTitle: legal?.placeholderTitle ?? null,
+        documentBody: legal?.placeholderBody ?? null,
+      };
+    };
 
     return {
       ...fallback,
@@ -1678,18 +1705,21 @@ export class TenantOnboardingService {
             guidanceOnly: definition.guidanceOnly,
           }))
         : fallback.documents,
-      consents: consentDefinitions.length > 0
-        ? consentDefinitions.map((definition) => ({
-            consentKey: definition.consentKey,
-            label: definition.label,
-            description: definition.description,
-            documentCode: definition.documentCode,
-            documentVersion: definition.documentVersion,
-            documentUrl: definition.documentUrl,
-            required: definition.required,
-            language: definition.language,
-          }))
-        : fallback.consents,
+      consents:
+        consentDefinitions.length > 0
+          ? consentDefinitions.map((definition) =>
+              decorate({
+                consentKey: definition.consentKey,
+                label: definition.label,
+                description: definition.description,
+                documentCode: definition.documentCode,
+                documentVersion: definition.documentVersion,
+                documentUrl: definition.documentUrl,
+                required: definition.required,
+                language: definition.language,
+              }),
+            )
+          : fallback.consents.map(decorate),
     };
   }
 

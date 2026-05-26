@@ -27,6 +27,7 @@ export default function PlatformStepPage() {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [logoError, setLogoError] = useState<string | null>(null);
+  const [navTarget, setNavTarget] = useState<'back' | 'next' | null>(null);
 
   const handleLogoChange = async (
     event: React.ChangeEvent<HTMLInputElement>,
@@ -76,8 +77,14 @@ export default function PlatformStepPage() {
 
     setErrors(next);
     if (Object.keys(next).length === 0) {
+      setNavTarget('next');
       router.push('/setup/country');
     }
+  };
+
+  const handleBack = () => {
+    setNavTarget('back');
+    router.push('/setup');
   };
 
   return (
@@ -103,7 +110,7 @@ export default function PlatformStepPage() {
           <input
             id="platform-name"
             className={setupInputClass(Boolean(errors.platformName))}
-            placeholder="Lieferzonen"
+            placeholder="ör. Yemekmarketi"
             value={draft.platformName}
             maxLength={120}
             onChange={(e) => update({ platformName: e.target.value })}
@@ -126,7 +133,7 @@ export default function PlatformStepPage() {
             id="support-email"
             type="email"
             className={setupInputClass(Boolean(errors.supportEmail))}
-            placeholder="support@lieferzonen.com"
+            placeholder="ör. destek@isletmeniz.com"
             value={draft.supportEmail}
             onChange={(e) => update({ supportEmail: e.target.value })}
           />
@@ -213,8 +220,21 @@ export default function PlatformStepPage() {
       </div>
 
       <div className="mt-7 flex justify-between gap-3 max-[520px]:flex-col-reverse">
-        <SetupButton onClick={() => router.push('/setup')}>Geri</SetupButton>
-        <SetupButton variant="primary" grow onClick={handleContinue}>
+        <SetupButton
+          onClick={handleBack}
+          loading={navTarget === 'back'}
+          disabled={navTarget !== null}
+        >
+          Geri
+        </SetupButton>
+        <SetupButton
+          variant="primary"
+          grow
+          onClick={handleContinue}
+          loading={navTarget === 'next'}
+          loadingLabel="Devam ediliyor…"
+          disabled={navTarget !== null}
+        >
           Devam
         </SetupButton>
       </div>

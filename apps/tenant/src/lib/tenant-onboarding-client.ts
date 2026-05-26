@@ -281,6 +281,10 @@ export type TenantOnboardingConsentDefinition = {
   documentUrl: string | null;
   required: boolean;
   language: string;
+  /** Placeholder document title from the active CountryPack legalDocuments. */
+  documentTitle?: string | null;
+  /** Placeholder document body — rendered inline in the review step. */
+  documentBody?: string | null;
 };
 
 // TenantOnboardingConsentStatus, tenant onboarding sürecinde tenant'ın onay durumunu temsil eden bir yapıdır.

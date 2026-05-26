@@ -3,8 +3,8 @@
 import { usePathname } from 'next/navigation';
 import type { ReactNode } from 'react';
 import { setupAppName } from '@/lib/config';
-import Image from 'next/image';
-import logoUrl from '@lieferzonen/assets/logo.svg';
+import { Logo } from '@lieferzonen/ui';
+import { defaultPlatformMarkDataUrl } from '@lieferzonen/assets';
 
 /** The four linear wizard steps, in order. The `/setup` index is the intro. */
 export const SETUP_STEPS = [
@@ -58,7 +58,13 @@ export function SetupShell({ children }: { children: ReactNode }) {
       <div className="grid w-full max-w-[1080px] grid-cols-[360px_minmax(0,1fr)] overflow-hidden rounded-xl border border-line bg-white shadow min-h-[calc(100vh-48px)] max-[880px]:min-h-screen max-[880px]:grid-cols-1 max-[880px]:rounded-none max-[880px]:border-0 max-[880px]:shadow-none">
         <aside className="relative flex flex-col gap-7 bg-[linear-gradient(180deg,#fff8ee_0%,#fcebd0_65%,#f7d9a8_100%)] px-8 py-9 max-[880px]:gap-[18px] max-[880px]:px-[22px] max-[880px]:pb-[18px] max-[880px]:pt-[22px]">
           <div className="flex flex-col items-center gap-[11px]">
-            <Image src={logoUrl} alt={`${setupAppName} logo`} width={120} height={36} />
+            <Logo
+              src={undefined}
+              fallbackSrc={defaultPlatformMarkDataUrl}
+              fallbackText={setupAppName}
+              alt={`${setupAppName} logo`}
+              height={36}
+            />
             <span>
               <span className="block text-[14.5px] font-semibold tracking-[-0.01em]">
                 Platform Bootstrap

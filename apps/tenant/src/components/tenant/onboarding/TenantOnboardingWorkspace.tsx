@@ -64,7 +64,17 @@ const WIZARD_RAIL_DESCRIPTIONS: Partial<Record<TenantOnboardingWorkflowStepKey, 
   review: 'Kontrol edin ve gönderin',
 };
 
+// Phone verification is its own pre-flow group. Conceptually it is identity
+// verification, not "business" data and not part of the "verify your business"
+// audit bucket. Keeping it standalone matches what the user sees on the rail:
+// "Kimlik doğrulama" gates everything that follows.
 const WIZARD_PROGRESS_GROUPS = [
+  {
+    key: 'identity',
+    title: 'Kimlik doğrulama',
+    description: 'İletişim numaranızı onaylayın',
+    steps: ['phone-verification'],
+  },
   {
     key: 'business',
     title: 'İşletme bilgileri',
@@ -83,8 +93,8 @@ const WIZARD_PROGRESS_GROUPS = [
   {
     key: 'verification',
     title: 'İşletmenizi doğrulayın',
-    description: 'İletişim, operasyon ve belgeler',
-    steps: ['phone-verification', 'operations', 'verification', 'review'],
+    description: 'Operasyon ve belgeler',
+    steps: ['operations', 'verification', 'review'],
   },
 ] as const satisfies ReadonlyArray<{
   key: string;
