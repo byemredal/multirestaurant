@@ -403,3 +403,16 @@ export const liveNavItemIds = new Set<string>([
 export function isLiveNavItem(item: AdminNavItem): boolean {
   return liveNavItemIds.has(item.id);
 }
+
+export const adminDemoSurfacesEnabled =
+  process.env.NODE_ENV !== 'production' &&
+  process.env.NEXT_PUBLIC_ADMIN_ENABLE_DEMO === 'true';
+
+export const visibleAdminNavSections: AdminNavSection[] = adminDemoSurfacesEnabled
+  ? adminNavSections
+  : adminNavSections
+      .map((section) => ({
+        ...section,
+        items: section.items.filter((item) => isLiveNavItem(item)),
+      }))
+      .filter((section) => section.items.length > 0);

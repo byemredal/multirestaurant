@@ -16,8 +16,10 @@
 #   - restarts long-running services automatically.
 #
 # Required environment variables — see infra/docker/.env.prod.example:
-#   POSTGRES_PASSWORD, JWT_SECRET, BOOTSTRAP_KEY, CORS_ORIGINS,
-#   NEXT_PUBLIC_API_BASE_URL  (+ optional NEXT_PUBLIC_ADMIN_URL / _SETUP_URL)
+#   POSTGRES_PASSWORD, JWT_SECRET, STATE_TOKEN_SECRET,
+#   PASSWORD_SETUP_TOKEN_SECRET, ONBOARDING_OTP_SECRET, BOOTSTRAP_KEY,
+#   CORS_ORIGINS, TENANT_APP_URL, EMAIL_TRANSPORT, SMTP_*,
+#   EMAIL_FROM_ADDRESS, NEXT_PUBLIC_API_BASE_URL
 #
 # NOTE: production-ORIENTED — no per-app Dockerfiles, so `builder` rebuilds on
 # every container recreate. Image-based deploy is the recommended next step.
@@ -27,8 +29,6 @@ name: lieferzonen-prod
 
 services:
   postgres:
-    ports:
-      - "5432:5432"
     environment:
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}
     restart: unless-stopped
@@ -89,8 +89,20 @@ services:
       DATABASE_URL: postgresql://postgres:${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}@postgres:5432/lieferzonen
       REDIS_URL: redis://redis:6379
       JWT_SECRET: ${JWT_SECRET:?JWT_SECRET is required}
+      STATE_TOKEN_SECRET: ${STATE_TOKEN_SECRET:?STATE_TOKEN_SECRET is required}
+      PASSWORD_SETUP_TOKEN_SECRET: ${PASSWORD_SETUP_TOKEN_SECRET:?PASSWORD_SETUP_TOKEN_SECRET is required}
+      ONBOARDING_OTP_SECRET: ${ONBOARDING_OTP_SECRET:?ONBOARDING_OTP_SECRET is required}
       BOOTSTRAP_KEY: ${BOOTSTRAP_KEY:?BOOTSTRAP_KEY is required}
       CORS_ORIGINS: ${CORS_ORIGINS:?CORS_ORIGINS is required}
+      TENANT_APP_URL: ${TENANT_APP_URL:?TENANT_APP_URL is required}
+      EMAIL_TRANSPORT: ${EMAIL_TRANSPORT:?EMAIL_TRANSPORT is required}
+      EMAIL_FROM_ADDRESS: ${EMAIL_FROM_ADDRESS:?EMAIL_FROM_ADDRESS is required}
+      EMAIL_FROM_NAME: ${EMAIL_FROM_NAME:-}
+      SMTP_HOST: ${SMTP_HOST:?SMTP_HOST is required}
+      SMTP_PORT: ${SMTP_PORT:?SMTP_PORT is required}
+      SMTP_USER: ${SMTP_USER:?SMTP_USER is required}
+      SMTP_PASSWORD: ${SMTP_PASSWORD:?SMTP_PASSWORD is required}
+      SMTP_SECURE: ${SMTP_SECURE:-false}
       # Stripe — optional so the API still boots, but real payments require
       # all three to be set in infra/docker/.env.prod.
       STRIPE_SECRET_KEY: ${STRIPE_SECRET_KEY:-}

@@ -10,15 +10,18 @@ import {
   Query,
   Req,
   UploadedFile,
+  UseGuards,
   UseInterceptors,
 } from '@nestjs/common';
 import { FileInterceptor } from '@nestjs/platform-express';
 import { ApiBearerAuth, ApiConsumes, ApiOperation, ApiTags } from '@nestjs/swagger';
 import { mkdirSync } from 'fs';
-import { diskStorage } from 'multer';
+import { diskStorage, memoryStorage } from 'multer';
 import { basename, extname, join } from 'path';
 import { AuthTypes } from '../../common/security/decorators/auth-types.decorator';
 import { Public } from '../../common/security/decorators/public.decorator';
+import { RateLimit } from '../../common/security/decorators/rate-limit.decorator';
+import { RateLimitGuard } from '../../common/security/guards/rate-limit.guard';
 import { AuthenticatedRequest } from '../../common/types/authenticated-request.interface';
 import * as Dto from './dto';
 import { TenantOnboardingService } from './tenant-onboarding.service';
@@ -35,6 +38,8 @@ function sanitizeFileName(value: string) {
 
 @Controller('v2/tenant/onboarding')
 @AuthTypes('tenant')
+@UseGuards(RateLimitGuard)
+@RateLimit({ key: 'tenant-onboarding-v2', limit: 120, ttlMs: 60_000 })
 @ApiBearerAuth('bearer')
 @ApiTags('tenant-onboarding')
 export class TenantOnboardingController {
@@ -42,6 +47,7 @@ export class TenantOnboardingController {
 
   @Public()
   @Post('start')
+  @RateLimit({ key: 'tenant-onboarding-v2-start', limit: 5, ttlMs: 60_000 })
   @ApiOperation({ summary: 'Start a stateless tenant onboarding application.' })
   start(@Req() request: AuthenticatedRequest, @Body() dto: Dto.StartTenantOnboardingDto) {
     return this.onboardingService.start(dto, {
@@ -63,6 +69,7 @@ export class TenantOnboardingController {
 
   @Public()
   @Post('phone-verification/send')
+  @RateLimit({ key: 'tenant-onboarding-v2-phone-send', limit: 5, ttlMs: 60_000 })
   @ApiOperation({ summary: 'Send a tenant onboarding phone verification code by token body.' })
   sendPhoneVerificationCodeFromBody(
     @Body() dto: Dto.SendTenantOnboardingPhoneVerificationByTokenDto,
@@ -75,6 +82,7 @@ export class TenantOnboardingController {
 
   @Public()
   @Post('phone-verification/verify')
+  @RateLimit({ key: 'tenant-onboarding-v2-phone-verify', limit: 10, ttlMs: 60_000 })
   @ApiOperation({ summary: 'Verify a tenant onboarding phone verification code by token body.' })
   verifyPhoneVerificationCodeFromBody(
     @Body() dto: Dto.VerifyTenantOnboardingPhoneByTokenDto,
@@ -101,6 +109,7 @@ export class TenantOnboardingController {
 
   @Public()
   @Post(':stateToken/phone-verification/send')
+  @RateLimit({ key: 'tenant-onboarding-v2-phone-send', limit: 5, ttlMs: 60_000 })
   @ApiOperation({ summary: 'Send a tenant onboarding phone verification code.' })
   sendPhoneVerificationCode(
     @Param('stateToken') stateToken: string,
@@ -114,6 +123,7 @@ export class TenantOnboardingController {
 
   @Public()
   @Post(':stateToken/phone/send-code')
+  @RateLimit({ key: 'tenant-onboarding-v2-phone-send', limit: 5, ttlMs: 60_000 })
   @ApiOperation({ summary: 'Send a tenant onboarding phone verification code for the V2 phone step.' })
   sendPhoneCode(
     @Param('stateToken') stateToken: string,
@@ -127,6 +137,7 @@ export class TenantOnboardingController {
 
   @Public()
   @Post(':stateToken/phone/resend-code')
+  @RateLimit({ key: 'tenant-onboarding-v2-phone-resend', limit: 3, ttlMs: 60_000 })
   @ApiOperation({ summary: 'Resend a tenant onboarding phone verification code for the V2 OTP step.' })
   resendPhoneCode(
     @Param('stateToken') stateToken: string,
@@ -140,6 +151,7 @@ export class TenantOnboardingController {
 
   @Public()
   @Post(':stateToken/phone-verification/verify')
+  @RateLimit({ key: 'tenant-onboarding-v2-phone-verify', limit: 10, ttlMs: 60_000 })
   @ApiOperation({ summary: 'Verify a tenant onboarding phone verification code.' })
   verifyPhoneVerificationCode(
     @Param('stateToken') stateToken: string,
@@ -150,6 +162,7 @@ export class TenantOnboardingController {
 
   @Public()
   @Post(':stateToken/phone/verify-code')
+  @RateLimit({ key: 'tenant-onboarding-v2-phone-verify', limit: 10, ttlMs: 60_000 })
   @ApiOperation({ summary: 'Verify a tenant onboarding phone verification code for the V2 OTP step.' })
   verifyPhoneCode(
     @Param('stateToken') stateToken: string,
@@ -160,6 +173,7 @@ export class TenantOnboardingController {
 
   @Public()
   @Post(':stateToken/continue-link/email')
+  @RateLimit({ key: 'tenant-onboarding-v2-continue-email', limit: 3, ttlMs: 60_000 })
   @ApiOperation({ summary: 'Email the tenant onboarding continuation link.' })
   sendContinueLinkEmail(@Param('stateToken') stateToken: string) {
     return this.onboardingService.sendContinueLinkByStateToken(stateToken);
@@ -316,27 +330,13 @@ export class TenantOnboardingController {
 
   @Public()
   @Post(':stateToken/documents/upload')
+  @RateLimit({ key: 'tenant-onboarding-v2-document-upload', limit: 10, ttlMs: 60_000 })
   @ApiConsumes('multipart/form-data')
   @UseInterceptors(
     FileInterceptor('file', {
-      storage: diskStorage({
-        destination: (request, _file, callback) => {
-          const stateToken = String((request.params as { stateToken?: string }).stateToken ?? 'anonymous');
-          const directory = join(
-            process.cwd(),
-            'uploads',
-            'tenant-onboarding',
-            sanitizeFileName(stateToken).slice(0, 48),
-          );
-          mkdirSync(directory, { recursive: true });
-          callback(null, directory);
-        },
-        filename: (_request, file, callback) => {
-          const extension = extname(file.originalname);
-          const baseName = sanitizeFileName(file.originalname.replace(extension, ''));
-          callback(null, `${Date.now()}-${baseName}${extension}`);
-        },
-      }),
+      // Public uploads stay in memory until the state token and editable
+      // application state have been validated by the service.
+      storage: memoryStorage(),
       limits: {
         fileSize: 10 * 1024 * 1024,
       },
@@ -344,7 +344,7 @@ export class TenantOnboardingController {
   )
   uploadDocumentFileByStateToken(
     @Param('stateToken') stateToken: string,
-    @UploadedFile() file: { originalname: string; mimetype: string; size: number; path: string },
+    @UploadedFile() file: { originalname: string; mimetype: string; size: number; buffer: Buffer },
     @Body() body: Record<string, string | boolean | undefined>,
   ) {
     if (!file) {
@@ -363,6 +363,7 @@ export class TenantOnboardingController {
 
   @Public()
   @Post(':stateToken/submit')
+  @RateLimit({ key: 'tenant-onboarding-v2-submit', limit: 5, ttlMs: 60_000 })
   @ApiOperation({ summary: 'Submit tenant onboarding for review by state token.' })
   submitForReviewByStateToken(@Param('stateToken') stateToken: string) {
     return this.onboardingService.submitForReviewByStateToken(stateToken);

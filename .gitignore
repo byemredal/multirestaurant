@@ -39,6 +39,7 @@ coverage/
 .env.production.local
 apps/*/.env
 apps/*/.env.local
+infra/docker/.env.prod
 
 # runtime upload data
 uploads/

@@ -75,6 +75,9 @@ const ACTIONS: Action[] = [
 ];
 
 export function QuickActions() {
+  const testOrderToolsEnabled =
+    process.env.NODE_ENV !== 'production' &&
+    process.env.NEXT_PUBLIC_ENABLE_TEST_ORDERS === 'true';
   const [testOrderOpen, setTestOrderOpen] = useState(false);
 
   return (
@@ -115,7 +118,7 @@ export function QuickActions() {
           );
         })}
 
-        <button
+        {testOrderToolsEnabled ? <button
           type="button"
           onClick={() => setTestOrderOpen(true)}
           className="group flex items-center gap-3 rounded-[12px] border border-amber-100 bg-amber-50/40 p-3 text-left transition hover:border-amber-200 hover:bg-amber-50"
@@ -142,10 +145,12 @@ export function QuickActions() {
           >
             →
           </span>
-        </button>
+        </button> : null}
       </div>
 
-      <TestOrderLauncher open={testOrderOpen} onClose={() => setTestOrderOpen(false)} />
+      {testOrderToolsEnabled ? (
+        <TestOrderLauncher open={testOrderOpen} onClose={() => setTestOrderOpen(false)} />
+      ) : null}
     </section>
   );
 }

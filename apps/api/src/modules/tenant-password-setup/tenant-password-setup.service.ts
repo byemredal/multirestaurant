@@ -7,6 +7,7 @@ import {
   ServiceUnavailableException,
 } from '@nestjs/common';
 import { PasswordService } from '../../common/security/password.service';
+import { DatabaseService } from '../../database/database.service';
 import { EmailService } from '../notification/email.service';
 import { SetupStore } from '../setup/setup.store';
 import { TenantAccountsStore } from '../tenants/tenants.store';
@@ -92,6 +93,7 @@ export class TenantPasswordSetupService {
     private readonly passwordService: PasswordService,
     private readonly emailService: EmailService,
     private readonly setupStore: SetupStore,
+    private readonly databaseService: DatabaseService,
   ) {}
 
   /**
@@ -334,8 +336,20 @@ export class TenantPasswordSetupService {
     }
 
     const hash = await this.passwordService.hash(newPassword);
-    await this.tenantAccountsStore.updatePasswordHash(record.tenantAccountId, hash);
-    await this.store.markConsumed(record.id, new Date());
+    const redeemed = await this.databaseService.transaction(async () => {
+      const consumed = await this.store.consumeIfActive(record.id, new Date());
+      if (!consumed) {
+        return false;
+      }
+      await this.tenantAccountsStore.updatePasswordHash(record.tenantAccountId, hash);
+      return true;
+    });
+    if (!redeemed) {
+      throw new BadRequestException({
+        message: 'Bu sifre belirleme baglantisi gecersiz veya suresi dolmus.',
+        code: 'invalid_or_expired_token',
+      });
+    }
 
     this.logger.log(
       JSON.stringify({

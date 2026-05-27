@@ -65,6 +65,9 @@ function sortActiveOrders(orders: TenantOrderListItem[]) {
 }
 
 export default function TenantOrdersPage() {
+  const testOrderToolsEnabled =
+    process.env.NODE_ENV !== 'production' &&
+    process.env.NEXT_PUBLIC_ENABLE_TEST_ORDERS === 'true';
   const { session, logout } = useTenantAuth();
   const {
     orders: liveOrders,
@@ -208,14 +211,14 @@ export default function TenantOrdersPage() {
             </button>
           ))}
         </div>
-        <button
+        {testOrderToolsEnabled ? <button
           type="button"
           onClick={() => setTestOrderOpen(true)}
           className="ml-2 shrink-0 rounded-[10px] border border-amber-200 bg-amber-50/60 px-3 py-1.5 text-[12px] font-semibold text-amber-700 transition hover:border-amber-300 hover:bg-amber-50"
           title="Realtime ve dashboard akışını gerçek sipariş ile test et"
         >
           + Test siparişi
-        </button>
+        </button> : null}
         <button
           onClick={() => void refreshAll()}
           disabled={isRefreshing}
@@ -233,7 +236,9 @@ export default function TenantOrdersPage() {
         </button>
       </div>
 
-      <TestOrderLauncher open={testOrderOpen} onClose={() => setTestOrderOpen(false)} />
+      {testOrderToolsEnabled ? (
+        <TestOrderLauncher open={testOrderOpen} onClose={() => setTestOrderOpen(false)} />
+      ) : null}
 
       {showInitialSpinner ? (
         <div className="space-y-2.5" aria-busy="true" aria-live="polite">

@@ -3,7 +3,7 @@
 import { useRouter } from 'next/navigation';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { Icon, type IconName } from '@/lib/icons';
-import { adminNavSections, resolveItemLabel } from '@/lib/admin-navigation';
+import { resolveItemLabel, visibleAdminNavSections } from '@/lib/admin-navigation';
 import { useTerminology } from '@/lib/terminology/TerminologyProvider';
 
 type Command = {
@@ -29,7 +29,7 @@ export default function CommandPalette({
   const inputRef = useRef<HTMLInputElement>(null);
 
   const commands = useMemo<Command[]>(() => {
-    const navCommands = adminNavSections.flatMap((section) =>
+    const navCommands = visibleAdminNavSections.flatMap((section) =>
       section.items.map((item) => ({
         id: item.id,
         label: resolveItemLabel(item, preset),
@@ -46,20 +46,6 @@ export default function CommandPalette({
         group: 'Quick actions',
         icon: 'inbox',
         href: '/tenant-applications',
-      },
-      {
-        id: 'qa-incidents',
-        label: 'Open incident board',
-        group: 'Quick actions',
-        icon: 'alert',
-        href: '/alerts',
-      },
-      {
-        id: 'qa-payouts',
-        label: 'Run payout review',
-        group: 'Quick actions',
-        icon: 'payout',
-        href: '/finance/payouts',
       },
     ];
     return [...quickActions, ...navCommands];

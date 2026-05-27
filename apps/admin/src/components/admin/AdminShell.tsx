@@ -5,7 +5,7 @@ import { useCallback, useEffect, useState, type ReactNode } from 'react';
 import { Logo } from '@lieferzonen/ui';
 import { defaultPlatformMarkDataUrl } from '@lieferzonen/assets';
 import { useBranding } from '@/lib/branding/BrandingProvider';
-import { findNavItemByPath, isLiveNavItem } from '@/lib/admin-navigation';
+import { adminDemoSurfacesEnabled, findNavItemByPath, isLiveNavItem } from '@/lib/admin-navigation';
 import Sidebar, { type SidebarBadgeMap } from './Sidebar';
 import Topbar from './Topbar';
 import CommandPalette from './CommandPalette';
@@ -160,7 +160,9 @@ export default function AdminShell({
   const roleLabel = adminRoles[role].label;
 
   const currentNavItem = findNavItemByPath(pathname);
-  const showMockBanner = currentNavItem ? !isLiveNavItem(currentNavItem) : false;
+  const isBlockedDemoSurface =
+    currentNavItem ? !isLiveNavItem(currentNavItem) && !adminDemoSurfacesEnabled : false;
+  const showMockBanner = currentNavItem ? !isLiveNavItem(currentNavItem) && adminDemoSurfacesEnabled : false;
 
   return (
     <div
@@ -238,7 +240,11 @@ export default function AdminShell({
               </div>
             </div>
           )}
-          {children}
+          {isBlockedDemoSurface ? (
+            <div role="status" className="admin-card">
+              This demo-only operation surface is disabled in production.
+            </div>
+          ) : children}
         </div>
       </main>
 

@@ -131,14 +131,17 @@ export class TenantPasswordSetupStore {
       });
   }
 
-  async markConsumed(id: string, consumedAt: Date): Promise<void> {
-    await this.databaseService
+  async consumeIfActive(id: string, consumedAt: Date): Promise<boolean> {
+    const result = await this.databaseService
       .prepare(
         `UPDATE "TenantPasswordSetupToken"
            SET "consumedAt" = $consumedAt
-         WHERE "id" = $id`,
+         WHERE "id" = $id
+           AND "consumedAt" IS NULL
+           AND "expiresAt" > $consumedAt`,
       )
       .run({ $id: id, $consumedAt: consumedAt.toISOString() });
+    return result.rowCount === 1;
   }
 
   /**

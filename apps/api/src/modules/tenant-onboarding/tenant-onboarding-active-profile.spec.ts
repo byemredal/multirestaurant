@@ -1,5 +1,5 @@
 import { CH_PACK, TR_PACK } from '@lieferzonen/config';
-import { BadRequestException } from '@nestjs/common';
+import { BadRequestException, ServiceUnavailableException } from '@nestjs/common';
 import { TenantOnboardingService } from './tenant-onboarding.service';
 import { getTenantOnboardingPlanCatalog } from './tenant-onboarding-plan-catalog';
 import { getTenantOnboardingComplianceCatalog } from './tenant-onboarding-compliance-catalog';
@@ -141,5 +141,44 @@ describe('Tenant onboarding plan + compliance catalogs', () => {
     for (const consent of tr.consents) {
       expect(consent.language).toBe('tr-TR');
     }
+  });
+});
+
+describe('Tenant onboarding legal finalization gate', () => {
+  const originalEnv = { ...process.env };
+
+  afterAll(() => {
+    for (const key of Object.keys(process.env)) {
+      if (!(key in originalEnv)) delete process.env[key];
+    }
+    Object.assign(process.env, originalEnv);
+  });
+
+  function makeService() {
+    return new TenantOnboardingService(
+      {} as any, {} as any, {} as any, {} as any, {} as any, {} as any, {} as any, {} as any,
+    );
+  }
+
+  function assertConsent(service: TenantOnboardingService, description: string) {
+    return (service as any).assertProductionConsentContent([
+      {
+        required: true,
+        description,
+        documentVersion: 'v1',
+        documentTitle: 'Terms',
+        documentBody: 'Reviewed final content',
+      },
+    ]);
+  }
+
+  it('blocks placeholder consent content in production', () => {
+    process.env.NODE_ENV = 'production';
+    expect(() => assertConsent(makeService(), 'placeholder-v1')).toThrow(ServiceUnavailableException);
+  });
+
+  it('keeps explicitly marked placeholder content usable during development', () => {
+    process.env.NODE_ENV = 'development';
+    expect(() => assertConsent(makeService(), 'placeholder-v1')).not.toThrow();
   });
 });

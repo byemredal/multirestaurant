@@ -7,7 +7,9 @@ import {
   NotFoundException,
   ServiceUnavailableException,
 } from '@nestjs/common';
-import { createHash } from 'crypto';
+import { createHash, randomUUID } from 'crypto';
+import { mkdir, writeFile } from 'node:fs/promises';
+import { basename, extname, join } from 'node:path';
 import { plainToInstance } from 'class-transformer';
 import { validateSync } from 'class-validator';
 import { AdminAuditLogService } from '../admin-audit-log/admin-audit-log.service';
@@ -51,6 +53,13 @@ type UploadedTenantFile = {
   mimetype: string;
   size: number;
   path: string;
+};
+type BufferedTenantFile = Omit<UploadedTenantFile, 'path'> & { buffer: Buffer };
+
+const ALLOWED_DOCUMENT_FILE_TYPES: Readonly<Record<string, readonly string[]>> = {
+  'application/pdf': ['.pdf'],
+  'image/jpeg': ['.jpg', '.jpeg'],
+  'image/png': ['.png'],
 };
 
 type OnboardingSessionStepKey =
@@ -2197,11 +2206,14 @@ export class TenantOnboardingService {
 
   async uploadDocumentFileByStateToken(
     stateToken: string,
-    file: UploadedTenantFile,
+    file: BufferedTenantFile,
     dto: Dto.UploadTenantDocumentFileDto,
   ) {
     const application = await this.resolveApplicationFromStateToken(stateToken);
-    const document = await this.uploadDocumentFromFile(application.tenantAccountId, file, dto);
+    await this.ensureEditableApplication(application.tenantAccountId);
+    this.assertAllowedDocumentFile(file);
+    const persistedFile = await this.persistPublicDocumentUpload(application.tenantAccountId, file);
+    const document = await this.uploadDocumentFromFile(application.tenantAccountId, persistedFile, dto);
     return {
       document,
       workspace: await this.getWorkspace(application.tenantAccountId),
@@ -2351,6 +2363,34 @@ export class TenantOnboardingService {
       metadata: { type: document.type, version: document.version, fileName: file.originalname },
     });
     return document;
+  }
+
+  private assertAllowedDocumentFile(file: Pick<BufferedTenantFile, 'mimetype' | 'originalname'>) {
+    const allowedExtensions = ALLOWED_DOCUMENT_FILE_TYPES[file.mimetype];
+    const extension = extname(file.originalname).toLowerCase();
+    if (!allowedExtensions?.includes(extension)) {
+      throw new BadRequestException('Unsupported document file type. Allowed formats: PDF, JPG, JPEG, PNG.');
+    }
+  }
+
+  private async persistPublicDocumentUpload(
+    tenantAccountId: string,
+    file: BufferedTenantFile,
+  ): Promise<UploadedTenantFile> {
+    const directory = join(process.cwd(), 'uploads', 'tenant-onboarding', tenantAccountId);
+    await mkdir(directory, { recursive: true });
+    const extension = extname(file.originalname).toLowerCase();
+    const originalBase = basename(file.originalname, extname(file.originalname))
+      .replace(/[^a-zA-Z0-9._-]/g, '_')
+      .slice(0, 80) || 'document';
+    const path = join(directory, `${Date.now()}-${randomUUID()}-${originalBase}${extension}`);
+    await writeFile(path, file.buffer, { flag: 'wx' });
+    return {
+      originalname: file.originalname,
+      mimetype: file.mimetype,
+      size: file.size,
+      path,
+    };
   }
 
   async submit(tenantAccountId: string) {
@@ -3182,6 +3222,7 @@ export class TenantOnboardingService {
       activePack.country,
       activePack.language,
     );
+    this.assertProductionConsentContent(catalog.consents);
     const snapshots = await this.store.listConsentSnapshots(applicationId);
     const missingRequiredConsent = catalog.consents.some(
       (definition) =>
@@ -3195,6 +3236,34 @@ export class TenantOnboardingService {
     );
     if (missingRequiredConsent) {
       throw new BadRequestException('Göndermeden önce tüm zorunlu başvuru onayları kabul edilmelidir.');
+    }
+  }
+
+  private assertProductionConsentContent(
+    consents: Array<{
+      required: boolean;
+      description: string;
+      documentVersion: string;
+      documentTitle?: string | null;
+      documentBody?: string | null;
+    }>,
+  ) {
+    if (process.env.NODE_ENV !== 'production') {
+      return;
+    }
+    const placeholderPattern = /placeholder|taslak|non-production|production de/i;
+    const containsPlaceholder = consents.some(
+      (consent) =>
+        consent.required &&
+        placeholderPattern.test(
+          `${consent.documentVersion} ${consent.description} ${consent.documentTitle ?? ''} ${consent.documentBody ?? ''}`,
+        ),
+    );
+    if (containsPlaceholder) {
+      throw new ServiceUnavailableException({
+        message: 'Application submission is blocked until reviewed legal consent documents are configured.',
+        code: 'placeholder_legal_content',
+      });
     }
   }
 

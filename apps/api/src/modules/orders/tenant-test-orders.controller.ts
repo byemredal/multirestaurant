@@ -1,4 +1,4 @@
-import { Body, Controller, Post, Req } from '@nestjs/common';
+import { Body, Controller, Post, Req, ServiceUnavailableException, UseGuards } from '@nestjs/common';
 import {
   ApiBearerAuth,
   ApiBody,
@@ -9,6 +9,7 @@ import {
 } from '@nestjs/swagger';
 import { AuthTypes } from '../../common/security/decorators/auth-types.decorator';
 import { RateLimit } from '../../common/security/decorators/rate-limit.decorator';
+import { RateLimitGuard } from '../../common/security/guards/rate-limit.guard';
 import { AuthenticatedRequest } from '../../common/types/authenticated-request.interface';
 import { CreateTestOrderDto } from './dto/create-test-order.dto';
 import { OrdersService } from './orders.service';
@@ -27,6 +28,7 @@ export class TenantTestOrdersController {
   constructor(private readonly ordersService: OrdersService) {}
 
   @Post()
+  @UseGuards(RateLimitGuard)
   @RateLimit({ key: 'tenant-test-order', limit: 10, ttlMs: 60_000 })
   @ApiOperation({
     summary:
@@ -38,6 +40,9 @@ export class TenantTestOrdersController {
   })
   @ApiUnauthorizedResponse({ description: 'Tenant bearer token eksik veya geçersiz.' })
   create(@Req() request: AuthenticatedRequest, @Body() dto: CreateTestOrderDto) {
+    if (process.env.NODE_ENV === 'production') {
+      throw new ServiceUnavailableException('Test order tooling is disabled in production.');
+    }
     return this.ordersService.createTestOrderForTenant(request.user.id, dto);
   }
 }

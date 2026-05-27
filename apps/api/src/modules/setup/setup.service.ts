@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto';
-import { ConflictException, Injectable } from '@nestjs/common';
+import { ConflictException, Injectable, ServiceUnavailableException } from '@nestjs/common';
 import { getCountryPack, resolveCountryDefaults } from '@lieferzonen/config';
 import { PasswordService } from '../../common/security/password.service';
 import { InitializePlatformDto } from './dto/initialize-platform.dto';
@@ -81,6 +81,19 @@ export class SetupService {
       const primaryCountry = dto.primaryCountry.toUpperCase();
       const pack = getCountryPack(primaryCountry);
       const countryDefaults = resolveCountryDefaults(primaryCountry);
+      if (
+        process.env.NODE_ENV === 'production' &&
+        pack.legalDocuments.some((document) =>
+          /placeholder|taslak|non-production|production de/i.test(
+            `${document.placeholderTitle} ${document.placeholderBody}`,
+          ),
+        )
+      ) {
+        throw new ServiceUnavailableException({
+          message: 'Production setup is blocked until reviewed legal documents replace placeholders.',
+          code: 'placeholder_legal_content',
+        });
+      }
 
       // Baseline legal documents — pack-provided placeholders take precedence
       // over the generic constants so the seeded text is at least in the

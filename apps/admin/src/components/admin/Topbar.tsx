@@ -5,6 +5,7 @@ import { useState } from 'react';
 import Popover from '@/components/ui/Popover';
 import { Icon } from '@/lib/icons';
 import { mockNotifications } from '@/lib/mock/notifications';
+import { adminDemoSurfacesEnabled } from '@/lib/admin-navigation';
 import { adminRoleList, type AdminRole } from '@/lib/rbac/roles';
 import {
   terminologyPresetList,
@@ -70,10 +71,11 @@ export default function Topbar({
       meta: 'Test ortamı',
       initials: 'DS',
     },
-  ];
+  ].filter((scope) => adminDemoSurfacesEnabled || scope.id === 'platform-wide');
   const activeContextScope = adminContextScopes[0]!;
 
-  const unread = mockNotifications.filter(
+  const notifications = adminDemoSurfacesEnabled ? mockNotifications : [];
+  const unread = notifications.filter(
     (n) => !n.read && !readIds.includes(n.id),
   ).length;
   const env = ENV_META[ENV] ?? ENV_META.production;
@@ -244,7 +246,7 @@ export default function Topbar({
                     className="admin-link"
                     style={{ fontSize: 12, background: 'none', border: 0, cursor: 'pointer' }}
                     onClick={() =>
-                      setReadIds(mockNotifications.map((n) => n.id))
+                      setReadIds(notifications.map((n) => n.id))
                     }
                   >
                     Mark all read
@@ -253,7 +255,7 @@ export default function Topbar({
               </div>
               <div className="app-menu__sep" />
               <div style={{ maxHeight: 320, overflowY: 'auto' }}>
-                {mockNotifications.map((n) => {
+                {notifications.map((n) => {
                   const NIcon = Icon[n.icon];
                   const isRead = n.read || readIds.includes(n.id);
                   return (

@@ -85,6 +85,9 @@ describe('TenantPasswordSetupService.resendForTenant — cooldown', () => {
     const setupStore = {
       getPlatformSetup: jest.fn().mockResolvedValue(null),
     } as unknown as SetupStore;
+    const databaseService = {
+      transaction: jest.fn(async (work: () => Promise<unknown>) => work()),
+    };
 
     return new TenantPasswordSetupService(
       store as TenantPasswordSetupStore,
@@ -92,6 +95,7 @@ describe('TenantPasswordSetupService.resendForTenant — cooldown', () => {
       passwordService,
       emailService,
       setupStore,
+      databaseService as any,
     );
   }
 
@@ -170,5 +174,96 @@ describe('TenantPasswordSetupService.resendForTenant — cooldown', () => {
     ).rejects.toMatchObject({
       response: expect.objectContaining({ code: 'resend_cooldown_active' }),
     });
+  });
+});
+
+describe('TenantPasswordSetupService.redeem - atomic token consumption', () => {
+  const originalEnv = { ...process.env };
+  const activeToken: PasswordSetupTokenRow = {
+    id: 'token-1',
+    tenantAccountId: 'tenant-1',
+    tokenHash: 'stored-hash',
+    purpose: 'initial_password_setup',
+    expiresAt: new Date(Date.now() + 60_000),
+    consumedAt: null,
+    createdByAdminId: 'admin-1',
+    sentToEmail: 'partner@example.com',
+    sentToPhone: null,
+    deliveryStatus: 'sent',
+    deliveryErrorCode: null,
+    createdAt: new Date(),
+  };
+
+  function buildRedeemService(row: PasswordSetupTokenRow | null = activeToken) {
+    let consumed = false;
+    const store = {
+      findByTokenHash: jest.fn().mockResolvedValue(row),
+      consumeIfActive: jest.fn().mockImplementation(async () => {
+        if (consumed) return false;
+        consumed = true;
+        return true;
+      }),
+    };
+    const tenants = {
+      findById: jest.fn().mockResolvedValue({ account: { email: 'partner@example.com' } }),
+      updatePasswordHash: jest.fn().mockResolvedValue(undefined),
+    };
+    const password = { hash: jest.fn().mockResolvedValue('password-hash') };
+    const database = { transaction: jest.fn(async (work: () => Promise<unknown>) => work()) };
+    const service = new TenantPasswordSetupService(
+      store as any,
+      tenants as any,
+      password as any,
+      {} as any,
+      {} as any,
+      database as any,
+    );
+    return { service, store, tenants };
+  }
+
+  beforeEach(() => {
+    process.env.JWT_SECRET = 'test-password-setup-secret';
+  });
+
+  afterAll(() => {
+    for (const key of Object.keys(process.env)) {
+      if (!(key in originalEnv)) delete process.env[key];
+    }
+    Object.assign(process.env, originalEnv);
+  });
+
+  it('allows only one of two parallel redemptions for the same token', async () => {
+    const { service, tenants } = buildRedeemService();
+    const results = await Promise.allSettled([
+      service.redeem('same-token', 'Password123'),
+      service.redeem('same-token', 'Password456'),
+    ]);
+
+    expect(results.filter((result) => result.status === 'fulfilled')).toHaveLength(1);
+    expect(results.filter((result) => result.status === 'rejected')).toHaveLength(1);
+    expect(tenants.updatePasswordHash).toHaveBeenCalledTimes(1);
+  });
+
+  it('rejects a token that loses the conditional consume check', async () => {
+    const { service, store, tenants } = buildRedeemService();
+    store.consumeIfActive.mockResolvedValue(false);
+
+    await expect(service.redeem('used-token', 'Password123')).rejects.toMatchObject({
+      response: expect.objectContaining({ code: 'invalid_or_expired_token' }),
+    });
+    expect(tenants.updatePasswordHash).not.toHaveBeenCalled();
+  });
+
+  it('rejects expired tokens before attempting password persistence', async () => {
+    const { service, store, tenants } = buildRedeemService({
+      ...activeToken,
+      expiresAt: new Date(Date.now() - 1000),
+    });
+
+    await expect(service.redeem('expired-token', 'Password123')).rejects.toMatchObject({
+      response: expect.objectContaining({ code: 'invalid_or_expired_token' }),
+    });
+    expect(store.consumeIfActive).not.toHaveBeenCalled();
+    expect(tenants.updatePasswordHash).not.toHaveBeenCalled();
   });
 });

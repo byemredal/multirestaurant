@@ -9,10 +9,10 @@ import { adminAppName } from '@/lib/config';
 import { useBranding } from '@/lib/branding/BrandingProvider';
 import { Icon } from '@/lib/icons';
 import {
-  adminNavSections,
   isLiveNavItem,
   resolveItemLabel,
   resolveSectionLabel,
+  visibleAdminNavSections,
 } from '@/lib/admin-navigation';
 import { canAccess, type AdminRole } from '@/lib/rbac/roles';
 import { useTerminology } from '@/lib/terminology/TerminologyProvider';
@@ -44,7 +44,7 @@ export default function Sidebar({
   const [closedGroups, setClosedGroups] = useState<Record<string, boolean>>({});
 
   const sections = useMemo(
-    () => adminNavSections.filter((section) => canAccess(role, section.access)),
+    () => visibleAdminNavSections.filter((section) => canAccess(role, section.access)),
     [role],
   );
 
