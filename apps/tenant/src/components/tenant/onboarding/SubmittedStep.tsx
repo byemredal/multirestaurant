@@ -32,10 +32,13 @@ function getLifecycleCopy(status: string, fallback: ReturnType<typeof getSubmitt
         iconLabel: 'OK',
         iconTone: 'success',
         title: 'Başvurunuz onaylandı',
-        body: 'Hesabınız aktif. Giriş yaparak panelinize erişebilir, henüz şifre belirlemediyseniz oluşturabilirsiniz.',
+        body:
+          'Hesabınız aktif. Kayıt e-postanıza şifre belirleme bağlantısı gönderdik — ' +
+          'bağlantıya tıklayarak şifrenizi oluşturup tenant paneline geçebilirsiniz.',
         note:
-          'Onay sonrası şifre belirleme veya giriş bağlantısı kayıt e-postanıza gönderildi. Bağlantı elinizde değilse aşağıdaki düğmeyle doğrudan giriş ekranına geçebilirsiniz.',
-        primaryAction: { label: 'Giriş yap', href: '/login' },
+          'Bağlantı 24 saat geçerlidir. E-postanız ulaşmadıysa spam/junk klasörünü kontrol edin, ' +
+          'ardından destek ekibimizle iletişime geçin.',
+        primaryAction: { label: 'Giriş ekranına git', href: '/login' },
       };
     case 'rejected':
       return {
@@ -45,7 +48,7 @@ function getLifecycleCopy(status: string, fallback: ReturnType<typeof getSubmitt
         iconTone: 'danger',
         title: 'Başvurunuz onaylanmadı',
         body: 'Başvurunuz şu an için onaylanmadı. Daha fazla bilgi için destek ekibimizle iletişime geçin.',
-        note: 'Destek için: support@lieferzonen.de',
+        note: 'Destek için tenant başvurunuzu yaptığınız e-posta adresine yanıt yazabilirsiniz.',
       };
     case 'suspended':
       return {

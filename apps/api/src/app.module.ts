@@ -24,6 +24,7 @@ import { PlatformConfigModule } from './modules/platform-config/platform-config.
 import { PlatformSettingsModule } from './modules/platform-settings/platform-settings.module';
 import { TenantsModule } from './modules/tenants/tenants.module';
 import { TenantOnboardingModule } from './modules/tenant-onboarding/tenant-onboarding.module';
+import { TenantPasswordSetupModule } from './modules/tenant-password-setup/tenant-password-setup.module';
 import { StoresModule } from './modules/stores/stores.module';
 import { StoreSettingsModule } from './modules/store-settings/store-settings.module';
 import { ReviewsModule } from './modules/reviews/reviews.module';
@@ -51,6 +52,7 @@ import { SystemTaxonomyModule } from './modules/system-taxonomy/system-taxonomy.
     AdminAuditLogModule,
     AdminAuthModule,
     TenantOnboardingModule,
+    TenantPasswordSetupModule,
     AdminTenantReviewsModule,
     AuthModule,
     StaffAuthModule,

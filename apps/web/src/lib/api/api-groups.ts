@@ -242,6 +242,25 @@ export const apiGroups: ApiGroup[] = [
     ],
   },
   {
+    id: 'tenantPasswordSetup',
+    label: 'Public — Tenant Password Setup (post-approval magic link)',
+    actions: [
+      {
+        id: 'tenantPasswordSetupStatus',
+        method: 'GET',
+        path: '/v2/tenant/password-setup/:token/status',
+        pathParams: [{ key: 'token', label: 'Raw setup token from the e-mail link' }],
+      },
+      {
+        id: 'tenantPasswordSetupRedeem',
+        method: 'POST',
+        path: '/v2/tenant/password-setup/:token/redeem',
+        pathParams: [{ key: 'token', label: 'Raw setup token from the e-mail link' }],
+        bodyFields: [{ key: 'password', label: '8-100 chars; upper + lower + digit' }],
+      },
+    ],
+  },
+  {
     id: 'adminPlatformSettings',
     label: 'Admin — Platform Settings (geo provider selector)',
     actions: [

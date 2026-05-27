@@ -14,6 +14,7 @@ import { AdminAuditLogService } from '../admin-audit-log/admin-audit-log.service
 import { InstallationProfileService } from '../setup/installation-profile.service';
 import { SetupStore } from '../setup/setup.store';
 import { TenantAccountsStore } from '../tenants/tenants.store';
+import { TenantPasswordSetupService } from '../tenant-password-setup/tenant-password-setup.service';
 import { SharedFileStorageService } from '../shared-file-storage/shared-file-storage.service';
 import { EmailService } from '../notification/email.service';
 import * as Dto from './dto';
@@ -139,6 +140,7 @@ export class TenantOnboardingService {
     private readonly emailService: EmailService,
     private readonly installationProfileService: InstallationProfileService,
     private readonly setupStore: SetupStore,
+    private readonly passwordSetupService: TenantPasswordSetupService,
   ) { }
 
   /**
@@ -284,9 +286,25 @@ export class TenantOnboardingService {
       return trimmed;
     }
 
-    // Pull every digit out of the user input — most permissive normalization,
-    // matches every realistic format (`+41 79 …`, `0041…`, `079 …`, `79 …`).
+    // When the user TYPED an explicit country prefix ('+CC' or '00CC'), it
+    // MUST match the active CountryPack. Silent re-attachment of the active
+    // prefix (the previous behavior) hid mismatches behind a plausible-looking
+    // number — see SMOKE-01 BUG-03. Reject loudly instead.
+    const hasExplicitPrefix = /^(?:\+|00)\d/.test(trimmed);
     const allDigits = trimmed.replace(/[^\d]/g, '');
+
+    if (hasExplicitPrefix) {
+      const declaredDigits = trimmed.startsWith('+')
+        ? allDigits
+        : allDigits.replace(/^00/, '');
+      if (!declaredDigits.startsWith(expectedPrefixDigits)) {
+        throw new BadRequestException({
+          message: `Telefon numarasının ülke kodu platformun aktif ülkesiyle eşleşmiyor (${e164} bekleniyor). Lütfen ulusal numaranızı ülke kodu olmadan girin.`,
+          code: 'phone_country_mismatch',
+        });
+      }
+    }
+
     let national = allDigits;
     if (national.startsWith('00' + expectedPrefixDigits)) {
       national = national.slice(2 + expectedPrefixDigits.length);
@@ -2637,7 +2655,64 @@ export class TenantOnboardingService {
       tenantAccountId: updated.tenantAccountId,
       metadata: note ?? {},
     });
-    return updated;
+
+    // Issue the post-approval password setup magic link. Capturing delivery
+    // status here lets the admin response surface "e-mail sent / delivery
+    // unavailable / failed" honestly — the alternative (silent best-effort)
+    // is exactly the lie this prompt's brief forbids.
+    const tenant = await this.tenantAccountsStore.findById(updated.tenantAccountId);
+    const needsPasswordSetup = tenant ? tenant.account.passwordHash === '' : false;
+    let passwordSetup: {
+      deliveryStatus: string;
+      deliveryErrorCode: string | null;
+      sentToEmail: string | null;
+      tokenIssued: boolean;
+      debugLink?: string | null;
+    } | null = null;
+    if (needsPasswordSetup && tenant) {
+      try {
+        const issued = await this.passwordSetupService.issueForTenant({
+          tenantAccountId: tenant.account.id,
+          createdByAdminId: adminId,
+        });
+        passwordSetup = {
+          deliveryStatus: issued.deliveryStatus,
+          deliveryErrorCode: issued.deliveryErrorCode,
+          sentToEmail: issued.token.sentToEmail,
+          tokenIssued: true,
+          debugLink: issued.debugLink,
+        };
+        await this.auditLogService.log({
+          actorType: 'admin',
+          actorId: adminId,
+          action: 'password_setup_link_issued',
+          entityType: 'tenant_account',
+          entityId: tenant.account.id,
+          applicationId,
+          tenantAccountId: tenant.account.id,
+          metadata: {
+            deliveryStatus: issued.deliveryStatus,
+            deliveryErrorCode: issued.deliveryErrorCode,
+          },
+        });
+      } catch (error) {
+        this.logger.error(
+          JSON.stringify({
+            event: 'password_setup_issue_failed',
+            tenantAccountId: tenant.account.id,
+            applicationId,
+            error: error instanceof Error ? error.message : String(error),
+          }),
+        );
+        passwordSetup = {
+          deliveryStatus: 'failed',
+          deliveryErrorCode: 'token_issue_threw',
+          sentToEmail: tenant.account.email,
+          tokenIssued: false,
+        };
+      }
+    }
+    return { ...updated, passwordSetup };
   }
 
   async rejectApplication(applicationId: string, adminId: string, note: { internalNote?: string; tenantVisibleNote?: string }) {

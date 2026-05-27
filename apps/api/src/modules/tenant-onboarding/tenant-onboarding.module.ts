@@ -2,6 +2,7 @@ import { Module } from '@nestjs/common';
 import { AdminAuditLogModule } from '../admin-audit-log/admin-audit-log.module';
 import { SetupModule } from '../setup/setup.module';
 import { TenantsModule } from '../tenants/tenants.module';
+import { TenantPasswordSetupModule } from '../tenant-password-setup/tenant-password-setup.module';
 import { SharedFileStorageModule } from '../shared-file-storage/shared-file-storage.module';
 import { NotificationModule } from '../notification/notification.module';
 import { TenantOnboardingController } from './tenant-onboarding.controller';
@@ -15,6 +16,7 @@ import { TenantOnboardingStore } from './tenant-onboarding.store';
     AdminAuditLogModule,
     NotificationModule,
     SetupModule,
+    TenantPasswordSetupModule,
   ],
   controllers: [TenantOnboardingController],
   providers: [TenantOnboardingStore, TenantOnboardingService],

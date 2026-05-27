@@ -106,12 +106,26 @@ export function requestApplicationRevision(
   );
 }
 
-export function approveApplication(
+export type ApprovePasswordSetupResult = {
+  deliveryStatus: 'queued' | 'sent' | 'failed' | 'unavailable';
+  deliveryErrorCode: string | null;
+  sentToEmail: string | null;
+  tokenIssued: boolean;
+  debugLink?: string | null;
+};
+
+export type ApproveApplicationResult = {
+  id?: string;
+  status?: string;
+  passwordSetup?: ApprovePasswordSetupResult | null;
+};
+
+export async function approveApplication(
   session: StoredAdminSession,
   applicationId: string,
   input: { internalNote?: string; tenantVisibleNote?: string },
-) {
-  return adminRequest(
+): Promise<ApproveApplicationResult> {
+  const result = await adminRequest(
     session,
     `/admin/tenant-applications/${applicationId}/approve`,
     {
@@ -119,6 +133,7 @@ export function approveApplication(
       body: JSON.stringify(input),
     },
   );
+  return (result ?? {}) as ApproveApplicationResult;
 }
 
 export function rejectApplication(

@@ -77,6 +77,13 @@ export default function TenantApplicationModal({ entry, onClose, onChanged }: Pr
   const [tenantNote, setTenantNote] = useState('');
   const [suspendReason, setSuspendReason] = useState('');
   const [documentNotes, setDocumentNotes] = useState<Record<string, string>>({});
+  const [approveNotice, setApproveNotice] = useState<{
+    deliveryStatus: 'queued' | 'sent' | 'failed' | 'unavailable';
+    deliveryErrorCode: string | null;
+    sentToEmail: string | null;
+    tokenIssued: boolean;
+    debugLink?: string | null;
+  } | null>(null);
 
   useEffect(() => {
     const onKey = (event: KeyboardEvent) => {
@@ -141,10 +148,16 @@ export default function TenantApplicationModal({ entry, onClose, onChanged }: Pr
       const session = await requireAdminSession();
 
       if (action === 'approve') {
-        await approveApplication(session, detail.application.id, {
+        const result = await approveApplication(session, detail.application.id, {
           internalNote: internalNote || undefined,
           tenantVisibleNote: tenantNote || undefined,
         });
+        // Surface the post-approval password setup delivery result so the
+        // admin knows whether the partner actually received the magic link
+        // (and never assumes success when the e-mail transport is a stub).
+        if (result.passwordSetup) {
+          setApproveNotice(result.passwordSetup);
+        }
       }
       if (action === 'reject') {
         await rejectApplication(session, detail.application.id, {
@@ -280,6 +293,60 @@ export default function TenantApplicationModal({ entry, onClose, onChanged }: Pr
 
         <div className="admin-modal__body">
           {error ? <div className="admin-state admin-state--error" style={{ marginBottom: 14 }}>{error}</div> : null}
+
+          {approveNotice ? (
+            <div
+              role="status"
+              className="admin-state"
+              style={{
+                marginBottom: 14,
+                borderLeft: '3px solid var(--accent)',
+                background:
+                  approveNotice.deliveryStatus === 'sent' || approveNotice.deliveryStatus === 'queued'
+                    ? 'var(--success-soft, #ecfdf3)'
+                    : 'var(--warning-soft, #fff7ed)',
+              }}
+            >
+              <div style={{ fontWeight: 600, color: 'var(--text)', marginBottom: 4 }}>
+                {approveNotice.deliveryStatus === 'sent'
+                  ? 'Şifre belirleme bağlantısı gönderildi'
+                  : approveNotice.deliveryStatus === 'queued'
+                  ? 'Şifre belirleme bağlantısı sıraya alındı'
+                  : approveNotice.deliveryStatus === 'unavailable'
+                  ? 'Şifre belirleme bağlantısı üretildi ama e-posta sağlayıcısı yapılandırılmadı'
+                  : 'Şifre belirleme bağlantısı gönderilemedi'}
+              </div>
+              <div style={{ fontSize: 13, color: 'var(--text-2)' }}>
+                {approveNotice.sentToEmail ? (
+                  <>
+                    Alıcı: <strong>{approveNotice.sentToEmail}</strong>
+                    <br />
+                  </>
+                ) : null}
+                {approveNotice.deliveryStatus === 'unavailable' ? (
+                  <span>
+                    Operatör EMAIL_TRANSPORT ortam değişkenini gerçek bir sağlayıcıya
+                    bağlayana kadar partnerin e-postası gönderilmedi. Bağlantı yine
+                    de DB'de aktif; doğrudan partnerle paylaşabilirsiniz.
+                  </span>
+                ) : null}
+                {approveNotice.deliveryStatus === 'failed' && approveNotice.deliveryErrorCode ? (
+                  <span>Hata kodu: <code>{approveNotice.deliveryErrorCode}</code></span>
+                ) : null}
+                {approveNotice.debugLink ? (
+                  <>
+                    <br />
+                    <span style={{ fontSize: 12, color: 'var(--muted)' }}>
+                      (development) Bağlantı:{' '}
+                      <a href={approveNotice.debugLink} target="_blank" rel="noreferrer">
+                        {approveNotice.debugLink}
+                      </a>
+                    </span>
+                  </>
+                ) : null}
+              </div>
+            </div>
+          ) : null}
 
           {loading ? (
             <div style={{ display: 'grid', gap: 12 }}>

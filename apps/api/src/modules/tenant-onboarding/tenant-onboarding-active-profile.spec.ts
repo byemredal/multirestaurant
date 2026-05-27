@@ -40,6 +40,7 @@ describe('TenantOnboardingService active CountryPack resolution', () => {
       {} as any,
       installationProfileService as any,
       {} as any,
+      {} as any,
     );
     return { service, installationProfileService };
   }
