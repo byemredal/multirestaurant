@@ -43,6 +43,12 @@ apps/*/.env.local
 # runtime upload data
 uploads/
 
+# Playwright smoke artifacts
+test-results/
+playwright-report/
+blob-report/
+.playwright/
+
 # editor / OS files
 .vscode/
 .idea/

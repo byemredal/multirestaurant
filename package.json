@@ -31,13 +31,17 @@
     "docker:down": "docker compose -f infra/docker/docker-compose.yml -f infra/docker/docker-compose.override.yml down",
     "docker:prod": "docker compose --env-file infra/docker/.env.prod -f infra/docker/docker-compose.yml -f infra/docker/docker-compose.prod.yml up -d",
     "docker:prod:down": "docker compose --env-file infra/docker/.env.prod -f infra/docker/docker-compose.yml -f infra/docker/docker-compose.prod.yml down",
-    "phase0:status": "node -e \"console.log('Phase 0 skeleton active: apps/api and apps/web are now the primary runtime targets.')\""
+    "phase0:status": "node -e \"console.log('Phase 0 skeleton active: apps/api and apps/web are now the primary runtime targets.')\"",
+    "smoke": "playwright test --config=playwright.config.ts",
+    "smoke:ui": "playwright test --config=playwright.config.ts --ui",
+    "smoke:headed": "playwright test --config=playwright.config.ts --headed"
   },
   "engines": {
     "node": ">=20"
   },
   "packageManager": "pnpm@10.32.1",
   "devDependencies": {
+    "@playwright/test": "^1.60.0",
     "@types/react": "19.2.14",
     "react": "18.3.1",
     "react-dom": "18.3.1"
