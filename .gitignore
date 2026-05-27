@@ -51,9 +51,8 @@ Thumbs.db
 desktop.ini
 *.swp
 
-# claude (local-only settings; skills/commands stay tracked)
-.claude/settings.local.json
-# Claude Code CLI Artifacts
+# Claude Code local configuration
+CLAUDE.local.md
 .claude/
 
 # docs (ignore everything except the architecture reference tree)
