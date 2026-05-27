@@ -14,6 +14,7 @@ import {
   reopenTenantReview,
   requestApplicationRevision,
   requestTenantDocumentRevision,
+  resendPasswordSetupLink,
   suspendTenant,
 } from '@/lib/admin-api/admin-review-client';
 import {
@@ -136,6 +137,23 @@ export default function TenantApplicationModal({ entry, onClose, onChanged }: Pr
     ]);
     setDetail(nextDetail);
     setTimeline(nextTimeline);
+  };
+
+  const runResendPasswordSetup = async () => {
+    if (!detail) return;
+    try {
+      setSaving(true);
+      setError(null);
+      const session = await requireAdminSession();
+      const result = await resendPasswordSetupLink(session, detail.application.id);
+      if (result.passwordSetup) {
+        setApproveNotice(result.passwordSetup);
+      }
+    } catch (nextError) {
+      setError(nextError instanceof Error ? nextError.message : 'Şifre bağlantısı yeniden gönderilemedi.');
+    } finally {
+      setSaving(false);
+    }
   };
 
   const runApplicationAction = async (
@@ -381,6 +399,7 @@ export default function TenantApplicationModal({ entry, onClose, onChanged }: Pr
                 suspendReason={suspendReason}
                 setSuspendReason={setSuspendReason}
                 runApplicationAction={runApplicationAction}
+                runResendPasswordSetup={runResendPasswordSetup}
               />
             </div>
           ) : tab === 'documents' ? (
@@ -612,6 +631,7 @@ function DecisionSection({
   suspendReason,
   setSuspendReason,
   runApplicationAction,
+  runResendPasswordSetup,
 }: {
   detail: TenantApplicationDetail;
   saving: boolean;
@@ -627,7 +647,9 @@ function DecisionSection({
   runApplicationAction: (
     action: 'approve' | 'reject' | 'request_revision' | 'activate' | 'suspend' | 'reopen_review',
   ) => Promise<void>;
+  runResendPasswordSetup: () => Promise<void>;
 }) {
+  const canResendPasswordSetup = ['approved', 'active'].includes(detail.application.status);
   return (
     <div className="admin-card">
       <div className="admin-card__header">
@@ -700,6 +722,28 @@ function DecisionSection({
           >
             {blockedReason}
           </div>
+        ) : null}
+
+        {canResendPasswordSetup ? (
+          <>
+            <div className="admin-divider" style={{ margin: '4px 0' }} />
+            <div style={{ display: 'grid', gap: 6 }}>
+              <div style={{ fontSize: 12.5, color: 'var(--text-2)' }}>
+                Şifre belirleme bağlantısı partnere ulaşmadıysa yeniden gönderebilirsiniz.
+                Yeni bağlantı 24 saat geçerli olur ve önceki bağlantıyı geçersiz kılar.
+              </div>
+              <div>
+                <button
+                  className="admin-button admin-button--sm"
+                  disabled={saving}
+                  type="button"
+                  onClick={() => void runResendPasswordSetup()}
+                >
+                  Şifre bağlantısını yeniden gönder
+                </button>
+              </div>
+            </div>
+          </>
         ) : null}
 
         {isActiveLifecycle ? (

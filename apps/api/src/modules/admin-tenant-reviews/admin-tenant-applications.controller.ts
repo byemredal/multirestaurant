@@ -64,4 +64,13 @@ export class AdminTenantApplicationsController {
   ) {
     return this.reviewsService.rejectApplication(id, request.user.id, dto);
   }
+
+  @Post(':id/password-setup/resend')
+  @AdminRoles(AdminRole.SUPER_ADMIN, AdminRole.REVIEW_ADMIN, AdminRole.OPERATIONS_ADMIN)
+  resendPasswordSetup(
+    @Param('id') id: string,
+    @Req() request: AuthenticatedRequest,
+  ) {
+    return this.reviewsService.resendPasswordSetupLink(id, request.user.id);
+  }
 }

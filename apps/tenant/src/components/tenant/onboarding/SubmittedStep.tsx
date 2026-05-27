@@ -2,7 +2,11 @@
 
 import { useMemo } from 'react';
 import { Card } from '@lieferzonen/ui';
-import type { TenantOnboardingResolvedSession, TenantOnboardingWorkspace } from '@/lib/tenant-onboarding-client';
+import type {
+  TenantOnboardingPasswordSetupSummary,
+  TenantOnboardingResolvedSession,
+  TenantOnboardingWorkspace,
+} from '@/lib/tenant-onboarding-client';
 import { getSubmittedCopy } from './onboarding-country-pack';
 
 type SubmittedStepProps = {
@@ -22,24 +26,79 @@ type LifecycleCopy = {
   primaryAction?: { label: string; href: string };
 };
 
-function getLifecycleCopy(status: string, fallback: ReturnType<typeof getSubmittedCopy>): LifecycleCopy {
+/**
+ * Build the approved/active body + note copy from the delivery summary.
+ * Never claim "we sent you an e-mail" unless the backend confirmed `sent`/
+ * `queued`; `unavailable`/`failed`/missing-token states get a copy that
+ * directs the partner to support instead.
+ */
+function buildApprovedDeliveryCopy(passwordSetup: TenantOnboardingPasswordSetupSummary | null | undefined): {
+  body: string;
+  note: string;
+} {
+  const recipient = passwordSetup?.sentToEmailMasked ?? null;
+  const recipientSuffix = recipient ? ` (${recipient})` : '';
+  if (!passwordSetup || !passwordSetup.tokenIssued || passwordSetup.deliveryStatus == null) {
+    return {
+      body:
+        'Hesabınız aktif. Şifre belirleme bilgisi kısa süre içinde sizinle paylaşılacak. ' +
+        'Sorun yaşarsanız destek ekibimizle iletişime geçebilirsiniz.',
+      note: 'Bağlantı henüz oluşturulmadıysa destek ekibimizden yeniden gönderim isteyebilirsiniz.',
+    };
+  }
+  switch (passwordSetup.deliveryStatus) {
+    case 'sent':
+      return {
+        body:
+          'Hesabınız aktif. Kayıt e-postanıza şifre belirleme bağlantısı gönderildi' +
+          `${recipientSuffix}. Bağlantıya tıklayarak şifrenizi oluşturup panele geçebilirsiniz.`,
+        note: 'Bağlantı 24 saat geçerlidir. E-postanız ulaşmadıysa spam/junk klasörünü kontrol edin, ardından destek ile iletişime geçin.',
+      };
+    case 'queued':
+      return {
+        body:
+          'Hesabınız aktif. Şifre belirleme bağlantısı gönderim sırasına alındı' +
+          `${recipientSuffix}; birkaç dakika içinde e-postanıza ulaşacak.`,
+        note: 'Bağlantı 24 saat geçerlidir. 10 dakika içinde ulaşmazsa spam/junk klasörünü kontrol edin, ardından destek ile iletişime geçin.',
+      };
+    case 'unavailable':
+      return {
+        body:
+          'Hesabınız aktif, ancak şifre belirleme bağlantısı şu anda gönderilemedi. ' +
+          'Hesabınıza erişmek için destek ekibimizle iletişime geçin.',
+        note: 'Bu durum operatör tarafındaki bir yapılandırma eksikliğinden kaynaklanır; en kısa sürede sizinle iletişime geçeceğiz.',
+      };
+    case 'failed':
+    default:
+      return {
+        body:
+          'Hesabınız aktif, ancak şifre belirleme bağlantısı gönderilemedi. ' +
+          'Lütfen destek ekibimizle iletişime geçin; bağlantıyı yeniden göndermenizi sağlayalım.',
+        note: 'Daha önce e-posta aldıysanız o bağlantı geçerli olabilir; aksi takdirde destek aracılığıyla yeni bir bağlantı talep edin.',
+      };
+  }
+}
+
+function getLifecycleCopy(
+  status: string,
+  fallback: ReturnType<typeof getSubmittedCopy>,
+  passwordSetup: TenantOnboardingPasswordSetupSummary | null | undefined,
+): LifecycleCopy {
   switch (status) {
     case 'approved':
-    case 'active':
+    case 'active': {
+      const delivery = buildApprovedDeliveryCopy(passwordSetup);
       return {
         badge: 'Onaylandı',
         badgeTone: 'success',
         iconLabel: 'OK',
         iconTone: 'success',
         title: 'Başvurunuz onaylandı',
-        body:
-          'Hesabınız aktif. Kayıt e-postanıza şifre belirleme bağlantısı gönderdik — ' +
-          'bağlantıya tıklayarak şifrenizi oluşturup tenant paneline geçebilirsiniz.',
-        note:
-          'Bağlantı 24 saat geçerlidir. E-postanız ulaşmadıysa spam/junk klasörünü kontrol edin, ' +
-          'ardından destek ekibimizle iletişime geçin.',
+        body: delivery.body,
+        note: delivery.note,
         primaryAction: { label: 'Giriş ekranına git', href: '/login' },
       };
+    }
     case 'rejected':
       return {
         badge: 'Reddedildi',
@@ -99,7 +158,11 @@ const ICON_TONES = {
 export function SubmittedStep({ resolvedSession, workspace, onNavigate }: SubmittedStepProps) {
   const fallbackCopy = useMemo(() => getSubmittedCopy(), []);
   const status = resolvedSession?.status ?? workspace.application.status;
-  const copy = useMemo(() => getLifecycleCopy(status, fallbackCopy), [status, fallbackCopy]);
+  const passwordSetup = workspace.passwordSetup ?? null;
+  const copy = useMemo(
+    () => getLifecycleCopy(status, fallbackCopy, passwordSetup),
+    [status, fallbackCopy, passwordSetup],
+  );
 
   const statusLabel = copy.badge;
 

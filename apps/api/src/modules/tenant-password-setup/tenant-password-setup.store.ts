@@ -94,6 +94,24 @@ export class TenantPasswordSetupStore {
     return row ? this.map(row) : null;
   }
 
+  /**
+   * Most-recent token for a tenant. Used by the tenant workspace to surface a
+   * public-safe summary of "what we tried to deliver" on the approved screen
+   * (`sent` / `queued` / `failed` / `unavailable`) without ever exposing the
+   * raw token, the token hash, or the link.
+   */
+  async findLatestForTenant(tenantAccountId: string): Promise<PasswordSetupTokenRow | null> {
+    const row = (await this.databaseService
+      .prepare(
+        `SELECT * FROM "TenantPasswordSetupToken"
+          WHERE "tenantAccountId" = $tenantAccountId
+          ORDER BY "createdAt" DESC
+          LIMIT 1`,
+      )
+      .get({ $tenantAccountId: tenantAccountId })) as PasswordSetupTokenDbRow | undefined;
+    return row ? this.map(row) : null;
+  }
+
   async setDeliveryStatus(
     id: string,
     deliveryStatus: PasswordSetupDeliveryStatus,

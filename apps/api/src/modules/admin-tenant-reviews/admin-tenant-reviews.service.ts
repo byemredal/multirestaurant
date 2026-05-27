@@ -496,6 +496,10 @@ export class AdminTenantReviewsService {
     return this.onboardingService.rejectApplication(applicationId, adminId, dto);
   }
 
+  resendPasswordSetupLink(applicationId: string, adminId: string) {
+    return this.onboardingService.resendPasswordSetupLink(applicationId, adminId);
+  }
+
   approveDocument(documentId: string, adminId: string, dto: ReviewTenantDocumentDto) {
     return this.onboardingService.reviewDocument(documentId, adminId, 'approve', dto.note);
   }

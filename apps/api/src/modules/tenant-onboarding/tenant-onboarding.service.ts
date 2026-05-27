@@ -1979,6 +1979,14 @@ export class TenantOnboardingService {
     const currentStep = currentStepFromSteps(summary.steps as Array<{ stepKey: TenantOnboardingStepKey; status: string }>);
     const stateToken = buildStateToken(summary.application, currentStep);
 
+    // Surface the password setup delivery summary ONLY when the application
+    // reached a post-approval lifecycle. Earlier states never had a token
+    // issued, and exposing the summary outside that window would let the
+    // partner-facing JSON imply "we e-mailed you" before approval ever ran.
+    const passwordSetup = ['approved', 'active'].includes(summary.application.status)
+      ? await this.passwordSetupService.getPublicSafeSummaryForTenant(tenantAccountId)
+      : null;
+
     return {
       application: {
         ...summary.application,
@@ -2031,6 +2039,7 @@ export class TenantOnboardingService {
       })),
       canSubmitForReview: editable && (await this.canSubmitApplication(summary.application.id)),
       submitAction: summary.application.status === 'revision_required' ? 'resubmit' : 'submit',
+      passwordSetup,
       stateToken,
     };
   }
@@ -2696,23 +2705,120 @@ export class TenantOnboardingService {
           },
         });
       } catch (error) {
+        // Production-mode fail-closed: when PASSWORD_SETUP_TOKEN_SECRET (and
+        // the JWT_SECRET fallback) are not configured, issueForTenant throws
+        // ServiceUnavailableException with `password_setup_unavailable`. We
+        // collapse it into the passwordSetup envelope so admin UI can show a
+        // config-error banner instead of bubbling a 503 up to the approve call.
+        const errorCode =
+          typeof (error as { response?: { code?: unknown } }).response?.code === 'string'
+            ? ((error as { response: { code: string } }).response.code)
+            : null;
+        const isConfigUnavailable = errorCode === 'password_setup_unavailable';
         this.logger.error(
           JSON.stringify({
             event: 'password_setup_issue_failed',
             tenantAccountId: tenant.account.id,
             applicationId,
+            errorCode,
             error: error instanceof Error ? error.message : String(error),
           }),
         );
         passwordSetup = {
-          deliveryStatus: 'failed',
-          deliveryErrorCode: 'token_issue_threw',
+          deliveryStatus: isConfigUnavailable ? 'unavailable' : 'failed',
+          deliveryErrorCode: isConfigUnavailable ? 'secret_unavailable' : 'token_issue_threw',
           sentToEmail: tenant.account.email,
           tokenIssued: false,
         };
       }
     }
     return { ...updated, passwordSetup };
+  }
+
+  /**
+   * Admin-triggered resend of the post-approval password setup magic link.
+   * Honest delivery summary mirrors the approve path so the modal banner
+   * works identically for both flows. The gate is "application is in a
+   * post-approval state and the tenant has not yet set a password" — earlier
+   * statuses (draft/submitted/under_review/revision_required/rejected) reject.
+   */
+  async resendPasswordSetupLink(applicationId: string, adminId: string) {
+    const application = await this.requireApplication(applicationId);
+    if (!['approved', 'active'].includes(application.status)) {
+      throw new BadRequestException({
+        message:
+          'Şifre belirleme bağlantısı yalnızca onaylanmış veya aktif başvurular için yeniden gönderilebilir.',
+        code: 'application_not_in_resendable_state',
+      });
+    }
+    const tenant = await this.tenantAccountsStore.findById(application.tenantAccountId);
+    if (!tenant) {
+      throw new NotFoundException('Tenant account could not be found.');
+    }
+
+    let passwordSetup: {
+      deliveryStatus: string;
+      deliveryErrorCode: string | null;
+      sentToEmail: string | null;
+      tokenIssued: boolean;
+      debugLink?: string | null;
+    };
+    try {
+      const issued = await this.passwordSetupService.resendForTenant({
+        tenantAccountId: tenant.account.id,
+        adminId,
+      });
+      passwordSetup = {
+        deliveryStatus: issued.deliveryStatus,
+        deliveryErrorCode: issued.deliveryErrorCode,
+        sentToEmail: issued.token.sentToEmail,
+        tokenIssued: true,
+        debugLink: issued.debugLink,
+      };
+      await this.auditLogService.log({
+        actorType: 'admin',
+        actorId: adminId,
+        action: 'password_setup_link_resent',
+        entityType: 'tenant_account',
+        entityId: tenant.account.id,
+        applicationId,
+        tenantAccountId: tenant.account.id,
+        metadata: {
+          deliveryStatus: issued.deliveryStatus,
+          deliveryErrorCode: issued.deliveryErrorCode,
+        },
+      });
+    } catch (error) {
+      const errorCode =
+        typeof (error as { response?: { code?: unknown } }).response?.code === 'string'
+          ? ((error as { response: { code: string } }).response.code)
+          : null;
+      // password_already_set / application_not_in_resendable_state are
+      // expected hard rejects — re-throw so the admin sees a real 400 instead
+      // of a synthetic "failed" banner. Only the config-missing case is
+      // collapsed into the passwordSetup envelope (it's an operator problem,
+      // not the admin's input).
+      if (errorCode === 'password_setup_unavailable') {
+        this.logger.error(
+          JSON.stringify({
+            event: 'password_setup_resend_unavailable',
+            tenantAccountId: tenant.account.id,
+            applicationId,
+            errorCode,
+          }),
+        );
+        return {
+          passwordSetup: {
+            deliveryStatus: 'unavailable',
+            deliveryErrorCode: 'secret_unavailable',
+            sentToEmail: tenant.account.email,
+            tokenIssued: false,
+          },
+        };
+      }
+      throw error;
+    }
+    return { passwordSetup };
   }
 
   async rejectApplication(applicationId: string, adminId: string, note: { internalNote?: string; tenantVisibleNote?: string }) {

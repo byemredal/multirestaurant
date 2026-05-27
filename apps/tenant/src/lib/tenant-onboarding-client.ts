@@ -214,6 +214,7 @@ export type TenantOnboardingWorkspace = {
   revisionRequests: string[];
   canSubmitForReview: boolean;
   submitAction: 'submit' | 'resubmit';
+  passwordSetup?: TenantOnboardingPasswordSetupSummary | null;
   steps: Array<{
     stepKey: TenantOnboardingStepKey;
     status: TenantOnboardingStepStatus;
@@ -223,6 +224,17 @@ export type TenantOnboardingWorkspace = {
     locked: boolean;
     data: unknown;
   }>;
+};
+
+// Public-safe summary of the post-approval password setup link delivery.
+// Mirrors the backend `getPublicSafeSummaryForTenant` shape. Never carries
+// the raw token, hash, or full e-mail address — only enough for the
+// approved screen to honestly say whether an e-mail went out.
+export type TenantOnboardingPasswordSetupSummary = {
+  deliveryStatus: 'queued' | 'sent' | 'failed' | 'unavailable' | null;
+  sentToEmailMasked: string | null;
+  expiresAt: string | null;
+  tokenIssued: boolean;
 };
 
 // TenantLocationSelection, tenant onboarding sürecinde tenant'ın konum seçimini temsil eden bir yapıdır.

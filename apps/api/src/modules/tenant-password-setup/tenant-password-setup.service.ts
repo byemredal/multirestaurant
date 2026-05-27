@@ -1,9 +1,10 @@
-import { randomBytes, createHash } from 'node:crypto';
+import { randomBytes, createHmac } from 'node:crypto';
 import {
   BadRequestException,
   Injectable,
   Logger,
   NotFoundException,
+  ServiceUnavailableException,
 } from '@nestjs/common';
 import { PasswordService } from '../../common/security/password.service';
 import { EmailService } from '../notification/email.service';
@@ -36,10 +37,33 @@ export interface IssuedPasswordSetupToken {
 export class TenantPasswordSetupService {
   private readonly logger = new Logger(TenantPasswordSetupService.name);
   private readonly tokenTtlMs = 24 * 60 * 60 * 1000;
-  private readonly hashSecret =
-    process.env.PASSWORD_SETUP_TOKEN_SECRET ??
-    process.env.JWT_SECRET ??
-    'lieferzonen-dev-password-setup';
+
+  /**
+   * Resolve the HMAC secret used to derive token hashes. In production the
+   * caller must have wired PASSWORD_SETUP_TOKEN_SECRET (or fallback JWT_SECRET);
+   * a missing value is fail-closed — we refuse to issue or redeem tokens and
+   * surface `password_setup_unavailable` so the admin/UX layer can show a
+   * config error instead of silently using a guessable dev fallback.
+   *
+   * Non-production retains the dev fallback so local installs without env
+   * configuration keep working end-to-end.
+   */
+  private resolveSecret(): string {
+    const configured =
+      process.env.PASSWORD_SETUP_TOKEN_SECRET?.trim() ||
+      process.env.JWT_SECRET?.trim();
+    if (configured) {
+      return configured;
+    }
+    if (process.env.NODE_ENV === 'production') {
+      throw new ServiceUnavailableException({
+        message:
+          'Şifre belirleme bağlantısı şu anda üretilemiyor. Operatör yapılandırmasını kontrol edin.',
+        code: 'password_setup_unavailable',
+      });
+    }
+    return 'lieferzonen-dev-password-setup';
+  }
 
   constructor(
     private readonly store: TenantPasswordSetupStore,
@@ -141,6 +165,80 @@ export class TenantPasswordSetupService {
   }
 
   /**
+   * Admin-triggered resend. Validates the tenant still needs a password and
+   * delegates to `issueForTenant`, which invalidates the prior active token
+   * for the same tenant — so any link still sitting in the partner's inbox
+   * (or already phished from there) becomes useless after this call.
+   *
+   * The application-status gate ('approved'/'active') is enforced at the
+   * AdminTenantReviewsService layer; here we only re-check the password
+   * envelope so a direct unit-test caller cannot bypass the "password not
+   * set yet" check.
+   */
+  async resendForTenant(input: {
+    tenantAccountId: string;
+    adminId: string;
+  }): Promise<IssuedPasswordSetupToken> {
+    const tenant = await this.tenantAccountsStore.findById(input.tenantAccountId);
+    if (!tenant) {
+      throw new NotFoundException('Tenant account not found for password setup token.');
+    }
+    if (tenant.account.passwordHash && tenant.account.passwordHash.length > 0) {
+      throw new BadRequestException({
+        message: 'Bu tenant zaten bir şifre belirlemiş; yeniden gönderim gerekmez.',
+        code: 'password_already_set',
+      });
+    }
+    return this.issueForTenant({
+      tenantAccountId: input.tenantAccountId,
+      createdByAdminId: input.adminId,
+      purpose: 'initial_password_setup',
+    });
+  }
+
+  /**
+   * Public-safe summary for the tenant's approved/active screen. Never
+   * exposes the token, hash, link, or admin-only metadata — only the
+   * delivery outcome (so the partner knows whether to expect an e-mail) and
+   * a masked recipient address that lets them confirm we are sending to the
+   * right inbox.
+   */
+  async getPublicSafeSummaryForTenant(tenantAccountId: string): Promise<{
+    deliveryStatus: PasswordSetupDeliveryStatus | null;
+    sentToEmailMasked: string | null;
+    expiresAt: string | null;
+    tokenIssued: boolean;
+  } | null> {
+    const latest = await this.store.findLatestForTenant(tenantAccountId);
+    if (!latest) {
+      return null;
+    }
+    return {
+      deliveryStatus: latest.deliveryStatus,
+      sentToEmailMasked: this.maskEmailForPublic(latest.sentToEmail),
+      expiresAt: latest.expiresAt.toISOString(),
+      tokenIssued: true,
+    };
+  }
+
+  /**
+   * "alice@example.com" → "a***@e***.com". Keeps enough signal for the
+   * partner to recognize their own address without rendering a full PII
+   * payload on a public-facing screen.
+   */
+  private maskEmailForPublic(email: string | null): string | null {
+    if (!email) return null;
+    const [local, domain] = email.split('@');
+    if (!local || !domain) return null;
+    const maskedLocal = local.length <= 1 ? `${local}***` : `${local[0]}***`;
+    const domainParts = domain.split('.');
+    const head = domainParts.shift() ?? '';
+    const maskedHead = head.length <= 1 ? `${head}***` : `${head[0]}***`;
+    const tail = domainParts.length > 0 ? `.${domainParts.join('.')}` : '';
+    return `${maskedLocal}@${maskedHead}${tail}`;
+  }
+
+  /**
    * Status check used by the public set-password page so a stale or
    * consumed link shows a meaningful error before the user types anything.
    * Returns NULL when the token cannot be redeemed; the caller maps that
@@ -216,10 +314,16 @@ export class TenantPasswordSetupService {
     return randomBytes(32).toString('base64url');
   }
 
+  /**
+   * HMAC-SHA256 keyed by the configured secret. Previous releases used a
+   * concatenated SHA-256 (`secret:raw`); upgrading to HMAC also rotates the
+   * keyspace, so any in-flight pre-fix tokens become invalid and the partner
+   * must request a fresh link. That is acceptable because 01E has not shipped
+   * to production yet.
+   */
   private hashToken(rawToken: string): string {
-    return createHash('sha256')
-      .update(`${this.hashSecret}:${rawToken}`)
-      .digest('hex');
+    const secret = this.resolveSecret();
+    return createHmac('sha256', secret).update(rawToken).digest('hex');
   }
 
   private async buildSetupLink(rawToken: string): Promise<string> {

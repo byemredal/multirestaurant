@@ -151,6 +151,25 @@ export function rejectApplication(
   );
 }
 
+export type ResendPasswordSetupResult = {
+  passwordSetup: ApprovePasswordSetupResult;
+};
+
+export async function resendPasswordSetupLink(
+  session: StoredAdminSession,
+  applicationId: string,
+): Promise<ResendPasswordSetupResult> {
+  const result = await adminRequest(
+    session,
+    `/admin/tenant-applications/${applicationId}/password-setup/resend`,
+    {
+      method: 'POST',
+      body: JSON.stringify({}),
+    },
+  );
+  return (result ?? { passwordSetup: null }) as ResendPasswordSetupResult;
+}
+
 export function listTenantDocuments(session: StoredAdminSession) {
   return adminRequest(
     session,
