@@ -66,7 +66,7 @@ export class AdminTenantApplicationsController {
   }
 
   @Post(':id/password-setup/resend')
-  @AdminRoles(AdminRole.SUPER_ADMIN, AdminRole.REVIEW_ADMIN, AdminRole.OPERATIONS_ADMIN)
+  @AdminRoles(AdminRole.SUPER_ADMIN, AdminRole.REVIEW_ADMIN)
   resendPasswordSetup(
     @Param('id') id: string,
     @Req() request: AuthenticatedRequest,

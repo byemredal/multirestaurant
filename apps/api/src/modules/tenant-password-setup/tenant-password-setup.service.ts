@@ -39,6 +39,27 @@ export class TenantPasswordSetupService {
   private readonly tokenTtlMs = 24 * 60 * 60 * 1000;
 
   /**
+   * Minimum gap between two issues for the same tenant. Defends against an
+   * admin double-clicking "resend" (or a script hammering the endpoint),
+   * which would otherwise rotate the token on every call and invalidate the
+   * link still sitting in the partner's inbox before they had a chance to
+   * click it. Env-tunable for ops; clamped so a misconfigured 0 cannot
+   * silently disable the guard, and a multi-hour value cannot lock partners
+   * out for the entire support window.
+   */
+  private readonly resendCooldownMs = this.resolveResendCooldownMs();
+
+  private resolveResendCooldownMs(): number {
+    const raw = process.env.PASSWORD_SETUP_RESEND_COOLDOWN_MS?.trim();
+    const parsed = raw ? Number.parseInt(raw, 10) : Number.NaN;
+    const fallback = 60_000;
+    const candidate = Number.isFinite(parsed) ? parsed : fallback;
+    const min = 10_000;
+    const max = 10 * 60 * 1000;
+    return Math.min(max, Math.max(min, candidate));
+  }
+
+  /**
    * Resolve the HMAC secret used to derive token hashes. In production the
    * caller must have wired PASSWORD_SETUP_TOKEN_SECRET (or fallback JWT_SECRET);
    * a missing value is fail-closed — we refuse to issue or redeem tokens and
@@ -189,6 +210,24 @@ export class TenantPasswordSetupService {
         code: 'password_already_set',
       });
     }
+
+    // Per-tenant cooldown — see resendCooldownMs comment. The check runs on
+    // the latest token's `createdAt`, not on `deliveryStatus`, so a delivery
+    // that failed still costs a cooldown window (otherwise a transport
+    // glitch becomes a free retry-spam channel against the partner's inbox).
+    const latest = await this.store.findLatestForTenant(input.tenantAccountId);
+    if (latest) {
+      const elapsedMs = Date.now() - latest.createdAt.getTime();
+      if (elapsedMs < this.resendCooldownMs) {
+        const retryAfterSeconds = Math.ceil((this.resendCooldownMs - elapsedMs) / 1000);
+        throw new BadRequestException({
+          message: `Yeniden gönderim için lütfen ${retryAfterSeconds} saniye bekleyin.`,
+          code: 'resend_cooldown_active',
+          retryAfterSeconds,
+        });
+      }
+    }
+
     return this.issueForTenant({
       tenantAccountId: input.tenantAccountId,
       createdByAdminId: input.adminId,
