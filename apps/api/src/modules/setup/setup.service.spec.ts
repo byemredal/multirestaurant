@@ -29,6 +29,7 @@ describe('SetupService legal placeholder production gate', () => {
       state as any,
       { hash: jest.fn().mockResolvedValue('hash') } as any,
       { invalidate: jest.fn() } as any,
+      { get: jest.fn().mockReturnValue('test-bootstrap-key') } as any,
     );
     return { service, setupStore };
   }

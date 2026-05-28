@@ -1,10 +1,15 @@
 import { randomUUID } from 'node:crypto';
 import { ConflictException, Injectable, ServiceUnavailableException } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
 import { getCountryPack, resolveCountryDefaults } from '@lieferzonen/config';
 import { PasswordService } from '../../common/security/password.service';
 import { InitializePlatformDto } from './dto/initialize-platform.dto';
 import { InstallationProfileService } from './installation-profile.service';
-import { DEFAULT_LEGAL_DOCUMENTS } from './setup.constants';
+import {
+  DEFAULT_LEGAL_DOCUMENTS,
+  SUPPORTED_SETUP_COUNTRIES,
+  SystemState,
+} from './setup.constants';
 import { SetupStore } from './setup.store';
 import { SystemStateService } from './system-state.service';
 
@@ -19,6 +24,41 @@ export interface PlatformSummary {
 export interface SetupStatus {
   initialized: boolean;
   platform: PlatformSummary | null;
+}
+
+/**
+ * Machine-readable setup preconditions, so the wizard can surface the real
+ * blocker (e.g. a seeded super admin) instead of misreporting it as a
+ * bootstrap-key error at the final step.
+ */
+export interface SetupPreflight {
+  /** True when initialization can be attempted (no conflicts). */
+  ready: boolean;
+  /** A PlatformSetup row already exists. */
+  initialized: boolean;
+  systemState: SystemState;
+  /** A super_admin already exists (e.g. created by a seed). */
+  hasSuperAdmin: boolean;
+  /** The server has a BOOTSTRAP_KEY configured (value never exposed). */
+  bootstrapKeyConfigured: boolean;
+  /** At least one supported CountryPack loads. */
+  countryPacksAvailable: boolean;
+  /** Stable conflict codes the UI can branch on. */
+  conflicts: string[];
+}
+
+function hasUsableCountryPacks(): boolean {
+  if (SUPPORTED_SETUP_COUNTRIES.length === 0) {
+    return false;
+  }
+  try {
+    for (const code of SUPPORTED_SETUP_COUNTRIES) {
+      getCountryPack(code);
+    }
+    return true;
+  } catch {
+    return false;
+  }
 }
 
 function isUniqueViolation(error: unknown): boolean {
@@ -37,7 +77,55 @@ export class SetupService {
     private readonly systemStateService: SystemStateService,
     private readonly passwordService: PasswordService,
     private readonly installationProfileService: InstallationProfileService,
+    private readonly configService: ConfigService,
   ) {}
+
+  /**
+   * Reports the setup preconditions so the wizard can show the precise blocker
+   * before the user reaches the bootstrap-key step.
+   */
+  async getPreflight(): Promise<SetupPreflight> {
+    const [setup, hasSuperAdmin, { state }] = await Promise.all([
+      this.setupStore.getPlatformSetup(),
+      this.setupStore.hasSuperAdmin(),
+      this.systemStateService.getState(),
+    ]);
+
+    const initialized = Boolean(setup);
+    const bootstrapKeyConfigured = Boolean(
+      this.configService.get<string>('app.bootstrapKey', ''),
+    );
+    const countryPacksAvailable = hasUsableCountryPacks();
+
+    const conflicts: string[] = [];
+    if (initialized || state === SystemState.READY) {
+      conflicts.push('already_initialized');
+    } else if (state === SystemState.INITIALIZING) {
+      conflicts.push('initialization_in_progress');
+    }
+    // A super admin without a PlatformSetup row means a seed/demo run created
+    // it — the wizard would otherwise fail at the final step looking like a
+    // bootstrap-key error.
+    if (!initialized && hasSuperAdmin) {
+      conflicts.push('super_admin_exists');
+    }
+    if (!bootstrapKeyConfigured) {
+      conflicts.push('bootstrap_key_missing');
+    }
+    if (!countryPacksAvailable) {
+      conflicts.push('no_country_packs');
+    }
+
+    return {
+      ready: conflicts.length === 0,
+      initialized,
+      systemState: state,
+      hasSuperAdmin,
+      bootstrapKeyConfigured,
+      countryPacksAvailable,
+      conflicts,
+    };
+  }
 
   /** Reports whether the platform has already been bootstrapped. */
   async getStatus(): Promise<SetupStatus> {

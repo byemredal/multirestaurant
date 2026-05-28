@@ -38,6 +38,15 @@ export class SetupController {
     return this.setupService.getStatus();
   }
 
+  @Get('preflight')
+  @ApiOperation({
+    summary: 'Report setup preconditions and any blocking conflicts.',
+  })
+  @ApiOkResponse({ description: 'Returns the current setup preflight result.' })
+  getPreflight() {
+    return this.setupService.getPreflight();
+  }
+
   @Post('initialize')
   @UseGuards(SetupGuard, RateLimitGuard)
   @RateLimit({ key: 'platform-setup-initialize', limit: 5, ttlMs: 60_000 })

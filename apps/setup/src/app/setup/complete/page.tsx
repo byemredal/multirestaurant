@@ -1,11 +1,13 @@
 'use client';
 
 import { useRouter } from 'next/navigation';
-import { useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { SETUP_COUNTRIES, adminLoginUrl } from '@/lib/config';
 import {
+  getSetupPreflight,
   initializePlatform,
   SetupApiError,
+  type SetupPreflight,
   type SetupStatus,
 } from '@/lib/setup-api';
 import { useSetup } from '@/lib/setup-context';
@@ -33,8 +35,30 @@ const ERROR_COPY: Record<string, string> = {
   invalid_input:
     'Girdi doğrulanamadı. Lütfen sağladığınız bilgileri gözden geçirin ve tekrar deneyin.',
   rate_limited: 'Çok fazla başarısız deneme oldu. Lütfen birkaç dakika bekleyin ve tekrar deneyin.',
+  super_admin_exists:
+    'Bir süper yönetici hesabı zaten mevcut (büyük olasılıkla seed/demo verisinden). Kurulum tamamlanamıyor.',
+  preflight_failed: 'Kurulum ön kontrolü yapılamadı. Lütfen tekrar deneyin.',
   initialize_failed: 'Platform başlatılamadı. Lütfen sağladığınız bilgileri gözden geçirin ve tekrar deneyin.',
 };
+
+/** User-facing copy for each preflight conflict code. */
+const CONFLICT_COPY: Record<string, string> = {
+  already_initialized:
+    'Platform zaten kurulmuş görünüyor. Yönetici paneline giriş yapabilirsiniz.',
+  initialization_in_progress:
+    'Başlatma şu anda devam ediyor. Birkaç dakika sonra tekrar deneyin.',
+  super_admin_exists:
+    'Bir süper yönetici hesabı zaten mevcut (büyük olasılıkla seed/demo verisinden). ' +
+    'Bu yüzden kurulum tamamlanamıyor; veritabanını sıfırlayın ya da mevcut hesapla giriş yapın.',
+  bootstrap_key_missing:
+    'Sunucuda BOOTSTRAP_KEY yapılandırılmamış. Kuruluma devam etmeden önce ortam değişkenini ayarlayın.',
+  no_country_packs:
+    'Hiç ülke paketi yüklenemedi. Kurulum yapılandırması eksik görünüyor.',
+};
+
+function conflictCopy(code: string): string {
+  return CONFLICT_COPY[code] ?? `Çözülmemiş kurulum çakışması: ${code}.`;
+}
 
 function countryName(code: string): string {
   return SETUP_COUNTRIES.find((c) => c.code === code)?.name ?? code;
@@ -58,6 +82,29 @@ export default function CompleteStepPage() {
   const [error, setError] = useState<string | null>(null);
   const [keyError, setKeyError] = useState<string | null>(null);
   const [result, setResult] = useState<SetupStatus | null>(null);
+  const [preflight, setPreflight] = useState<SetupPreflight | null>(null);
+  const [preflightError, setPreflightError] = useState<string | null>(null);
+  const [preflightChecked, setPreflightChecked] = useState(false);
+
+  // Preflight before the final step: surface the real precondition blocker
+  // (e.g. a seeded super admin) instead of letting it look like a bootstrap
+  // key error on submit.
+  const runPreflight = useCallback(async () => {
+    setPreflightError(null);
+    setPreflightChecked(false);
+    try {
+      setPreflight(await getSetupPreflight());
+    } catch (err) {
+      const code = err instanceof SetupApiError ? err.code : 'preflight_failed';
+      setPreflightError(ERROR_COPY[code] ?? ERROR_COPY.preflight_failed);
+    } finally {
+      setPreflightChecked(true);
+    }
+  }, []);
+
+  useEffect(() => {
+    void runPreflight();
+  }, [runPreflight]);
 
   // Once initialization succeeds, hand off to the admin panel sign-in.
   useEffect(() => {
@@ -134,6 +181,79 @@ export default function CompleteStepPage() {
         <a className={setupButtonClass({ variant: 'primary' })} href={adminLoginUrl}>
           Admin paneline git
         </a>
+      </div>
+    );
+  }
+
+  /* ── Preflight checking ───────────────────────────────────── */
+  if (!preflightChecked) {
+    return (
+      <div className="flex flex-col items-center gap-3 px-2 py-9 text-center">
+        <span
+          className="h-8 w-8 animate-spin rounded-full border-[3px] border-surface-muted border-t-accent"
+          aria-hidden
+        />
+        <span className="text-[15px] font-semibold text-ink">
+          Kurulum ön kontrolü yapılıyor…
+        </span>
+      </div>
+    );
+  }
+
+  /* ── Preflight unreachable ────────────────────────────────── */
+  if (preflightError) {
+    return (
+      <div>
+        <h1 className="mb-1.5 mt-4 text-2xl font-semibold leading-[1.2] tracking-[-0.02em]">
+          Ön kontrol yapılamadı
+        </h1>
+        <p className="m-0 text-[13.5px] leading-[1.55] text-ink-muted">
+          {preflightError}
+        </p>
+        <div className="mt-7 flex justify-end">
+          <SetupButton variant="primary" onClick={() => void runPreflight()}>
+            Yeniden dene
+          </SetupButton>
+        </div>
+      </div>
+    );
+  }
+
+  /* ── Preflight conflicts (real blocker) ───────────────────── */
+  if (preflight && !preflight.ready) {
+    return (
+      <div>
+        <span className="inline-flex items-center gap-[7px] rounded-full bg-danger-soft px-2.5 py-1 text-[11px] font-semibold uppercase tracking-[0.12em] text-danger">
+          Kurulum engellendi
+        </span>
+        <h1 className="mb-1.5 mt-4 text-2xl font-semibold leading-[1.2] tracking-[-0.02em]">
+          Kuruluma devam edilemiyor
+        </h1>
+        <ul className="mt-4 grid gap-2">
+          {preflight.conflicts.map((code) => (
+            <li
+              key={code}
+              className="rounded border border-danger-border bg-danger-soft px-[13px] py-[11px] text-[12.5px] leading-[1.5] text-danger"
+            >
+              {conflictCopy(code)}
+            </li>
+          ))}
+        </ul>
+        <div className="mt-7 flex justify-between gap-3 max-[520px]:flex-col-reverse">
+          {preflight.conflicts.includes('already_initialized') ? (
+            <a
+              className={setupButtonClass({ variant: 'primary' })}
+              href={adminLoginUrl}
+            >
+              Admin paneline git
+            </a>
+          ) : (
+            <span />
+          )}
+          <SetupButton onClick={() => void runPreflight()}>
+            Yeniden kontrol et
+          </SetupButton>
+        </div>
       </div>
     );
   }

@@ -59,6 +59,43 @@ function errorMessage(body: unknown): string {
   return '';
 }
 
+export interface SetupPreflight {
+  ready: boolean;
+  initialized: boolean;
+  systemState: SystemStateValue;
+  hasSuperAdmin: boolean;
+  bootstrapKeyConfigured: boolean;
+  countryPacksAvailable: boolean;
+  conflicts: string[];
+}
+
+export async function getSetupPreflight(): Promise<SetupPreflight> {
+  let response: Response;
+  try {
+    response = await fetch(`${apiBaseUrl}/setup/preflight`, {
+      method: 'GET',
+      cache: 'no-store',
+    });
+  } catch {
+    throw new SetupApiError('api_unreachable');
+  }
+
+  if (!response.ok) {
+    throw new SetupApiError('preflight_failed');
+  }
+
+  const body = (await readJson(response)) as Partial<SetupPreflight> | null;
+  return {
+    ready: Boolean(body?.ready),
+    initialized: Boolean(body?.initialized),
+    systemState: body?.systemState ?? 'UNINITIALIZED',
+    hasSuperAdmin: Boolean(body?.hasSuperAdmin),
+    bootstrapKeyConfigured: Boolean(body?.bootstrapKeyConfigured),
+    countryPacksAvailable: Boolean(body?.countryPacksAvailable),
+    conflicts: Array.isArray(body?.conflicts) ? body!.conflicts : [],
+  };
+}
+
 export async function getSystemState(): Promise<{ state: SystemStateValue }> {
   let response: Response;
   try {
@@ -143,7 +180,9 @@ export async function initializePlatform(
     throw new SetupApiError(
       message.includes('in progress')
         ? 'initialization_in_progress'
-        : 'already_initialized',
+        : message.includes('super admin')
+          ? 'super_admin_exists'
+          : 'already_initialized',
     );
   }
   if (response.status === 400) {
