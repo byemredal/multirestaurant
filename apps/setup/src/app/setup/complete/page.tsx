@@ -53,7 +53,7 @@ function SummaryRow({ label, value }: { label: string; value: string }) {
 
 export default function CompleteStepPage() {
   const router = useRouter();
-  const { draft, update } = useSetup();
+  const { draft, update, reset, hydrated } = useSetup();
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [keyError, setKeyError] = useState<string | null>(null);
@@ -79,6 +79,25 @@ export default function CompleteStepPage() {
     return gaps;
   }, [draft]);
 
+  // Earliest step that still needs input, so an incomplete draft sends the
+  // user to the right place instead of all the way back to step 1.
+  const fixStep = useMemo(() => {
+    if (
+      draft.platformName.trim().length < 2 ||
+      !EMAIL_RE.test(draft.supportEmail.trim())
+    ) {
+      return '/setup/platform';
+    }
+    if (!draft.primaryCountry) return '/setup/country';
+    return '/setup/admin';
+  }, [draft]);
+
+  // The admin password is never persisted; after a refresh it is the only
+  // thing missing, so the prompt should explain the security trade-off rather
+  // than imply the user lost their work.
+  const onlySecretsMissing =
+    missing.length > 0 && missing.every((gap) => gap === 'admin şifresi');
+
   const handleInitialize = async () => {
     if (submitting) return;
     if (!draft.bootstrapKey.trim()) {
@@ -98,6 +117,8 @@ export default function CompleteStepPage() {
         adminPassword: draft.adminPassword,
         bootstrapKey: draft.bootstrapKey.trim(),
       });
+      // Setup succeeded — drop the persisted draft so a later visit starts clean.
+      reset();
       setResult(status);
     } catch (err) {
       const code = err instanceof SetupApiError ? err.code : 'initialize_failed';
@@ -138,6 +159,21 @@ export default function CompleteStepPage() {
     );
   }
 
+  /* ── Wait for the persisted draft before judging completeness ── */
+  if (!hydrated) {
+    return (
+      <div className="flex flex-col items-center gap-3 px-2 py-9 text-center">
+        <span
+          className="h-8 w-8 animate-spin rounded-full border-[3px] border-surface-muted border-t-accent"
+          aria-hidden
+        />
+        <span className="text-[15px] font-semibold text-ink">
+          Kayıtlı kurulum yükleniyor…
+        </span>
+      </div>
+    );
+  }
+
   /* ── Incomplete draft guard ───────────────────────────────── */
   if (missing.length > 0) {
     return (
@@ -146,10 +182,12 @@ export default function CompleteStepPage() {
           Adım 4 · Başlat
         </span>
         <h1 className="mb-1.5 mt-4 text-2xl font-semibold leading-[1.2] tracking-[-0.02em]">
-          Birkaç detay eksik
+          {onlySecretsMissing ? 'Şifrenizi tekrar girin' : 'Birkaç detay eksik'}
         </h1>
         <p className="m-0 text-[13.5px] leading-[1.55] text-ink-muted">
-          Başlatmadan önce, şu alanları tamamlayın: {missing.join(', ')}.
+          {onlySecretsMissing
+            ? 'Güvenlik nedeniyle admin şifresi tarayıcıda saklanmaz. Diğer bilgileriniz korundu; devam etmek için şifreyi yeniden girin.'
+            : `Başlatmadan önce, şu alanları tamamlayın: ${missing.join(', ')}.`}
         </p>
         <div className="mt-7 flex justify-between gap-3 max-[520px]:flex-col-reverse">
           <SetupButton onClick={() => router.push('/setup/admin')}>
@@ -158,9 +196,9 @@ export default function CompleteStepPage() {
           <SetupButton
             variant="primary"
             grow
-            onClick={() => router.push('/setup/platform')}
+            onClick={() => router.push(fixStep)}
           >
-            Adımları gözden geçir
+            {onlySecretsMissing ? 'Şifreyi gir' : 'Adımları gözden geçir'}
           </SetupButton>
         </div>
       </div>
