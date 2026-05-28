@@ -480,6 +480,10 @@ export class AdminTenantReviewsService {
     return this.onboardingService.getDocumentForAdmin(documentId);
   }
 
+  streamDocument(documentId: string) {
+    return this.onboardingService.streamDocumentForAdmin(documentId);
+  }
+
   getApplicationTimeline(applicationId: string) {
     return this.auditLogService.listApplicationTimeline(applicationId);
   }

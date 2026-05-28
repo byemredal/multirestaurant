@@ -10,6 +10,7 @@ import {
 } from '@/lib/admin-api/admin-review-client';
 import { badgeClass, formatDateTime, statusLabel } from '@/lib/admin-api/admin-review-ui';
 import type { DocumentStatus, TenantDocumentQueueEntry } from '@/lib/admin-api/admin-review-types';
+import { buildDocumentDownloadUrl } from '@/lib/admin-api/document-download';
 import { requireAdminSession } from '@/lib/admin-api/require-admin-session';
 
 type Filter = DocumentStatus | 'all' | 'open';
@@ -178,9 +179,9 @@ export default function DocumentsQueue() {
                       </div>
                     </div>
                     <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexShrink: 0 }}>
-                      {entry.fileUrl ? (
+                      {buildDocumentDownloadUrl(entry.fileUrl) ? (
                         <a
-                          href={entry.fileUrl}
+                          href={buildDocumentDownloadUrl(entry.fileUrl) ?? undefined}
                           target="_blank"
                           rel="noreferrer"
                           className="admin-button admin-button--sm admin-button--ghost"

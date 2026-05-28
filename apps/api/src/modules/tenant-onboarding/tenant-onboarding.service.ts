@@ -6,6 +6,7 @@ import {
   Logger,
   NotFoundException,
   ServiceUnavailableException,
+  StreamableFile,
 } from '@nestjs/common';
 import { createHash, randomUUID } from 'crypto';
 import { mkdir, writeFile } from 'node:fs/promises';
@@ -22,9 +23,11 @@ import { EmailService } from '../notification/email.service';
 import * as Dto from './dto';
 import {
   tenantOnboardingStepKeys,
+  TenantDocument,
   TenantOnboardingApplicationStatus,
   TenantOnboardingStepKey,
 } from './entities/tenant-onboarding.entity';
+import { FileAsset } from '../shared-file-storage/entities/file-asset.entity';
 import { TenantOnboardingStore } from './tenant-onboarding.store';
 import { getTenantOnboardingComplianceCatalog } from './tenant-onboarding-compliance-catalog';
 import { getTenantOnboardingPlanCatalog } from './tenant-onboarding-plan-catalog';
@@ -2550,12 +2553,7 @@ export class TenantOnboardingService {
     const documentsWithAssets = await Promise.all(
       documents.map(async (document) => {
         const fileAsset = await this.fileStorageService.getAsset(document.fileAssetId);
-
-        return {
-          ...document,
-          fileAsset,
-          fileUrl: fileAsset?.publicUrl ?? null,
-        };
+        return this.toAdminDocumentView(document, fileAsset);
       }),
     );
     const countryPack = await this.resolveActiveCountryPack();
@@ -2597,12 +2595,12 @@ export class TenantOnboardingService {
           this.fileStorageService.getAsset(document.fileAssetId),
         ]);
 
+        const documentView = this.toAdminDocumentView(document, fileAsset);
         return {
-          document,
+          document: documentView,
           application,
           tenantAccount,
-          fileAsset,
-          fileUrl: fileAsset?.publicUrl ?? null,
+          fileUrl: documentView.fileUrl,
         };
       }),
     );
@@ -2620,13 +2618,77 @@ export class TenantOnboardingService {
     ]);
 
     return {
-      document: {
-        ...document,
-        fileAsset,
-        fileUrl: fileAsset?.publicUrl ?? null,
-      },
+      document: this.toAdminDocumentView(document, fileAsset),
       application,
     };
+  }
+
+  /**
+   * Build the client-facing document URL. Locally stored files are served
+   * only via the authenticated streaming endpoint — the raw filesystem path
+   * (`fileAsset.publicUrl`) is NEVER returned to clients. Externally hosted
+   * assets keep their absolute URL.
+   */
+  private toAdminDocumentFileUrl(
+    documentId: string,
+    asset: Pick<FileAsset, 'publicUrl'> | null | undefined,
+  ): string | null {
+    if (!asset) {
+      return null;
+    }
+    if (/^https?:\/\//i.test(asset.publicUrl)) {
+      return asset.publicUrl;
+    }
+    return `/admin/tenant-documents/${documentId}/file`;
+  }
+
+  /** Admin-facing document projection: safe metadata + streaming URL, no
+   * filesystem path and no full file-asset record. */
+  private toAdminDocumentView(document: TenantDocument, asset: FileAsset | null) {
+    return {
+      ...document,
+      fileName: asset?.originalFileName ?? null,
+      mimeType: asset?.mimeType ?? null,
+      sizeBytes: asset?.sizeBytes ?? null,
+      fileUrl: this.toAdminDocumentFileUrl(document.id, asset),
+    };
+  }
+
+  /** Stream a document for an authenticated admin reviewer. */
+  async streamDocumentForAdmin(documentId: string): Promise<StreamableFile> {
+    const document = await this.store.findDocumentById(documentId);
+    if (!document) {
+      throw new NotFoundException('Tenant document not found.');
+    }
+    const asset = await this.fileStorageService.getAsset(document.fileAssetId);
+    if (!asset) {
+      throw new NotFoundException('Tenant document file not found.');
+    }
+    return this.fileStorageService.openDocumentStream(asset, 'inline');
+  }
+
+  /**
+   * Stream a document for the owning tenant only. The document must belong to
+   * the caller's own application; any other tenant's document resolves to 404
+   * so document ids cannot be enumerated across tenants.
+   */
+  async streamOwnDocument(
+    tenantAccountId: string,
+    documentId: string,
+  ): Promise<StreamableFile> {
+    const document = await this.store.findDocumentById(documentId);
+    if (!document) {
+      throw new NotFoundException('Tenant document not found.');
+    }
+    const application = await this.store.findApplicationByTenantId(tenantAccountId);
+    if (!application || application.id !== document.applicationId) {
+      throw new NotFoundException('Tenant document not found.');
+    }
+    const asset = await this.fileStorageService.getAsset(document.fileAssetId);
+    if (!asset) {
+      throw new NotFoundException('Tenant document file not found.');
+    }
+    return this.fileStorageService.openDocumentStream(asset, 'inline');
   }
 
   listTenantsForAdmin(filters: {

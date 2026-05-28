@@ -28,6 +28,7 @@ import type {
   AuditLogEntry,
   TenantApplicationDetail,
 } from '@/lib/admin-api/admin-review-types';
+import { buildDocumentDownloadUrl } from '@/lib/admin-api/document-download';
 import { requireAdminSession } from '@/lib/admin-api/require-admin-session';
 
 type ModalTab = 'review' | 'documents' | 'timeline';
@@ -840,8 +841,13 @@ function DocumentsSection({
             <div>
               <div className="admin-kv__label">Dosya</div>
               <div className="admin-kv__value">
-                {doc.fileUrl ? (
-                  <a href={doc.fileUrl} target="_blank" rel="noreferrer" className="admin-link">
+                {buildDocumentDownloadUrl(doc.fileUrl) ? (
+                  <a
+                    href={buildDocumentDownloadUrl(doc.fileUrl) ?? undefined}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="admin-link"
+                  >
                     Belgeyi aç ↗
                   </a>
                 ) : (

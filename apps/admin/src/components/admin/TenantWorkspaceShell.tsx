@@ -29,6 +29,7 @@ import type {
   AuditLogEntry,
   TenantApplicationDetail,
 } from '@/lib/admin-api/admin-review-types';
+import { buildDocumentDownloadUrl } from '@/lib/admin-api/document-download';
 import { requireAdminSession } from '@/lib/admin-api/require-admin-session';
 
 type WorkspaceTab = 'review' | 'documents' | 'timeline';
@@ -741,7 +742,7 @@ function DocumentsPanel({
             <div>
               <div className="admin-kv__label">File</div>
               <div className="admin-kv__value">
-                {doc.fileUrl ? <a href={doc.fileUrl} target="_blank" rel="noreferrer" className="admin-link">Open document ↗</a> : '—'}
+                {buildDocumentDownloadUrl(doc.fileUrl) ? <a href={buildDocumentDownloadUrl(doc.fileUrl) ?? undefined} target="_blank" rel="noreferrer" className="admin-link">Open document ↗</a> : '—'}
               </div>
             </div>
           </div>

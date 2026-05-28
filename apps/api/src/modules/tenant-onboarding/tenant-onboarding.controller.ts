@@ -449,6 +449,15 @@ export class TenantOnboardingController {
     });
   }
 
+  @Get('me/documents/:documentId/file')
+  @ApiOperation({ summary: "Stream one of the authenticated tenant's own onboarding documents." })
+  streamOwnDocument(
+    @Req() request: AuthenticatedRequest,
+    @Param('documentId') documentId: string,
+  ) {
+    return this.onboardingService.streamOwnDocument(request.user.id, documentId);
+  }
+
   @Post('me/submit')
   submitForReview(@Req() request: AuthenticatedRequest) {
     return this.onboardingService.submitForReview(request.user.id);

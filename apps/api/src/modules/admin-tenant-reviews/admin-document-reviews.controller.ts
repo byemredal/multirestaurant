@@ -28,6 +28,12 @@ export class AdminDocumentReviewsController {
     return this.reviewsService.getDocument(id);
   }
 
+  @Get(':id/file')
+  @AdminRoles(AdminRole.SUPER_ADMIN, AdminRole.REVIEW_ADMIN, AdminRole.OPERATIONS_ADMIN)
+  streamFile(@Param('id') id: string) {
+    return this.reviewsService.streamDocument(id);
+  }
+
   @Post(':id/approve')
   @AdminRoles(AdminRole.SUPER_ADMIN, AdminRole.REVIEW_ADMIN)
   approve(@Param('id') id: string, @Req() request: AuthenticatedRequest, @Body() dto: ReviewTenantDocumentDto) {

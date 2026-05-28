@@ -78,7 +78,9 @@ export type TenantDocumentRecord = {
   expiresAt: string | null;
   createdAt: string;
   updatedAt: string;
-  fileAsset?: FileAsset | null;
+  fileName?: string | null;
+  mimeType?: string | null;
+  sizeBytes?: number | null;
   fileUrl?: string | null;
 };
 
@@ -103,7 +105,6 @@ export type TenantDocumentQueueEntry = {
     createdAt: string;
     updatedAt: string;
   } | null;
-  fileAsset?: FileAsset | null;
   fileUrl?: string | null;
 };
 
