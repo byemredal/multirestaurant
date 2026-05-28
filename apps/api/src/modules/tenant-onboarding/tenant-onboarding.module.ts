@@ -1,4 +1,5 @@
 import { Module } from '@nestjs/common';
+import { CommonModule } from '../../common/common.module';
 import { AdminAuditLogModule } from '../admin-audit-log/admin-audit-log.module';
 import { SetupModule } from '../setup/setup.module';
 import { TenantsModule } from '../tenants/tenants.module';
@@ -11,6 +12,7 @@ import { TenantOnboardingStore } from './tenant-onboarding.store';
 
 @Module({
   imports: [
+    CommonModule,
     TenantsModule,
     SharedFileStorageModule,
     AdminAuditLogModule,

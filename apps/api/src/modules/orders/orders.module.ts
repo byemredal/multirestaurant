@@ -1,4 +1,5 @@
 import { Module } from '@nestjs/common';
+import { CommonModule } from '../../common/common.module';
 import { AuthModule } from '../auth/auth.module';
 import { LegalConsentModule } from '../legal-consent/legal-consent.module';
 import { TenantsModule } from '../tenants/tenants.module';
@@ -14,6 +15,7 @@ import { OrdersService } from './orders.service';
 
 @Module({
   imports: [
+    CommonModule,
     AuthModule,
     TenantsModule,
     StoresModule,
