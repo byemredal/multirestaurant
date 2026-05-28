@@ -1,4 +1,10 @@
-import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
+import {
+  BadRequestException,
+  ConflictException,
+  Injectable,
+  NotFoundException,
+} from '@nestjs/common';
+import { InstallationProfileService } from '../setup/installation-profile.service';
 import {
   StoreLegalDocument,
   StoreProfileNote,
@@ -41,7 +47,26 @@ export class StoreSettingsService {
     private readonly store: StoreSettingsStore,
     private readonly storesService: StoresService,
     private readonly systemTaxonomyService: SystemTaxonomyService,
+    private readonly installationProfile: InstallationProfileService,
   ) {}
+
+  /**
+   * The platform is single-country, so a store's currency must equal the active
+   * platform currency. Rejects mismatches with a stable `store_currency_mismatch`
+   * code the UI can branch on.
+   */
+  private async assertCurrencyMatchesPlatform(currencyCode: string) {
+    const policy = await this.installationProfile.findActiveCountryPolicy();
+    if (!policy) {
+      return;
+    }
+    if (currencyCode.trim().toUpperCase() !== policy.currencyCode.toUpperCase()) {
+      throw new ConflictException({
+        code: 'store_currency_mismatch',
+        message: `Store currency must match the platform currency (${policy.currencyCode}).`,
+      });
+    }
+  }
 
   async getStoreSetting(storeId: string, tenantId: string) {
     await this.ensureOwnedStore(storeId, tenantId);
@@ -72,7 +97,10 @@ export class StoreSettingsService {
     const existing = await this.store.getOrCreateStoreSetting(storeId);
 
     if (input.defaultCurrencyId) {
-      await this.systemTaxonomyService.getCurrencyByIdOrThrow(input.defaultCurrencyId);
+      const currency = await this.systemTaxonomyService.getCurrencyByIdOrThrow(
+        input.defaultCurrencyId,
+      );
+      await this.assertCurrencyMatchesPlatform(currency.code);
     }
     if (input.defaultLanguageId) {
       await this.systemTaxonomyService.getLanguageByIdOrThrow(input.defaultLanguageId);
@@ -525,11 +553,14 @@ export class StoreSettingsService {
       );
     }
 
+    const currencyCode = dto.currencyCode?.trim() || existing.currencyCode;
+    await this.assertCurrencyMatchesPlatform(currencyCode);
+
     return this.store.upsertOrderingPolicy(storeId, {
       minOrderAmount: dto.minOrderAmount ?? existing.minOrderAmount,
       acceptsDelivery,
       acceptsPickup,
-      currencyCode: dto.currencyCode?.trim() || existing.currencyCode,
+      currencyCode,
     });
   }
 

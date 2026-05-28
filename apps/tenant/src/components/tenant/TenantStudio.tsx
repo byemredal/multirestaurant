@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import TenantDashboardShell from '@/components/tenant/TenantDashboardShell';
+import { usePlatformPack } from '@/lib/platform-pack-context';
 import { TenantCuisinesPanel } from '@/components/tenant/TenantCuisinesPanel';
 import { TenantReviewsPanel } from '@/components/tenant/TenantReviewsPanel';
 import { StudioStickyBar } from '@/components/tenant/studio/StudioStickyBar';
@@ -1022,6 +1023,7 @@ function ShopTab({
 }) {
   const isCreating = !selectedStore;
   const isEditing = storeEditing || isCreating;
+  const currency = usePlatformPack()?.currency || '';
 
   const updateHour = (
     index: number,
@@ -1346,7 +1348,7 @@ function ShopTab({
                     }
                   />
                 </Field>
-                <Field label="Min sipariş (CHF)">
+                <Field label={`Min sipariş${currency ? ` (${currency})` : ''}`}>
                   <Input
                     value={zone.minimumOrderAmount?.toString() ?? ''}
                     inputMode="decimal"
@@ -1355,7 +1357,7 @@ function ShopTab({
                     }
                   />
                 </Field>
-                <Field label="Teslimat ücreti (CHF)">
+                <Field label={`Teslimat ücreti${currency ? ` (${currency})` : ''}`}>
                   <Input
                     value={zone.deliveryFee?.toString() ?? ''}
                     inputMode="decimal"
@@ -2062,6 +2064,7 @@ function OptionGroupCard({
   onArchiveOption: (optionId: string) => void;
 }) {
   const editingThisGroup = optionForm.groupId === group.id;
+  const currency = usePlatformPack()?.currency || '';
   const setLocal = (patch: Partial<ReturnType<typeof emptyOptionForm>>) =>
     setOptionForm((current) => ({ ...current, ...patch, groupId: group.id }));
 
@@ -2144,7 +2147,7 @@ function OptionGroupCard({
             onChange={(event) => setLocal({ name: event.target.value })}
           />
           <Input
-            placeholder="Ek fiyat (CHF)"
+            placeholder={`Ek fiyat${currency ? ` (${currency})` : ''}`}
             inputMode="decimal"
             value={editingThisGroup ? optionForm.priceDelta : ''}
             onChange={(event) => setLocal({ priceDelta: event.target.value })}

@@ -38,7 +38,11 @@ describe('StoresService public discovery', () => {
       })),
     };
     // listPublic does not touch the coverage-sync collaborator.
-    const service = new StoresService(databaseService as any, {} as any);
+    const service = new StoresService(
+      databaseService as any,
+      {} as any,
+      { findActiveCountryPolicy: async () => null } as any,
+    );
 
     const result = await service.listPublic({
       postalCode: '6319',
@@ -61,7 +65,9 @@ describe('StoresService public discovery', () => {
         estimatedDeliveryMinutes: 35,
         supportsDelivery: true,
         supportsCollection: false,
-        currency: 'EUR',
+        // Currency now comes from the active CountryPack; the mocked policy is
+        // null here, so it resolves to '' instead of the old hardcoded 'EUR'.
+        currency: '',
       }),
     );
   });
@@ -74,7 +80,11 @@ describe('StoresService public discovery', () => {
       })),
     };
     // listPublic does not touch the coverage-sync collaborator.
-    const service = new StoresService(databaseService as any, {} as any);
+    const service = new StoresService(
+      databaseService as any,
+      {} as any,
+      { findActiveCountryPolicy: async () => null } as any,
+    );
 
     await service.listPublic({
       postalCode: '6300',
@@ -98,7 +108,11 @@ describe('StoresService public discovery', () => {
       })),
     };
     // listPublic does not touch the coverage-sync collaborator.
-    const service = new StoresService(databaseService as any, {} as any);
+    const service = new StoresService(
+      databaseService as any,
+      {} as any,
+      { findActiveCountryPolicy: async () => null } as any,
+    );
 
     await service.listPublic({
       postalCode: '6319',

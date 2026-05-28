@@ -3,6 +3,7 @@ import { randomUUID } from 'crypto';
 import { assertStoreAccess } from '../../common/security/store-scope';
 import { DatabaseService } from '../../database/database.service';
 import { DeliveryCoverageSyncService } from '../discovery/delivery-coverage-sync.service';
+import { InstallationProfileService } from '../setup/installation-profile.service';
 import {
   DayOfWeek,
   Store,
@@ -24,7 +25,18 @@ export class StoresService {
   constructor(
     private readonly databaseService: DatabaseService,
     private readonly coverageSync: DeliveryCoverageSyncService,
+    private readonly installationProfile: InstallationProfileService,
   ) {}
+
+  /**
+   * Currency shown for stores is always the active platform currency — the
+   * platform is single-country, so the active CountryPack is authoritative.
+   * Returns '' only in the pre-setup state where no public store can exist.
+   */
+  private async resolveActiveCurrency(): Promise<string> {
+    const policy = await this.installationProfile.findActiveCountryPolicy();
+    return policy?.currencyCode ?? '';
+  }
 
   async create(ownerTenantId: string, dto: CreateStoreDto) {
     const slug = await this.buildUniqueSlug(dto.name, dto.slug);
@@ -472,14 +484,15 @@ export class StoresService {
       })) as unknown as StoreListRow[];
 
     const storeIds = stores.map((store) => store.id);
-    const [cuisinesByStore, reviewSummaryByStore] = await Promise.all([
+    const [cuisinesByStore, reviewSummaryByStore, activeCurrency] = await Promise.all([
       this.fetchCuisinesForStoreIds(storeIds),
       this.fetchReviewSummariesForStoreIds(storeIds),
+      this.resolveActiveCurrency(),
     ]);
 
     return {
       stores: stores.map((store) => ({
-        ...this.mapPublicStore(store, normalizedPostalCode),
+        ...this.mapPublicStore(store, normalizedPostalCode, activeCurrency),
         cuisines: cuisinesByStore[store.id] ?? [],
         reviewSummary: reviewSummaryByStore[store.id] ?? {
           averageRating: null,
@@ -512,14 +525,15 @@ export class StoresService {
       return null;
     }
 
-    const [cuisinesByStore, reviewSummaryByStore] = await Promise.all([
+    const [cuisinesByStore, reviewSummaryByStore, activeCurrency] = await Promise.all([
       this.fetchCuisinesForStoreIds([store.id]),
       this.fetchReviewSummariesForStoreIds([store.id]),
+      this.resolveActiveCurrency(),
     ]);
 
     return {
       store: {
-        ...this.mapPublicStore(store, null),
+        ...this.mapPublicStore(store, null, activeCurrency),
         cuisines: cuisinesByStore[store.id] ?? [],
         reviewSummary: reviewSummaryByStore[store.id] ?? {
           averageRating: null,
@@ -1015,6 +1029,7 @@ export class StoresService {
   private mapPublicStore(
     store: StoreListRow,
     normalizedPostalCode: string | null,
+    currency: string,
   ) {
     const supportsDelivery = Number(store.deliveryZoneCount ?? 0) > 0;
     const supportsCollection =
@@ -1040,7 +1055,7 @@ export class StoresService {
         store.estimatedDeliveryMinutes === undefined
           ? null
           : Number(store.estimatedDeliveryMinutes),
-      currency: 'EUR',
+      currency,
     };
   }
 }

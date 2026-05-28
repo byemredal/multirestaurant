@@ -8,6 +8,7 @@ import { Input } from '@lieferzonen/ui';
 import { Select } from '@lieferzonen/ui';
 import { Textarea } from '@lieferzonen/ui';
 import { useTenantAuth } from '@/lib/auth/tenant-auth-context';
+import { usePlatformPack } from '@/lib/platform-pack-context';
 import {
   getTenantStoreDeliveryFeeTiers,
   getTenantStoreOrderingPolicy,
@@ -102,7 +103,8 @@ function emptyOrderingPolicyForm(): OrderingPolicyForm {
     minOrderAmount: '0',
     acceptsDelivery: true,
     acceptsPickup: true,
-    currencyCode: 'CHF',
+    // Resolved from the active platform currency at render; never hardcoded.
+    currencyCode: '',
   };
 }
 
@@ -117,7 +119,7 @@ function emptyGeneralForm(): GeneralForm {
     themeKey: 'classic-light',
     logoUrl: '',
     bannerUrl: '',
-    currencyCode: 'CHF',
+    currencyCode: '',
   };
 }
 
@@ -213,6 +215,9 @@ function SaveButton({ state, disabled, onClick, idleLabel = 'Kaydet' }: {
 export default function TenantStoreSettingsWorkspace() {
   const router = useRouter();
   const { session, logout } = useTenantAuth();
+  const platformPack = usePlatformPack();
+  // Active platform currency is authoritative (single-country platform).
+  const platformCurrency = platformPack?.currency || 'CHF';
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [stores, setStores] = useState<StoreSummary[]>([]);
@@ -316,7 +321,7 @@ export default function TenantStoreSettingsWorkspace() {
       minOrderAmount: String(policy.minOrderAmount ?? 0),
       acceptsDelivery: policy.acceptsDelivery,
       acceptsPickup: policy.acceptsPickup,
-      currencyCode: policy.currencyCode || 'CHF',
+      currencyCode: policy.currencyCode || platformCurrency,
     });
     setOrderingPolicySaveState('idle');
   }
@@ -354,7 +359,7 @@ export default function TenantStoreSettingsWorkspace() {
       themeKey,
       logoUrl,
       bannerUrl,
-      currencyCode: setting.currencyCode || 'CHF',
+      currencyCode: setting.currencyCode || platformCurrency,
     });
     setGeneralSaveState('idle');
   }
@@ -388,7 +393,7 @@ export default function TenantStoreSettingsWorkspace() {
       const next = await updateTenantStoreSettings(session, selectedStoreId, {
         primaryLanguage: generalForm.primaryLanguage.trim() || 'tr',
         serviceMode: generalForm.serviceMode,
-        currencyCode: generalForm.currencyCode.trim() || 'CHF',
+        currencyCode: generalForm.currencyCode.trim() || platformCurrency,
         advancedOptionsJson: {
           themeKey: generalForm.themeKey.trim() || 'classic-light',
           logoUrl: generalForm.logoUrl.trim() || null,
@@ -498,7 +503,8 @@ export default function TenantStoreSettingsWorkspace() {
           minOrderAmount: minOrder,
           acceptsDelivery: orderingPolicyForm.acceptsDelivery,
           acceptsPickup: orderingPolicyForm.acceptsPickup,
-          currencyCode: orderingPolicyForm.currencyCode.trim().toUpperCase() || 'CHF',
+          currencyCode:
+            orderingPolicyForm.currencyCode.trim().toUpperCase() || platformCurrency,
         },
       );
       hydrateOrderingPolicy(next);
@@ -638,19 +644,8 @@ export default function TenantStoreSettingsWorkspace() {
                       />
                     </Field>
                     <Field label="Para birimi">
-                      <Select
-                        value={generalForm.currencyCode}
-                        onChange={(event) =>
-                          setGeneralForm((current) => ({
-                            ...current,
-                            currencyCode: event.target.value,
-                          }))
-                        }
-                      >
-                        <option value="CHF">CHF</option>
-                        <option value="EUR">EUR (€)</option>
-                        <option value="USD">USD ($)</option>
-                        <option value="TRY">TRY (₺)</option>
+                      <Select value={platformCurrency} disabled>
+                        <option value={platformCurrency}>{platformCurrency}</option>
                       </Select>
                     </Field>
                     <Field label="Hizmet modu">
@@ -880,19 +875,8 @@ export default function TenantStoreSettingsWorkspace() {
                       />
                     </Field>
                     <Field label="Para birimi">
-                      <Select
-                        value={orderingPolicyForm.currencyCode}
-                        onChange={(event) =>
-                          setOrderingPolicyForm((current) => ({
-                            ...current,
-                            currencyCode: event.target.value,
-                          }))
-                        }
-                      >
-                        <option value="CHF">CHF</option>
-                        <option value="EUR">EUR</option>
-                        <option value="USD">USD</option>
-                        <option value="TRY">TRY</option>
+                      <Select value={platformCurrency} disabled>
+                        <option value={platformCurrency}>{platformCurrency}</option>
                       </Select>
                     </Field>
                   </div>
@@ -1012,7 +996,7 @@ export default function TenantStoreSettingsWorkspace() {
                 <>
                   {feeTierForms.length === 0 ? (
                     <p className="rounded-[14px] bg-[#fbf7f1] px-4 py-3 text-[12.5px] text-[#78716c]">
-                      Henüz mesafe dilimi yok. Dilim eklemediyseniz teslimat ücreti 0 CHF olur.
+                      Henüz mesafe dilimi yok. Dilim eklemediyseniz teslimat ücreti 0 {platformCurrency} olur.
                     </p>
                   ) : null}
                   {feeTierForms.map((tier, index) => (
