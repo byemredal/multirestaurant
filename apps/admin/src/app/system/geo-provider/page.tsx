@@ -167,7 +167,7 @@ export default function AdminGeoProviderPage() {
         >
           <ul className="admin-stack" style={{ gap: 6 }}>
             <li className="admin-list-row__meta">• Sağlayıcı seçimi <code>SystemSetting.geo.provider</code> kaydında tutulur.</li>
-            <li className="admin-list-row__meta">• 'Devre dışı' seçilirse tenant başvuru formundaki adres arama servisi hata verir ve manuel yazıma düşer.</li>
+            <li className="admin-list-row__meta">• &apos;Devre dışı&apos; seçilirse tenant başvuru formundaki adres arama servisi hata verir ve manuel yazıma düşer.</li>
             <li className="admin-list-row__meta">• Sağlayıcı değişiklikleri sonraki backend isteğinden itibaren geçerli olur (in-memory cache 1 PUT ile sıfırlanır).</li>
           </ul>
         </SectionCard>

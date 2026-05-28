@@ -65,3 +65,5 @@ CLAUDE.local.md
 # docs (ignore everything except the architecture reference tree)
 docs/*
 !docs/architecture/
+
+DB_TREE.md

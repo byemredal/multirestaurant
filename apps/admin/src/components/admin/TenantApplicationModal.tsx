@@ -345,7 +345,7 @@ export default function TenantApplicationModal({ entry, onClose, onChanged }: Pr
                   <span>
                     Operatör EMAIL_TRANSPORT ortam değişkenini gerçek bir sağlayıcıya
                     bağlayana kadar partnerin e-postası gönderilmedi. Bağlantı yine
-                    de DB'de aktif; doğrudan partnerle paylaşabilirsiniz.
+                    de DB&apos;de aktif; doğrudan partnerle paylaşabilirsiniz.
                   </span>
                 ) : null}
                 {approveNotice.deliveryStatus === 'failed' && approveNotice.deliveryErrorCode ? (
