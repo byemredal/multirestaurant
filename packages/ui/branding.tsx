@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { defaultPlatformMarkDataUrl } from '@lieferzonen/assets';
+import { defaultLogoDataUrl } from '@lieferzonen/assets';
 import { Logo, type LogoProps } from './logo';
 
 /**
@@ -107,7 +107,7 @@ export type PlatformLogoProps = Omit<LogoProps, 'src'> & {
 /**
  * The platform logo uploaded during setup, ready to drop into any app
  * header. Self-fetches branding (no provider required) and falls back to the
- * bundled `/logo.svg` until branding loads or when no logo is configured.
+ * bundled `logo.svg` until branding loads or when no logo is configured.
  */
 export function PlatformLogo({ apiBaseUrl, alt, ...rest }: PlatformLogoProps) {
   const branding = usePlatformBranding(apiBaseUrl);
@@ -115,15 +115,12 @@ export function PlatformLogo({ apiBaseUrl, alt, ...rest }: PlatformLogoProps) {
   return (
     <Logo
       src={branding?.logoUrl || undefined}
-      // Brand-neutral fallback: a wordless abstract mark shipped in
-      // `@lieferzonen/assets`. `logo.svg` / `logo_.svg` in that package are
-      // brand-baked (the SVG path itself spells "LIEFER ZONE") and CANNOT
-      // be used as a platform-agnostic default — they would leak the old
-      // brand on a "Yemekmarketi" install. The data-URL keeps this safe
-      // for `packages/ui`, which has no Next.js SVG loader of its own.
-      fallbackSrc={defaultPlatformMarkDataUrl}
+      // Bundled fallback: `logo.svg` shipped in `@lieferzonen/assets`, exposed
+      // as a data URL so `packages/ui` (no Next.js SVG loader of its own) can
+      // use it directly. Shown when no `logoUrl` is configured in setup.
+      fallbackSrc={defaultLogoDataUrl}
       // `fallbackText` powers the final text-mark path inside <Logo> —
-      // hit only when both the uploaded logoUrl AND the bundled mark fail
+      // hit only when both the uploaded logoUrl AND the bundled logo.svg fail
       // to load, e.g. an offline CSP-blocked render.
       fallbackText={platformName}
       alt={alt ?? platformName}
