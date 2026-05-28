@@ -6,11 +6,10 @@ export type LogoProps = {
   /** Platform logo image URL — e.g. the data URL uploaded in the setup wizard. */
   src?: string | null;
   /**
-   * Optional second-chance image (e.g. a bundled brand-neutral wordmark shipped
-   * in the consuming app's `public/`). When omitted no <img> is rendered at
-   * all in the fallback path — the component falls through to the text mark
-   * instead. The previous `/logo.svg` default was unsafe: apps that don't
-   * ship that file (admin) rendered a broken image with a stale brand alt.
+   * Optional second-chance image — the bundled `logo.svg` (passed as a data
+   * URL via `@lieferzonen/assets`). When omitted no <img> is rendered at all
+   * in the fallback path — the component falls through to the text mark
+   * instead.
    */
   fallbackSrc?: string;
   /**

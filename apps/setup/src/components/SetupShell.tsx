@@ -4,7 +4,7 @@ import { usePathname } from 'next/navigation';
 import type { ReactNode } from 'react';
 import { setupAppName } from '@/lib/config';
 import { Logo } from '@lieferzonen/ui';
-import { defaultPlatformMarkDataUrl } from '@lieferzonen/assets';
+import { defaultLogoDataUrl } from '@lieferzonen/assets';
 
 /** The four linear wizard steps, in order. The `/setup` index is the intro. */
 export const SETUP_STEPS = [
@@ -60,7 +60,7 @@ export function SetupShell({ children }: { children: ReactNode }) {
           <div className="flex flex-col items-center gap-[11px]">
             <Logo
               src={undefined}
-              fallbackSrc={defaultPlatformMarkDataUrl}
+              fallbackSrc={defaultLogoDataUrl}
               fallbackText={setupAppName}
               alt={`${setupAppName} logo`}
               height={36}
