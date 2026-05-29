@@ -25,6 +25,7 @@ import {
 import {
   LegalDocumentType,
   LegalDocumentTypeCode,
+  REQUIRED_CHECKOUT_DOCUMENT_CODES,
 } from './entities/legal-document-type.entity';
 import {
   PLATFORM_LEGAL_DOCUMENT_BODY_FORMATS,
@@ -668,6 +669,29 @@ export class LegalConsentService {
       if (!ok) missing.push(doc.code);
     }
     return { requires: missing.length > 0, missingDocumentCodes: missing };
+  }
+
+  /**
+   * Platform-level checkout legal readiness: are the required customer
+   * checkout documents (distance-sales contract + pre-information form)
+   * published with a current version? This is distinct from
+   * requiresReConsent() — it checks whether the platform has configured the
+   * documents at all, not whether a given subject has accepted them.
+   */
+  async getCheckoutLegalReadiness(): Promise<{
+    legalReady: boolean;
+    missingLegalDocuments: string[];
+  }> {
+    const docs = await this.listDocuments({
+      audience: 'customer',
+      includeInactive: false,
+    });
+    const missing: string[] = [];
+    for (const code of REQUIRED_CHECKOUT_DOCUMENT_CODES) {
+      const doc = docs.find((d) => d.typeCode === code);
+      if (!doc?.currentVersion) missing.push(code);
+    }
+    return { legalReady: missing.length === 0, missingLegalDocuments: missing };
   }
 
   // ===================================================================

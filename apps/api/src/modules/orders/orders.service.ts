@@ -295,6 +295,21 @@ export class OrdersService {
       reasons.push(issue.message);
     }
 
+    // Legal readiness is platform-level and independent of payment readiness:
+    // the required customer checkout documents must be published before any
+    // order can be placed.
+    const legal = await this.legalConsentService.getCheckoutLegalReadiness();
+    if (!legal.legalReady) {
+      const issue = this.createBlockingIssue({
+        code: 'LEGAL_DOCUMENTS_NOT_READY',
+        message: 'Yasal sipariş belgeleri henüz hazır değil.',
+        entityType: 'legal',
+        canRetry: false,
+      });
+      blockingIssues.push(issue);
+      reasons.push(issue.message);
+    }
+
     const deliveryFeeAmount =
       serviceType === 'delivery'
         ? this.resolveDeliveryFee(commerce.deliveryFeeTiers, deliveryDistanceKm)
@@ -309,6 +324,8 @@ export class OrdersService {
       isReady: reasons.length === 0,
       hasBlockingIssues: reasons.length > 0,
       canCheckout: reasons.length === 0,
+      legalReady: legal.legalReady,
+      missingLegalDocuments: legal.missingLegalDocuments,
       canUpdateCart: true,
       canRetryCheckout: pendingPaymentOrder ? true : validation.canRetryCheckout,
       nextAction,
@@ -357,6 +374,18 @@ export class OrdersService {
       const cart = await this.findCartByCustomerForUpdate(customerAccountId);
       if (!cart) {
         throw new BadRequestException('Your active cart is empty.');
+      }
+
+      // Central legal gate: refuse order creation if the required platform
+      // legal documents are not published, even if the client bypasses the
+      // checkout-readiness UI signal.
+      const legal = await this.legalConsentService.getCheckoutLegalReadiness();
+      if (!legal.legalReady) {
+        throw new BadRequestException({
+          code: 'legal_documents_missing',
+          message: 'Yasal sipariş belgeleri henüz hazır değil.',
+          missingLegalDocuments: legal.missingLegalDocuments,
+        });
       }
 
       const existingPendingPaymentOrder = await this.findActivePendingPaymentOrder(

@@ -514,4 +514,96 @@ describe('LegalConsentService', () => {
       expect(hasAcceptedSpy).not.toHaveBeenCalled();
     });
   });
+
+  // ===================================================================
+  // getCheckoutLegalReadiness — platform-level checkout legal gate
+  // ===================================================================
+
+  describe('getCheckoutLegalReadiness', () => {
+    function docBundle(
+      typeCode: string,
+      hasCurrent: boolean,
+    ): any {
+      return {
+        id: `d-${typeCode}`,
+        typeId: `t-${typeCode}`,
+        typeCode,
+        code: `platform-${typeCode}`,
+        audience: 'customer',
+        isRequired: true,
+        isActive: true,
+        createdAt: new Date(),
+        updatedAt: new Date(),
+        currentVersion: hasCurrent
+          ? {
+              id: `v-${typeCode}`,
+              documentId: `d-${typeCode}`,
+              versionLabel: 'v1',
+              locale: 'tr',
+              title: 'T',
+              body: 'B',
+              bodyFormat: 'markdown',
+              contentHashSha256: 'h',
+              effectiveFrom: new Date(),
+              publishedAt: new Date(),
+              supersededAt: null,
+              createdByAdminId: null,
+              createdAt: new Date(),
+            }
+          : null,
+      };
+    }
+
+    it('returns both codes missing when no required documents are published', async () => {
+      const { service } = createService();
+      jest.spyOn(service, 'listDocuments').mockResolvedValue([]);
+
+      const result = await service.getCheckoutLegalReadiness();
+
+      expect(result.legalReady).toBe(false);
+      expect(result.missingLegalDocuments).toEqual([
+        'distance_sales_contract',
+        'pre_information_form',
+      ]);
+    });
+
+    it('returns only the unpublished code as missing', async () => {
+      const { service } = createService();
+      jest.spyOn(service, 'listDocuments').mockResolvedValue([
+        docBundle('distance_sales_contract', true),
+        docBundle('pre_information_form', false),
+      ]);
+
+      const result = await service.getCheckoutLegalReadiness();
+
+      expect(result.legalReady).toBe(false);
+      expect(result.missingLegalDocuments).toEqual(['pre_information_form']);
+    });
+
+    it('is legalReady when both required documents have a current version', async () => {
+      const { service } = createService();
+      jest.spyOn(service, 'listDocuments').mockResolvedValue([
+        docBundle('distance_sales_contract', true),
+        docBundle('pre_information_form', true),
+      ]);
+
+      const result = await service.getCheckoutLegalReadiness();
+
+      expect(result.legalReady).toBe(true);
+      expect(result.missingLegalDocuments).toEqual([]);
+    });
+
+    it('treats a document without a current version (draft/superseded) as missing', async () => {
+      const { service } = createService();
+      jest.spyOn(service, 'listDocuments').mockResolvedValue([
+        docBundle('distance_sales_contract', false),
+        docBundle('pre_information_form', true),
+      ]);
+
+      const result = await service.getCheckoutLegalReadiness();
+
+      expect(result.legalReady).toBe(false);
+      expect(result.missingLegalDocuments).toEqual(['distance_sales_contract']);
+    });
+  });
 });

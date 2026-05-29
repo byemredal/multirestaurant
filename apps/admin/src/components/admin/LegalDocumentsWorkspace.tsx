@@ -193,6 +193,20 @@ export default function LegalDocumentsWorkspace() {
     [documents, selectedDocId],
   );
 
+  const requiredCheckoutDocs = useMemo(() => {
+    const required: { typeCode: string; label: string }[] = [
+      { typeCode: 'distance_sales_contract', label: 'Mesafeli satış sözleşmesi' },
+      { typeCode: 'pre_information_form', label: 'Ön bilgilendirme formu' },
+    ];
+    return required.map((req) => {
+      const doc = documents.find(
+        (d) => d.typeCode === req.typeCode && d.isActive,
+      );
+      return { ...req, published: Boolean(doc?.currentVersion) };
+    });
+  }, [documents]);
+  const allRequiredPublished = requiredCheckoutDocs.every((d) => d.published);
+
   if (loading) {
     return <p style={{ color: '#71717a' }}>Yükleniyor…</p>;
   }
@@ -212,6 +226,49 @@ export default function LegalDocumentsWorkspace() {
           {error}
         </div>
       )}
+
+      {/* Checkout required-docs status */}
+      <section
+        style={{
+          padding: 20,
+          borderRadius: 16,
+          background: allRequiredPublished ? '#f0fdf4' : '#fffbeb',
+          border: `1px solid ${allRequiredPublished ? '#bbf7d0' : '#fde68a'}`,
+        }}
+      >
+        <h3 style={{ marginTop: 0, marginBottom: 8, fontSize: 16 }}>
+          Checkout için gerekli yasal belgeler
+        </h3>
+        {!allRequiredPublished && (
+          <p style={{ margin: '0 0 12px', fontSize: 13, color: '#92400e' }}>
+            Mesafeli satış sözleşmesi ve ön bilgilendirme formu yayınlanmalı.
+          </p>
+        )}
+        <ul style={{ margin: 0, paddingLeft: 0, listStyle: 'none', display: 'grid', gap: 8 }}>
+          {requiredCheckoutDocs.map((doc) => (
+            <li
+              key={doc.typeCode}
+              style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 13 }}
+            >
+              <span
+                style={{
+                  padding: '2px 8px',
+                  borderRadius: 999,
+                  fontSize: 11,
+                  fontWeight: 600,
+                  color: doc.published ? '#166534' : '#b91c1c',
+                  background: doc.published ? '#dcfce7' : '#fee2e2',
+                }}
+              >
+                {doc.published ? 'Yayında' : 'Eksik – yayınlanmalı'}
+              </span>
+              <span>
+                {doc.label} <code style={{ color: '#71717a' }}>({doc.typeCode})</code>
+              </span>
+            </li>
+          ))}
+        </ul>
+      </section>
 
       {/* Create new document */}
       <section

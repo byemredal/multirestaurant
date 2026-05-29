@@ -481,6 +481,62 @@ ON CONFLICT ("email") DO UPDATE SET
   "isActive"     = TRUE,
   "updatedAt"    = NOW();
 
+-- ============================================================
+-- DEV-ONLY published checkout legal documents.
+-- distance_sales_contract + pre_information_form are admin-published in
+-- production; they are intentionally NOT seeded by migrations. This dev seed
+-- gives local/test databases published current versions so checkout legal
+-- readiness passes. Content is an explicit [DEV TASLAK] placeholder — never
+-- representative of real legal text. Idempotent.
+-- ============================================================
+INSERT INTO "PlatformLegalDocument" ("id", "typeId", "code", "audience", "isRequired", "isActive")
+SELECT
+  'd1000000-0000-4000-8000-000000000001',
+  t."id",
+  'distance_sales_contract',
+  'customer', TRUE, TRUE
+FROM "LegalDocumentType" t
+WHERE t."code" = 'distance_sales_contract'
+ON CONFLICT ("code") DO NOTHING;
+
+INSERT INTO "PlatformLegalDocument" ("id", "typeId", "code", "audience", "isRequired", "isActive")
+SELECT
+  'd1000000-0000-4000-8000-000000000002',
+  t."id",
+  'pre_information_form',
+  'customer', TRUE, TRUE
+FROM "LegalDocumentType" t
+WHERE t."code" = 'pre_information_form'
+ON CONFLICT ("code") DO NOTHING;
+
+INSERT INTO "PlatformLegalDocumentVersion" (
+  "documentId", "versionLabel", "locale", "title", "body", "bodyFormat",
+  "contentHashSha256"
+)
+SELECT
+  d."id", 'v1-dev', 'tr',
+  '[DEV TASLAK] Mesafeli Satış Sözleşmesi',
+  '[DEV TASLAK] Bu yalnızca geliştirme ortamı için yer tutucu metindir. Gerçek yasal içerik değildir.',
+  'markdown',
+  encode(sha256('dev-distance_sales_contract-v1'::bytea), 'hex')
+FROM "PlatformLegalDocument" d
+WHERE d."code" = 'distance_sales_contract'
+ON CONFLICT ("documentId", "versionLabel", "locale") DO NOTHING;
+
+INSERT INTO "PlatformLegalDocumentVersion" (
+  "documentId", "versionLabel", "locale", "title", "body", "bodyFormat",
+  "contentHashSha256"
+)
+SELECT
+  d."id", 'v1-dev', 'tr',
+  '[DEV TASLAK] Ön Bilgilendirme Formu',
+  '[DEV TASLAK] Bu yalnızca geliştirme ortamı için yer tutucu metindir. Gerçek yasal içerik değildir.',
+  'markdown',
+  encode(sha256('dev-pre_information_form-v1'::bytea), 'hex')
+FROM "PlatformLegalDocument" d
+WHERE d."code" = 'pre_information_form'
+ON CONFLICT ("documentId", "versionLabel", "locale") DO NOTHING;
+
 COMMIT;
 
 -- ── Çalıştırma örneği ──────────────────────────────────────────────────────

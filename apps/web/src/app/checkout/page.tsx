@@ -51,6 +51,8 @@ type ReadinessResult = {
   totalAmount: number | null;
   currency: string | null;
   existingPendingPaymentOrderId: string | null;
+  legalReady?: boolean;
+  missingLegalDocuments?: string[];
   commerce?: ReadinessCommerce | null;
 };
 
@@ -347,7 +349,12 @@ export default function CheckoutPage() {
     (cart.serviceType === 'delivery' ? subtotal + deliveryFee : subtotal);
 
   const legalVersionIds = pickOrderAcceptanceVersionIds(legalDocuments);
-  const legalReady = legalVersionIds !== null;
+  // Backend checkout-readiness is the source of truth for legal readiness.
+  // Fall back to the locally-fetched document bundle only while readiness is
+  // still loading. Version IDs for OrderLegalAcceptance still come from the
+  // bundle (same source: current published customer documents).
+  const legalReady =
+    readiness?.legalReady ?? (legalVersionIds !== null);
   const distanceSalesDoc = legalDocuments.find(
     (doc) => doc.typeCode === 'distance_sales_contract' && doc.currentVersion,
   );
@@ -546,20 +553,29 @@ export default function CheckoutPage() {
               </div>
             ) : null}
 
-            {readiness && readiness.blockingIssues.length > 0 && (
-              <div className="rounded-[16px] border border-red-200 bg-red-50 p-4">
-                <p className="text-[14px] font-semibold text-red-700">
-                  Sepette sorun tespit edildi
-                </p>
-                <ul className="mt-2 space-y-1">
-                  {readiness.blockingIssues.map((issue, i) => (
-                    <li key={i} className="text-[13px] text-red-600">
-                      {issue.message}
-                    </li>
-                  ))}
-                </ul>
-              </div>
-            )}
+            {(() => {
+              // The legal blocker has its own dedicated "Yasal Onay" box, so
+              // exclude it here to avoid duplicate messaging.
+              const issues =
+                readiness?.blockingIssues.filter(
+                  (issue) => issue.code !== 'LEGAL_DOCUMENTS_NOT_READY',
+                ) ?? [];
+              if (issues.length === 0) return null;
+              return (
+                <div className="rounded-[16px] border border-red-200 bg-red-50 p-4">
+                  <p className="text-[14px] font-semibold text-red-700">
+                    Sepette sorun tespit edildi
+                  </p>
+                  <ul className="mt-2 space-y-1">
+                    {issues.map((issue, i) => (
+                      <li key={i} className="text-[13px] text-red-600">
+                        {issue.message}
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              );
+            })()}
 
             {readinessError && (
               <div className="rounded-[16px] border border-amber-200 bg-amber-50 p-4">

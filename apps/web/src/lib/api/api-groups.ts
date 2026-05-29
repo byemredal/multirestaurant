@@ -884,6 +884,9 @@ export const apiGroups: ApiGroup[] = [
     label: 'Customer — Orders (auth required)',
     actions: [
       {
+        // Response includes legalReady + missingLegalDocuments and a
+        // LEGAL_DOCUMENTS_NOT_READY blocking issue when required platform
+        // legal documents are not published.
         id: 'checkoutReadiness',
         method: 'POST',
         path: '/orders/checkout-readiness',
