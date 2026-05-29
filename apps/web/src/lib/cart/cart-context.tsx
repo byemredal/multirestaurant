@@ -11,9 +11,23 @@ import {
   useState,
   type ReactNode,
 } from 'react';
-import { readAuthSession } from '@/lib/storage/auth-session';
+import {
+  AUTH_CHANGED_EVENT,
+  AUTH_SESSION_STORAGE_KEY,
+  clearAuthSession,
+  readAuthSession,
+  writeAuthSession,
+} from '@/lib/storage/auth-session';
+import { bootstrapAuthSession } from '@/lib/auth-client';
 import { apiClient } from '@/lib/api/api-client';
 import { apiBaseUrl } from '@/lib/config';
+
+/**
+ * Single source of truth for the customer's auth state inside the cart tree.
+ * 'loading' until the stored session has been validated/refreshed, so callers
+ * (e.g. checkout) never render a login wall before auth is known.
+ */
+export type AuthStatus = 'loading' | 'authenticated' | 'anonymous';
 
 const BASE_URL = apiBaseUrl;
 const STORAGE_KEY = 'lieferzonen:cart:v1';
@@ -232,6 +246,10 @@ export type CartContextValue = {
   isSyncing: boolean;
   error: string | null;
   isAuthenticated: boolean;
+  /** Auth resolution state — checkout gates on this instead of a bare boolean. */
+  authStatus: AuthStatus;
+  /** True once the mount-time auth/cart resolution has settled. */
+  hydrated: boolean;
   addItem: (
     storeId: string,
     storeName: string,
@@ -260,47 +278,96 @@ export function CartProvider({ children }: { children: ReactNode }) {
   const [cart, dispatch] = useReducer(reducer, EMPTY);
   const [isSyncing, setIsSyncing] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [isAuthenticated, setIsAuthenticated] = useState(false);
+  const [authStatus, setAuthStatus] = useState<AuthStatus>('loading');
   const [hydrated, setHydrated] = useState(false);
+  const isAuthenticated = authStatus === 'authenticated';
 
   // Always-current reference to cart state — safe to read inside callbacks.
   const cartRef = useRef(cart);
   cartRef.current = cart;
 
-  // ── Mount: detect auth, load cart ──────────────────────────────────────────
+  const loadGuestCart = useCallback(() => {
+    try {
+      const raw = localStorage.getItem(STORAGE_KEY);
+      if (raw) {
+        const parsed = JSON.parse(raw) as Omit<CartState, 'isOpen'>;
+        if (Array.isArray(parsed?.items)) {
+          dispatch({ type: 'HYDRATE', state: parsed });
+        }
+      }
+    } catch {
+      // ignore
+    }
+  }, []);
+
+  // ── Mount: resolve auth (same source as HomeHeader), then load cart ─────────
   useEffect(() => {
+    let cancelled = false;
     const session = readAuthSession();
 
-    if (session) {
-      setIsAuthenticated(true);
-      setIsSyncing(true);
-      apiClient({ method: 'GET', url: `${BASE_URL}/cart`, token: session.accessToken })
-        .then((res) => {
-          if (res.ok) {
-            const { cart: bc } = res.data as BackendCartResponse;
-            if (bc) dispatch({ type: 'HYDRATE', state: mapBackendCart(bc) });
-          }
-          // Silently ignore load errors on mount — cart stays empty.
-        })
-        .finally(() => {
-          setIsSyncing(false);
-          setHydrated(true);
-        });
-    } else {
-      // Guest mode: restore from localStorage.
-      try {
-        const raw = localStorage.getItem(STORAGE_KEY);
-        if (raw) {
-          const parsed = JSON.parse(raw) as Omit<CartState, 'isOpen'>;
-          if (Array.isArray(parsed?.items)) {
-            dispatch({ type: 'HYDRATE', state: parsed });
-          }
-        }
-      } catch {
-        // ignore
-      }
+    if (!session) {
+      setAuthStatus('anonymous');
+      loadGuestCart();
       setHydrated(true);
+      return;
     }
+
+    // Optimistic: a stored session means authenticated (mirrors HomeHeader) so
+    // checkout never flashes the login wall while we validate in the
+    // background. Only a definitive refresh failure flips us to anonymous.
+    setAuthStatus('authenticated');
+    setIsSyncing(true);
+
+    void (async () => {
+      let active = session;
+      try {
+        active = await bootstrapAuthSession(session);
+        writeAuthSession(active);
+      } catch {
+        if (cancelled) return;
+        clearAuthSession();
+        setAuthStatus('anonymous');
+        loadGuestCart();
+        return;
+      }
+
+      if (cancelled) return;
+      const res = await apiClient({
+        method: 'GET',
+        url: `${BASE_URL}/cart`,
+        token: active.accessToken,
+      });
+      if (cancelled) return;
+      if (res.ok) {
+        const { cart: bc } = res.data as BackendCartResponse;
+        if (bc) dispatch({ type: 'HYDRATE', state: mapBackendCart(bc) });
+      }
+    })().finally(() => {
+      if (cancelled) return;
+      setIsSyncing(false);
+      setHydrated(true);
+    });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [loadGuestCart]);
+
+  // ── Keep auth state in sync with login/logout (same-tab) and cross-tab. ─────
+  useEffect(() => {
+    const reconcile = () => {
+      setAuthStatus(readAuthSession() ? 'authenticated' : 'anonymous');
+    };
+    const onStorage = (event: StorageEvent) => {
+      if (event.key !== null && event.key !== AUTH_SESSION_STORAGE_KEY) return;
+      reconcile();
+    };
+    window.addEventListener(AUTH_CHANGED_EVENT, reconcile);
+    window.addEventListener('storage', onStorage);
+    return () => {
+      window.removeEventListener(AUTH_CHANGED_EVENT, reconcile);
+      window.removeEventListener('storage', onStorage);
+    };
   }, []);
 
   // ── Guest-mode localStorage persistence ────────────────────────────────────
@@ -611,6 +678,8 @@ export function CartProvider({ children }: { children: ReactNode }) {
       isSyncing,
       error,
       isAuthenticated,
+      authStatus,
+      hydrated,
       addItem,
       updateQty,
       removeItem,
@@ -630,6 +699,8 @@ export function CartProvider({ children }: { children: ReactNode }) {
       isSyncing,
       error,
       isAuthenticated,
+      authStatus,
+      hydrated,
       addItem,
       updateQty,
       removeItem,

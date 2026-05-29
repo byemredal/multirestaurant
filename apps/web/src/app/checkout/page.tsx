@@ -99,11 +99,24 @@ export default function CheckoutPage() {
     subtotal,
     clearCart,
     isAuthenticated,
+    authStatus,
+    hydrated,
     setServiceType,
     setDeliveryDistance,
   } = useCart();
   const router = useRouter();
   const currency = cart.currency || 'CHF';
+
+  // Dev guard: surfaces a header(authenticated)/checkout(anonymous) divergence.
+  if (
+    process.env.NODE_ENV !== 'production' &&
+    typeof window !== 'undefined' &&
+    authStatus === 'anonymous' &&
+    readAuthSession()
+  ) {
+    // eslint-disable-next-line no-console
+    console.warn('[auth mismatch] Stored session exists but checkout is anonymous');
+  }
 
   const [readiness, setReadiness] = useState<ReadinessResult | null>(null);
   const [readinessLoading, setReadinessLoading] = useState(false);
@@ -250,8 +263,27 @@ export default function CheckoutPage() {
     router.push(`/orders/${orderId}?payment=error`);
   };
 
+  // ── Auth still resolving: never flash the login wall before we know. ─────────
+  if (!hydrated || authStatus === 'loading') {
+    return (
+      <div className="min-h-screen bg-[#f8f8f8]">
+        <PageHeader />
+        <main className="mx-auto max-w-[720px] px-5 py-8">
+          <div
+            role="status"
+            aria-live="polite"
+            className="rounded-[20px] border border-[#e5e7eb] bg-white p-8 text-center"
+          >
+            <div className="mx-auto h-6 w-6 animate-spin rounded-full border-2 border-[#084799] border-t-transparent" />
+            <p className="mt-3 text-[14px] text-[#6b7280]">Oturumunuz kontrol ediliyor…</p>
+          </div>
+        </main>
+      </div>
+    );
+  }
+
   // ── Guest view ───────────────────────────────────────────────────────────────
-  if (!isAuthenticated) {
+  if (authStatus === 'anonymous') {
     return (
       <div className="min-h-screen bg-[#f8f8f8]">
         <PageHeader />

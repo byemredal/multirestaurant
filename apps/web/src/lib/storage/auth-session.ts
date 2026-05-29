@@ -43,7 +43,8 @@ export function readAuthSession(): StoredAuthSession | null {
  * Same-tab login/logout signal. The `storage` event only fires cross-tab, so
  * we dispatch this for in-tab listeners (e.g. the discovery DiscoveryProvider).
  */
-const AUTH_CHANGED_EVENT = 'lieferzonen:auth-changed';
+export const AUTH_CHANGED_EVENT = 'lieferzonen:auth-changed';
+export const AUTH_SESSION_STORAGE_KEY = AUTH_SESSION_KEY;
 
 function notifyAuthChanged() {
   if (typeof window !== 'undefined') {
