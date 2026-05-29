@@ -3,6 +3,23 @@ import type { StoredTenantSession } from '@/lib/storage/tenant-session';
 
 export const apiBaseUrl = resolveApiBaseUrl();
 
+/**
+ * Stable backend error codes → user-facing Turkish messages. Keeps raw codes
+ * out of the UI and gives a consistent message even if the backend wording
+ * changes. Unknown codes fall back to the backend `message`.
+ */
+const ERROR_CODE_MESSAGES: Record<string, string> = {
+  store_currency_mismatch:
+    'Mağaza para birimi platformun aktif para birimiyle uyumlu olmalıdır.',
+  store_country_mismatch:
+    'Restoran adresi platformun aktif ülkesiyle uyumlu değil.',
+  invalid_postal_code:
+    'Posta kodu platformun aktif ülkesiyle uyumlu değil.',
+  invalid_coverage_postal_code:
+    'Teslimat bölgesi posta kodu platformun aktif ülkesiyle uyumlu değil.',
+  geo_country_mismatch: 'Adres, platformun aktif ülkesiyle uyumlu değil.',
+};
+
 export async function tenantRequest<T>(
   path: string,
   session: StoredTenantSession,
@@ -27,7 +44,9 @@ export async function tenantRequest<T>(
 
     try {
       const payload = await response.json();
-      if (Array.isArray(payload?.errors) && payload.errors.length > 0) {
+      if (typeof payload?.code === 'string' && ERROR_CODE_MESSAGES[payload.code]) {
+        errorMessage = ERROR_CODE_MESSAGES[payload.code];
+      } else if (Array.isArray(payload?.errors) && payload.errors.length > 0) {
         errorMessage = payload.errors.join(', ');
       } else if (Array.isArray(payload?.missingFields) && payload.missingFields.length > 0) {
         errorMessage = `Missing fields: ${payload.missingFields.join(', ')}`;

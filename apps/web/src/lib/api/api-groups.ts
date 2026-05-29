@@ -236,7 +236,10 @@ export const apiGroups: ApiGroup[] = [
         path: '/geo/suggest',
         queryParams: [
           { key: 'q', label: 'query (min. 2 chars)' },
-          { key: 'country', label: 'ISO-2 (optional bias)' },
+          {
+            key: 'country',
+            label: 'ISO-2 (ignored — server pins to active platform country)',
+          },
         ],
       },
     ],

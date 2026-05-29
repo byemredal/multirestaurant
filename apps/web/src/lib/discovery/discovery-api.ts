@@ -20,11 +20,21 @@ export class DiscoveryApiError extends Error {
   constructor(
     message: string,
     readonly status: number,
+    readonly code?: string,
   ) {
     super(message);
     this.name = 'DiscoveryApiError';
   }
 }
+
+/**
+ * Stable backend error codes → user-facing Turkish messages. Keeps raw codes
+ * out of the UI; unknown codes fall back to a generic message.
+ */
+const ERROR_CODE_MESSAGES: Record<string, string> = {
+  geo_country_mismatch: 'Girdiğin adres platformun hizmet verdiği ülkede değil.',
+  invalid_postal_code: 'Bu posta kodu geçerli değil. Lütfen kontrol et.',
+};
 
 interface RequestOptions {
   method?: 'GET' | 'POST';
@@ -46,10 +56,17 @@ async function request<T>(path: string, options: RequestOptions = {}): Promise<T
   });
 
   if (!response.ok) {
-    throw new DiscoveryApiError(
-      `Discovery request failed: ${path}`,
-      response.status,
-    );
+    let code: string | undefined;
+    try {
+      const body = (await response.json()) as { code?: string };
+      if (typeof body?.code === 'string') code = body.code;
+    } catch {
+      // Non-JSON error body — fall back to the generic message below.
+    }
+    const message =
+      (code && ERROR_CODE_MESSAGES[code]) ||
+      'İsteğin tamamlanamadı. Lütfen tekrar dene.';
+    throw new DiscoveryApiError(message, response.status, code);
   }
   return (await response.json()) as T;
 }
