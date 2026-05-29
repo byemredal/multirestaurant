@@ -5,7 +5,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { reportTelemetry } from '@/lib/telemetry';
 import type { StoredAuthSession } from '@/lib/storage/auth-session';
 import { writeAuthSession } from '@/lib/storage/auth-session';
-import { apiBaseUrl } from '@/lib/config';
+import { webAuthedFetch, isAuthExpiredError } from '@/lib/api/authed-fetch';
 import { Button, Modal } from '@lieferzonen/ui';
 
 type MenuView =
@@ -148,10 +148,10 @@ export default function AccountMenuModal({
     }
 
     const endpointMap: Partial<Record<MenuView, string>> = {
-      orders: `${apiBaseUrl}/orders?scope=all`,
-      rewards: `${apiBaseUrl}/auth/rewards`,
-      stampcards: `${apiBaseUrl}/auth/stampcards`,
-      support: `${apiBaseUrl}/auth/help`,
+      orders: '/orders?scope=all',
+      rewards: '/auth/rewards',
+      stampcards: '/auth/stampcards',
+      support: '/auth/help',
     };
     const endpoint = endpointMap[view];
     if (!endpoint) {
@@ -163,25 +163,34 @@ export default function AccountMenuModal({
     const load = async () => {
       try {
         setApiState({ state: 'loading' });
-        const response = await fetch(endpoint, {
-          credentials: 'include',
-          headers: { Authorization: `Bearer ${authSession?.accessToken}` },
+        // webAuthedFetch handles 401 → silent refresh → retry-1 → expire.
+        // On unrecoverable auth failure it throws AuthExpiredError after
+        // starting the redirect to /login?reason=session_expired — we
+        // intentionally do NOT surface that as a "yüklenemiyor" mask.
+        const response = await webAuthedFetch(endpoint, {
           signal: controller.signal,
         });
         if (!response.ok) throw new Error(`request_failed_${view}`);
         const payload = (await response.json()) as unknown;
         setApiState({ state: 'ready', data: payload });
       } catch (err) {
-        if (!(err instanceof DOMException && err.name === 'AbortError')) {
-          setApiState({
-            state: 'error',
-            message: 'Bu bölüm şu an yüklenemiyor.',
-          });
-          void reportTelemetry({
-            type: 'account_modal_fetch_error',
-            payload: { view },
-          });
+        if (err instanceof DOMException && err.name === 'AbortError') {
+          return;
         }
+        if (isAuthExpiredError(err)) {
+          // Redirect is already in flight; suppress the error card so the
+          // user does not see a red "yüklenemiyor" panel right before
+          // navigating to /login?reason=session_expired.
+          return;
+        }
+        setApiState({
+          state: 'error',
+          message: 'Bu bölüm şu an yüklenemiyor.',
+        });
+        void reportTelemetry({
+          type: 'account_modal_fetch_error',
+          payload: { view },
+        });
       }
     };
 
