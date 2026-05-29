@@ -129,6 +129,7 @@ export class CartService {
           dto.storeId,
           menuItem.currencyId,
           menuItem.currencyCode,
+          dto.serviceType,
         );
       } else if (activeCart.storeId !== dto.storeId) {
         throw new ConflictException(
@@ -282,6 +283,7 @@ export class CartService {
     storeId: string,
     currencyId: string,
     currencySnapshot: string,
+    preferredServiceType?: 'delivery' | 'pickup',
   ) {
     const now = new Date();
     let serviceTypes = await this.storeSettingsStore.listActiveServiceTypes(storeId);
@@ -302,7 +304,13 @@ export class CartService {
     if (serviceTypes.length === 0) {
       throw new ConflictException('Store has no active service types configured.');
     }
-    const defaultServiceType = serviceTypes[0];
+
+    // Honour the route/mode the customer is browsing in (delivery vs pickup)
+    // when it is actually offered; otherwise fall back to the first active type.
+    const defaultServiceType =
+      (preferredServiceType &&
+        serviceTypes.find((type) => type.code === preferredServiceType)) ||
+      serviceTypes[0];
 
     const cart: Cart = {
       id: randomUUID(),

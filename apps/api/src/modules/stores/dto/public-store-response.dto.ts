@@ -1,5 +1,16 @@
 import { ApiProperty } from '@nestjs/swagger';
 
+export class PublicStoreServiceTypeDto {
+  @ApiProperty({ example: 'delivery', enum: ['delivery', 'pickup', 'dine_in'] })
+  code: 'delivery' | 'pickup' | 'dine_in';
+
+  @ApiProperty({ example: 'Teslimat' })
+  label: string;
+
+  @ApiProperty({ example: true })
+  isActive: boolean;
+}
+
 export class PublicStoreDto {
   @ApiProperty({ example: '2472b721-8fcb-436d-b912-ebe6ac984653' })
   id: string;
@@ -36,6 +47,9 @@ export class PublicStoreDto {
 
   @ApiProperty({ example: true })
   supportsCollection: boolean;
+
+  @ApiProperty({ type: () => [PublicStoreServiceTypeDto] })
+  serviceTypes: PublicStoreServiceTypeDto[];
 
   @ApiProperty({ example: 4.9, nullable: true })
   deliveryFee: number | null;

@@ -648,6 +648,7 @@ export const apiGroups: ApiGroup[] = [
           { key: 'storeId', label: 'Store ID' },
           { key: 'menuItemId', label: 'Menu Item ID' },
           { key: 'quantity', label: 'Quantity', type: 'number', defaultValue: '1' },
+          { key: 'serviceType', label: 'serviceType (optional: delivery | pickup, seeds a new cart)' },
         ],
       },
       {

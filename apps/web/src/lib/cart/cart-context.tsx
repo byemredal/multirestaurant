@@ -356,7 +356,14 @@ export function CartProvider({ children }: { children: ReactNode }) {
           method: 'POST',
           url: `${BASE_URL}/cart/items`,
           token: session.accessToken,
-          body: { storeId, menuItemId: item.menuItemId, quantity: 1 },
+          body: {
+            storeId,
+            menuItemId: item.menuItemId,
+            quantity: 1,
+            // Seed a brand-new cart with the mode the customer is browsing in
+            // (delivery vs pickup). Ignored by the backend if a cart exists.
+            serviceType: cartRef.current.serviceType,
+          },
         });
 
         if (res.ok) {

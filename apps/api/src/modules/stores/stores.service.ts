@@ -560,16 +560,19 @@ export class StoresService {
       })) as unknown as StoreListRow[];
 
     const storeIds = stores.map((store) => store.id);
-    const [cuisinesByStore, reviewSummaryByStore, activeCurrency] = await Promise.all([
-      this.fetchCuisinesForStoreIds(storeIds),
-      this.fetchReviewSummariesForStoreIds(storeIds),
-      this.resolveActiveCurrency(),
-    ]);
+    const [cuisinesByStore, reviewSummaryByStore, serviceTypesByStore, activeCurrency] =
+      await Promise.all([
+        this.fetchCuisinesForStoreIds(storeIds),
+        this.fetchReviewSummariesForStoreIds(storeIds),
+        this.fetchServiceTypesForStoreIds(storeIds),
+        this.resolveActiveCurrency(),
+      ]);
 
     return {
       stores: stores.map((store) => ({
         ...this.mapPublicStore(store, normalizedPostalCode, activeCurrency),
         cuisines: cuisinesByStore[store.id] ?? [],
+        serviceTypes: serviceTypesByStore[store.id] ?? [],
         reviewSummary: reviewSummaryByStore[store.id] ?? {
           averageRating: null,
           totalReviews: 0,
@@ -601,16 +604,19 @@ export class StoresService {
       return null;
     }
 
-    const [cuisinesByStore, reviewSummaryByStore, activeCurrency] = await Promise.all([
-      this.fetchCuisinesForStoreIds([store.id]),
-      this.fetchReviewSummariesForStoreIds([store.id]),
-      this.resolveActiveCurrency(),
-    ]);
+    const [cuisinesByStore, reviewSummaryByStore, serviceTypesByStore, activeCurrency] =
+      await Promise.all([
+        this.fetchCuisinesForStoreIds([store.id]),
+        this.fetchReviewSummariesForStoreIds([store.id]),
+        this.fetchServiceTypesForStoreIds([store.id]),
+        this.resolveActiveCurrency(),
+      ]);
 
     return {
       store: {
         ...this.mapPublicStore(store, null, activeCurrency),
         cuisines: cuisinesByStore[store.id] ?? [],
+        serviceTypes: serviceTypesByStore[store.id] ?? [],
         reviewSummary: reviewSummaryByStore[store.id] ?? {
           averageRating: null,
           totalReviews: 0,
@@ -661,6 +667,45 @@ export class StoresService {
         name: row.name,
         emoji: row.emoji,
         isPrimary: Boolean(row.isPrimary),
+      });
+    }
+    return result;
+  }
+
+  private async fetchServiceTypesForStoreIds(storeIds: string[]) {
+    type PublicServiceType = {
+      code: 'delivery' | 'pickup' | 'dine_in';
+      label: string;
+      isActive: boolean;
+    };
+    if (storeIds.length === 0) return {} as Record<string, PublicServiceType[]>;
+
+    const rows = (await this.databaseService
+      .prepare(
+        `SELECT rst."storeId" AS "storeId",
+                st."code" AS "code",
+                COALESCE(rst."customLabel", st."displayName") AS "label",
+                rst."isActive" AS "isActive"
+         FROM "StoreServiceType" rst
+         INNER JOIN "ServiceType" st ON st."id" = rst."serviceTypeId"
+         WHERE rst."storeId" = ANY($storeIds::uuid[])
+           AND st."isActive" = TRUE
+         ORDER BY rst."sortOrder" ASC, st."code" ASC`,
+      )
+      .all({ $storeIds: storeIds })) as Array<{
+      storeId: string;
+      code: 'delivery' | 'pickup' | 'dine_in';
+      label: string;
+      isActive: boolean;
+    }>;
+
+    const result: Record<string, PublicServiceType[]> = {};
+    for (const row of rows) {
+      const list = (result[row.storeId] = result[row.storeId] ?? []);
+      list.push({
+        code: row.code,
+        label: row.label,
+        isActive: Boolean(row.isActive),
       });
     }
     return result;

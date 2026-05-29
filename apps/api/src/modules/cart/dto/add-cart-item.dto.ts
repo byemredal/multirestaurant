@@ -3,6 +3,7 @@ import { Type } from 'class-transformer';
 import {
   ArrayMaxSize,
   IsArray,
+  IsIn,
   IsInt,
   IsOptional,
   IsUUID,
@@ -35,4 +36,13 @@ export class AddCartItemDto {
   @Type(() => CartOptionSelectionDto)
   @IsOptional()
   selectedOptions?: CartOptionSelectionDto[];
+
+  @ApiPropertyOptional({
+    enum: ['delivery', 'pickup'],
+    description:
+      'Preferred service type for a newly created cart, derived from the route/mode. Used only when the cart does not exist yet.',
+  })
+  @IsIn(['delivery', 'pickup'])
+  @IsOptional()
+  serviceType?: 'delivery' | 'pickup';
 }

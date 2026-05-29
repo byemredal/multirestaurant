@@ -18,6 +18,12 @@ type StoreReviewSummary = {
   totalReviews: number;
 };
 
+type StoreServiceType = {
+  code: 'delivery' | 'pickup' | 'dine_in';
+  label: string;
+  isActive: boolean;
+};
+
 type Store = {
   id: string;
   name: string;
@@ -33,6 +39,7 @@ type Store = {
   estimatedDeliveryMinutes: number | null;
   currency: string;
   cuisines?: StoreCuisine[];
+  serviceTypes?: StoreServiceType[];
   reviewSummary?: StoreReviewSummary;
 };
 
@@ -137,8 +144,18 @@ export default function StoreMenuPage({
   storeId: string;
 }) {
   const router = useRouter();
-  const { addItem, updateQty, itemQty, totalItems, subtotal, openCart, hasConflict, cart, isSyncing } =
-    useCart();
+  const {
+    addItem,
+    updateQty,
+    itemQty,
+    totalItems,
+    subtotal,
+    openCart,
+    hasConflict,
+    cart,
+    isSyncing,
+    setServiceType,
+  } = useCart();
 
   const [store, setStore] = useState<Store | null>(null);
   const [categories, setCategories] = useState<MenuCategory[]>([]);
@@ -150,6 +167,22 @@ export default function StoreMenuPage({
   const [activeCategoryId, setActiveCategoryId] = useState<string | null>(null);
   const [conflictItem, setConflictItem] = useState<MenuItem | null>(null);
   const [activeTab, setActiveTab] = useState<'menu' | 'reviews'>('menu');
+
+  // Align the browsing mode with what this store actually offers. Only steers
+  // while the cart is empty so a customer's in-progress choice is never
+  // overridden. Prefers delivery, falls back to pickup.
+  useEffect(() => {
+    if (!store?.serviceTypes || store.serviceTypes.length === 0) return;
+    if (cart.items.length > 0) return;
+    const offered = store.serviceTypes
+      .filter((type) => type.isActive)
+      .map((type) => type.code)
+      .filter((code): code is 'delivery' | 'pickup' => code === 'delivery' || code === 'pickup');
+    if (offered.length === 0) return;
+    if (!offered.includes(cart.serviceType)) {
+      setServiceType(offered.includes('delivery') ? 'delivery' : 'pickup');
+    }
+  }, [store, cart.items.length, cart.serviceType, setServiceType]);
 
   useEffect(() => {
     const controller = new AbortController();
@@ -436,9 +469,11 @@ export default function StoreMenuPage({
                     Min. {store.minimumOrderAmount.toFixed(2)} {currency}
                   </InfoChip>
                 )}
-              {store.supportsCollection && (
-                <InfoChip>Gel-al mevcut</InfoChip>
-              )}
+              {store.serviceTypes && store.serviceTypes.some((t) => t.isActive)
+                ? store.serviceTypes
+                    .filter((type) => type.isActive)
+                    .map((type) => <InfoChip key={type.code}>{type.label}</InfoChip>)
+                : store.supportsCollection && <InfoChip>Gel-al mevcut</InfoChip>}
             </div>
           </div>
         </section>
