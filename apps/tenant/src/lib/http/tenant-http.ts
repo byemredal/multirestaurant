@@ -1,7 +1,7 @@
+import { resolveApiBaseUrl } from '@shared/api-base-url';
 import type { StoredTenantSession } from '@/lib/storage/tenant-session';
 
-export const apiBaseUrl =
-  process.env.NEXT_PUBLIC_API_BASE_URL ?? 'http://localhost:4000/api/v1';
+export const apiBaseUrl = resolveApiBaseUrl();
 
 export async function tenantRequest<T>(
   path: string,

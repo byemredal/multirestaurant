@@ -119,6 +119,9 @@ services:
     environment:
       NODE_ENV: production
       NEXT_PUBLIC_API_BASE_URL: ${NEXT_PUBLIC_API_BASE_URL}
+      # Server-side (SSR/route handlers) reach the API directly over the
+      # internal Docker network, not via the public domain.
+      INTERNAL_API_BASE_URL: ${INTERNAL_API_BASE_URL:-http://api:4000/api/v1}
     depends_on:
       builder:
         condition: service_completed_successfully
@@ -129,6 +132,9 @@ services:
     environment:
       NODE_ENV: production
       NEXT_PUBLIC_API_BASE_URL: ${NEXT_PUBLIC_API_BASE_URL}
+      # Server-side (SSR/route handlers) reach the API directly over the
+      # internal Docker network, not via the public domain.
+      INTERNAL_API_BASE_URL: ${INTERNAL_API_BASE_URL:-http://api:4000/api/v1}
     depends_on:
       builder:
         condition: service_completed_successfully
@@ -139,6 +145,9 @@ services:
     environment:
       NODE_ENV: production
       NEXT_PUBLIC_API_BASE_URL: ${NEXT_PUBLIC_API_BASE_URL}
+      # Server-side (SSR/route handlers) reach the API directly over the
+      # internal Docker network, not via the public domain.
+      INTERNAL_API_BASE_URL: ${INTERNAL_API_BASE_URL:-http://api:4000/api/v1}
     depends_on:
       builder:
         condition: service_completed_successfully
@@ -149,6 +158,7 @@ services:
     environment:
       NODE_ENV: production
       NEXT_PUBLIC_API_BASE_URL: ${NEXT_PUBLIC_API_BASE_URL}
+      INTERNAL_API_BASE_URL: ${INTERNAL_API_BASE_URL:-http://api:4000/api/v1}
       NEXT_PUBLIC_ADMIN_URL: ${NEXT_PUBLIC_ADMIN_URL:-}
     depends_on:
       builder:

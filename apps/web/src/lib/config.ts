@@ -5,5 +5,6 @@
  * Other modules must import `apiBaseUrl` from here rather than re-reading
  * `process.env.NEXT_PUBLIC_API_BASE_URL` with their own fallback.
  */
-export const apiBaseUrl =
-  process.env.NEXT_PUBLIC_API_BASE_URL ?? 'http://localhost:4000/api/v1';
+import { resolveApiBaseUrl } from '@shared/api-base-url';
+
+export const apiBaseUrl = resolveApiBaseUrl();

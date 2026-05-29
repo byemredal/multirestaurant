@@ -1,4 +1,5 @@
 import type { ReactNode } from 'react';
+import { resolveApiBaseUrl } from './api-base-url';
 import { SetupGateNotice, type SetupGatePhase } from './setup-gate-notice';
 
 /**
@@ -16,9 +17,6 @@ import { SetupGateNotice, type SetupGatePhase } from './setup-gate-notice';
  * state — once setup completes, the next full load renders the app.
  */
 
-const API_BASE_URL =
-  process.env.NEXT_PUBLIC_API_BASE_URL ?? 'http://localhost:4000/api/v1';
-
 /** Branding fields that must exist before the platform counts as ready. */
 const REQUIRED_FIELDS: Array<{ key: string; label: string }> = [
   { key: 'platformName', label: 'Proje adı' },
@@ -35,7 +33,7 @@ type GateResult =
 
 async function resolveGate(): Promise<GateResult> {
   try {
-    const response = await fetch(`${API_BASE_URL}/config/branding`, {
+    const response = await fetch(`${resolveApiBaseUrl()}/config/branding`, {
       cache: 'no-store',
     });
 
