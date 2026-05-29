@@ -11,7 +11,12 @@ import {
   useState,
   type ReactNode,
 } from 'react';
-import { readAuthSession } from '@/lib/storage/auth-session';
+import {
+  clearAuthSession,
+  readAuthSession,
+  writeAuthSession,
+} from '@/lib/storage/auth-session';
+import { bootstrapAuthSession } from '@/lib/auth-client';
 import { apiClient } from '@/lib/api/api-client';
 import { apiBaseUrl } from '@/lib/config';
 
@@ -230,6 +235,8 @@ export type CartContextValue = {
   totalItems: number;
   subtotal: number;
   isSyncing: boolean;
+  /** True once the mount-time auth/cart hydration has settled. */
+  hydrated: boolean;
   error: string | null;
   isAuthenticated: boolean;
   addItem: (
@@ -268,39 +275,82 @@ export function CartProvider({ children }: { children: ReactNode }) {
   cartRef.current = cart;
 
   // ── Mount: detect auth, load cart ──────────────────────────────────────────
+  const loadGuestCart = useCallback(() => {
+    try {
+      const raw = localStorage.getItem(STORAGE_KEY);
+      if (raw) {
+        const parsed = JSON.parse(raw) as Omit<CartState, 'isOpen'>;
+        if (Array.isArray(parsed?.items)) {
+          dispatch({ type: 'HYDRATE', state: parsed });
+        }
+      }
+    } catch {
+      // ignore
+    }
+  }, []);
+
   useEffect(() => {
+    let cancelled = false;
     const session = readAuthSession();
 
-    if (session) {
-      setIsAuthenticated(true);
-      setIsSyncing(true);
-      apiClient({ method: 'GET', url: `${BASE_URL}/cart`, token: session.accessToken })
-        .then((res) => {
-          if (res.ok) {
-            const { cart: bc } = res.data as BackendCartResponse;
-            if (bc) dispatch({ type: 'HYDRATE', state: mapBackendCart(bc) });
-          }
-          // Silently ignore load errors on mount — cart stays empty.
-        })
-        .finally(() => {
-          setIsSyncing(false);
-          setHydrated(true);
-        });
-    } else {
-      // Guest mode: restore from localStorage.
-      try {
-        const raw = localStorage.getItem(STORAGE_KEY);
-        if (raw) {
-          const parsed = JSON.parse(raw) as Omit<CartState, 'isOpen'>;
-          if (Array.isArray(parsed?.items)) {
-            dispatch({ type: 'HYDRATE', state: parsed });
-          }
-        }
-      } catch {
-        // ignore
-      }
+    if (!session) {
+      loadGuestCart();
       setHydrated(true);
+      return;
     }
+
+    // Validate (and silently refresh) the stored session before trusting it.
+    // A logged-in user must not see the checkout login wall, and an expired
+    // token while browsing simply drops to guest mode (no forced redirect).
+    setIsSyncing(true);
+    (async () => {
+      let active = session;
+      try {
+        active = await bootstrapAuthSession(session);
+        writeAuthSession(active);
+      } catch {
+        if (cancelled) return;
+        clearAuthSession();
+        setIsAuthenticated(false);
+        loadGuestCart();
+        return;
+      }
+
+      if (cancelled) return;
+      setIsAuthenticated(true);
+
+      const res = await apiClient({
+        method: 'GET',
+        url: `${BASE_URL}/cart`,
+        token: active.accessToken,
+      });
+      if (cancelled) return;
+      if (res.ok) {
+        const { cart: bc } = res.data as BackendCartResponse;
+        if (bc) dispatch({ type: 'HYDRATE', state: mapBackendCart(bc) });
+      }
+    })()
+      .finally(() => {
+        if (cancelled) return;
+        setIsSyncing(false);
+        setHydrated(true);
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [loadGuestCart]);
+
+  // ── Cross-tab auth sync: a logout/expiry in another tab clears this tab. ────
+  useEffect(() => {
+    function handleStorage(event: StorageEvent) {
+      if (event.key !== null && event.key !== 'auth.customer-session') return;
+      if (!readAuthSession()) {
+        setIsAuthenticated(false);
+      }
+    }
+    window.addEventListener('storage', handleStorage);
+    return () => window.removeEventListener('storage', handleStorage);
   }, []);
 
   // ── Guest-mode localStorage persistence ────────────────────────────────────
@@ -597,6 +647,7 @@ export function CartProvider({ children }: { children: ReactNode }) {
       totalItems,
       subtotal,
       isSyncing,
+      hydrated,
       error,
       isAuthenticated,
       addItem,
@@ -616,6 +667,7 @@ export function CartProvider({ children }: { children: ReactNode }) {
       totalItems,
       subtotal,
       isSyncing,
+      hydrated,
       error,
       isAuthenticated,
       addItem,

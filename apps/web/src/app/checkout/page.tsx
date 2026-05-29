@@ -92,6 +92,7 @@ export default function CheckoutPage() {
     subtotal,
     clearCart,
     isAuthenticated,
+    hydrated,
     setServiceType,
     setDeliveryDistance,
   } = useCart();
@@ -242,6 +243,25 @@ export default function CheckoutPage() {
     // the order page offers a retry. Send the customer there with the reason.
     router.push(`/orders/${orderId}?payment=error`);
   };
+
+  // ── Hydrating: auth/cart state not yet settled ───────────────────────────────
+  if (!hydrated) {
+    return (
+      <div className="min-h-screen bg-[#f8f8f8]">
+        <PageHeader />
+        <main className="mx-auto max-w-[720px] px-5 py-8">
+          <div
+            role="status"
+            aria-live="polite"
+            className="rounded-[20px] border border-[#e5e7eb] bg-white p-8 text-center"
+          >
+            <div className="mx-auto h-6 w-6 animate-spin rounded-full border-2 border-[#084799] border-t-transparent" />
+            <p className="mt-3 text-[14px] text-[#6b7280]">Oturumunuz kontrol ediliyor…</p>
+          </div>
+        </main>
+      </div>
+    );
+  }
 
   // ── Guest view ───────────────────────────────────────────────────────────────
   if (!isAuthenticated) {

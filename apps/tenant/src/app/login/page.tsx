@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import Image from 'next/image';
 import { Button } from '@lieferzonen/ui';
@@ -23,6 +23,12 @@ export default function TenantLoginPage() {
   const [showPassword, setShowPassword] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [sessionExpired, setSessionExpired] = useState(false);
+
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    setSessionExpired(params.get('reason') === 'session_expired');
+  }, []);
 
   const onSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -128,6 +134,15 @@ export default function TenantLoginPage() {
                 </div>
               </div>
             </div>
+
+            {sessionExpired && !error ? (
+              <div
+                role="status"
+                className="mt-4 rounded-2xl border border-blue-200 bg-blue-50 px-4 py-3 text-[13.5px] text-blue-700"
+              >
+                Oturumunuz sona erdi. Lütfen tekrar giriş yapın.
+              </div>
+            ) : null}
 
             {error ? (
               <div

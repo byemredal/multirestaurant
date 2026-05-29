@@ -1,5 +1,6 @@
 import { apiBaseUrl } from '@/lib/config';
 import type { StoredAdminSession } from '@/lib/storage/admin-session';
+import { onAuthExpired, refreshAdminSession } from '@/lib/auth/auth-expiry';
 import { parseJsonResponse } from './http';
 import type {
   ApplicationListEntry,
@@ -9,21 +10,40 @@ import type {
   TenantDocumentQueueEntry,
 } from './admin-review-types';
 
+function rawAdminFetch(accessToken: string, path: string, init?: RequestInit) {
+  return fetch(`${apiBaseUrl}${path}`, {
+    ...init,
+    credentials: 'include',
+    headers: {
+      Accept: 'application/json',
+      Authorization: `Bearer ${accessToken}`,
+      ...(init?.body ? { 'Content-Type': 'application/json' } : {}),
+      ...(init?.headers ?? {}),
+    },
+  });
+}
+
 async function adminRequest(
   session: StoredAdminSession,
   path: string,
   init?: RequestInit,
 ) {
-  const response = await fetch(`${apiBaseUrl}${path}`, {
-    ...init,
-    credentials: 'include',
-    headers: {
-      Accept: 'application/json',
-      Authorization: `Bearer ${session.accessToken}`,
-      ...(init?.body ? { 'Content-Type': 'application/json' } : {}),
-      ...(init?.headers ?? {}),
-    },
-  });
+  let response = await rawAdminFetch(session.accessToken, path, init);
+
+  // Expired access token — single-flight silent refresh, then retry once.
+  if (response.status === 401) {
+    const refreshed = await refreshAdminSession();
+    if (refreshed) {
+      response = await rawAdminFetch(refreshed.accessToken, path, init);
+      if (response.status === 401) {
+        onAuthExpired();
+        throw new Error('admin_session_expired');
+      }
+    } else {
+      onAuthExpired();
+      throw new Error('admin_session_expired');
+    }
+  }
 
   if (!response.ok) {
     const payload = await parseJsonResponse(response);

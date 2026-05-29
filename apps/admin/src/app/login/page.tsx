@@ -21,12 +21,15 @@ export default function AdminLoginPage() {
   const [error, setError] = useState<string | null>(null);
   // Guest-only: an already-signed-in admin must never see the login screen.
   const [sessionChecked, setSessionChecked] = useState(false);
+  const [sessionExpired, setSessionExpired] = useState(false);
 
   useEffect(() => {
     if (readAdminSession()) {
       router.replace('/');
       return;
     }
+    const params = new URLSearchParams(window.location.search);
+    setSessionExpired(params.get('reason') === 'session_expired');
     setSessionChecked(true);
   }, [router]);
 
@@ -136,6 +139,26 @@ export default function AdminLoginPage() {
                 />
               </div>
             </div>
+
+            {sessionExpired && !error ? (
+              <div
+                role="status"
+                style={{
+                  marginTop: 4,
+                  padding: '10px 14px',
+                  borderRadius: 10,
+                  border: '1px solid #bfdbfe',
+                  background: '#eff6ff',
+                  color: '#1e40af',
+                  fontSize: 13,
+                }}
+              >
+                {t(
+                  'admin.login.sessionExpired',
+                  'Oturumunuz sona erdi. Lütfen tekrar giriş yapın.',
+                )}
+              </div>
+            ) : null}
 
             {error ? (
               <div role="alert" className="admin-login-error">

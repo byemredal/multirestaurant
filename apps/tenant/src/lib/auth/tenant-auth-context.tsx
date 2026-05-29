@@ -193,6 +193,18 @@ export function TenantAuthProvider({ children }: { children: ReactNode }) {
     applySession(readTenantSession());
   }, [applySession]);
 
+  // ── Cross-tab: a logout/expiry in another tab clears this tab too. ────────
+  useEffect(() => {
+    const handleStorage = (event: StorageEvent) => {
+      if (event.key !== null && event.key !== 'auth.tenant-session') return;
+      if (!readTenantSession()) {
+        applySession(null);
+      }
+    };
+    window.addEventListener('storage', handleStorage);
+    return () => window.removeEventListener('storage', handleStorage);
+  }, [applySession]);
+
   // ── Real-time status: subscribe to the SSE stream while authenticated ────
   const accessToken = session?.accessToken;
   const reconnectTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
