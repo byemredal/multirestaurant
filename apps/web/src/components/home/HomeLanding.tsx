@@ -98,6 +98,7 @@ type Props = {
   searchLoading: boolean;
   searchResults: RegionSearchResult[];
   onSelectRegion: (region: RegionSearchResult) => void;
+  navigating?: boolean;
 };
 
 export default function HomeLanding({
@@ -106,6 +107,7 @@ export default function HomeLanding({
   searchLoading,
   searchResults,
   onSelectRegion,
+  navigating = false,
 }: Props) {
   const inputId = useId();
   const listboxId = useId();
@@ -243,10 +245,19 @@ export default function HomeLanding({
                     type="button"
                     onClick={() => searchResults[0] && onSelectRegion(searchResults[0])}
                     className="inline-flex h-10 items-center justify-center gap-1.5 rounded-full bg-primary px-5 text-[14px] font-semibold text-white transition hover:bg-primary-600 disabled:opacity-50"
-                    disabled={!searchResults[0]}
+                    disabled={!searchResults[0] || navigating}
                   >
-                    <SearchIcon />
-                    Ara
+                    {navigating ? (
+                      <>
+                        <span aria-hidden className="inline-block h-4 w-4 animate-spin rounded-full border-2 border-white/40 border-t-white" />
+                        Aranıyor…
+                      </>
+                    ) : (
+                      <>
+                        <SearchIcon />
+                        Ara
+                      </>
+                    )}
                   </button>
                 </div>
               </div>

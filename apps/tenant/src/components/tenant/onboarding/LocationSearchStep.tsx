@@ -51,8 +51,10 @@ export function LocationSearchStep({
   onNavigate,
 }: LocationSearchStepProps) {
   const [rawInput, setRawInput] = useState(() => getInitialLocationInput(workspace));
-  const [country, setCountry] = useState(
-    () => workspace.locationSelection?.country ?? resolvedSession?.countryPack.country ?? 'CH',
+  // Single-country platform: the active CountryPack country is authoritative
+  // and pinned — it must not be overridden by a stale stored selection.
+  const [country] = useState(
+    () => resolvedSession?.countryPack.country ?? workspace.locationSelection?.country ?? '',
   );
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -127,9 +129,9 @@ export function LocationSearchStep({
           <span className="mb-2 block text-[13px] font-semibold text-ink-700">Ülke</span>
           <Input
             value={country}
-            maxLength={2}
-            onChange={(event) => setCountry(event.target.value.toUpperCase())}
-            disabled={saving}
+            readOnly
+            disabled
+            title="Ülke, platformun aktif ülkesine sabittir."
           />
         </label>
       </div>

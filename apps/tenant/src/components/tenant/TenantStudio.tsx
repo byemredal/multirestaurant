@@ -263,7 +263,7 @@ function emptyStoreForm(): StoreFormState {
     addressLine2: '',
     city: '',
     postalCode: '',
-    country: 'Switzerland',
+    country: '',
     openingHours: buildDefaultHours(),
     deliveryZones: buildDefaultZone(),
   };
@@ -532,7 +532,7 @@ export default function TenantStudio() {
       addressLine2: selectedStore.addressLine2 ?? '',
       city: selectedStore.city ?? '',
       postalCode: selectedStore.postalCode ?? '',
-      country: selectedStore.country ?? 'Switzerland',
+      country: selectedStore.country ?? '',
       openingHours: selectedStore.openingHours?.length
         ? selectedStore.openingHours.map((hour) => ({
             dayOfWeek: hour.dayOfWeek as WeekDay,
@@ -1023,7 +1023,18 @@ function ShopTab({
 }) {
   const isCreating = !selectedStore;
   const isEditing = storeEditing || isCreating;
-  const currency = usePlatformPack()?.currency || '';
+  const platformPack = usePlatformPack();
+  const currency = platformPack?.currency || '';
+  const platformCountry = platformPack?.country || '';
+
+  // Single-country platform: the store country is pinned to the active
+  // CountryPack. Keep the form in sync so the locked field always submits the
+  // platform country (the backend enforces this too via store_country_mismatch).
+  useEffect(() => {
+    if (platformCountry && storeForm.country !== platformCountry) {
+      setStoreForm((current) => ({ ...current, country: platformCountry }));
+    }
+  }, [platformCountry, storeForm.country, setStoreForm]);
 
   const updateHour = (
     index: number,
@@ -1228,11 +1239,10 @@ function ShopTab({
           </Field>
           <Field label="Ülke">
             <Input
-              value={storeForm.country}
-              placeholder="Switzerland"
-              onChange={(event) =>
-                setStoreForm((current) => ({ ...current, country: event.target.value }))
-              }
+              value={platformCountry || storeForm.country}
+              readOnly
+              disabled
+              title="Ülke, platformun aktif ülkesine sabittir."
             />
           </Field>
         </div>

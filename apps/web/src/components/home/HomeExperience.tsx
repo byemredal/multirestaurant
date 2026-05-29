@@ -107,7 +107,17 @@ function HomeContent({
     }
   }, [routePostalCode, isAuthenticated, location, mode, router]);
 
+  const [isNavigating, setIsNavigating] = useState(false);
+
+  // Clear the pending guard once the destination route has resolved (postal
+  // code or fulfillment mode changed), so subsequent navigations aren't blocked.
+  useEffect(() => {
+    setIsNavigating(false);
+  }, [routePostalCode, routeCity, initialMode]);
+
   const goToLocation = (postalCode: string, city: string | null) => {
+    if (isNavigating) return;
+    setIsNavigating(true);
     router.push(buildDiscoveryPath(mode, postalCode, city));
   };
 
@@ -150,6 +160,7 @@ function HomeContent({
   }, [query]);
 
   const handleSelectRegion = (result: RegionSearchResult) => {
+    if (isNavigating) return;
     void reportTelemetry({
       type: 'discovery_location_selected',
       payload: { postalCode: result.postalCode },
@@ -174,9 +185,11 @@ function HomeContent({
   };
 
   const changeMode = (next: FulfillmentMode) => {
+    if (isNavigating) return;
     setMode(next);
     const postalCode = location?.postalCode ?? routePostalCode;
     if (postalCode) {
+      setIsNavigating(true);
       router.push(
         buildDiscoveryPath(next, postalCode, location?.city ?? routeCity),
       );
@@ -195,6 +208,7 @@ function HomeContent({
             searchLoading={searchLoading}
             searchResults={searchResults}
             onSelectRegion={handleSelectRegion}
+            navigating={isNavigating}
           />
         </main>
         <CookieConsentBar />

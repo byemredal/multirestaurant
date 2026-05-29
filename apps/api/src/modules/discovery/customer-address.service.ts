@@ -1,5 +1,6 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
 import { DatabaseService } from '../../database/database.service';
+import { InstallationProfileService } from '../setup/installation-profile.service';
 import { AddressNormalizationService } from './address-normalization.service';
 import {
   CreateCustomerAddressDto,
@@ -38,7 +39,14 @@ export class CustomerAddressService {
   constructor(
     private readonly databaseService: DatabaseService,
     private readonly addressNormalization: AddressNormalizationService,
+    private readonly installationProfile: InstallationProfileService,
   ) {}
+
+  /** Active platform country, or undefined pre-setup. */
+  private async platformCountry(): Promise<string | undefined> {
+    const policy = await this.installationProfile.findActiveCountryPolicy();
+    return policy?.countryCode;
+  }
 
   async list(customerAccountId: string) {
     const rows = (await this.databaseService
@@ -68,7 +76,10 @@ export class CustomerAddressService {
   }
 
   async create(customerAccountId: string, dto: CreateCustomerAddressDto) {
-    const normalized = this.addressNormalization.normalize(dto);
+    const normalized = this.addressNormalization.normalize(
+      dto,
+      await this.platformCountry(),
+    );
     const existingCount = await this.countAddresses(customerAccountId);
     // The first address a customer saves is always their default.
     const shouldBeDefault = dto.isDefault === true || existingCount === 0;
@@ -125,6 +136,7 @@ export class CustomerAddressService {
     dto: UpdateCustomerAddressDto,
   ) {
     const existing = await this.findOwned(customerAccountId, addressId);
+    const expectedCountry = await this.platformCountry();
     const merged = {
       label: dto.label === undefined ? existing.label : dto.label.trim() || null,
       recipientName:
@@ -136,7 +148,7 @@ export class CustomerAddressService {
           ? existing.contactPhone
           : dto.contactPhone.trim() || null,
       countryCode: dto.countryCode
-        ? this.addressNormalization.normalizeCountry(dto.countryCode)
+        ? this.addressNormalization.normalizeCountry(dto.countryCode, expectedCountry)
         : existing.countryCode,
       canton: dto.canton === undefined ? existing.canton : dto.canton.trim() || null,
       city: dto.city?.trim() || existing.city,

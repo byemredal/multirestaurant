@@ -38,7 +38,75 @@ export class StoresService {
     return policy?.currencyCode ?? '';
   }
 
+  /** Free-text country → ISO-3166-1 alpha-2, or null when unrecognized. */
+  private static readonly COUNTRY_ALIASES: Record<string, string> = {
+    CH: 'CH',
+    SWITZERLAND: 'CH',
+    SCHWEIZ: 'CH',
+    SUISSE: 'CH',
+    SVIZZERA: 'CH',
+    TR: 'TR',
+    TURKEY: 'TR',
+    TÜRKIYE: 'TR',
+    TURKIYE: 'TR',
+  };
+
+  private resolveCountryToIso(raw: string | null | undefined): string | null {
+    const value = (raw ?? '').trim().toUpperCase();
+    if (!value) return null;
+    const mapped = StoresService.COUNTRY_ALIASES[value];
+    if (mapped) return mapped;
+    if (/^[A-Z]{2}$/.test(value)) return value;
+    return null;
+  }
+
+  /**
+   * The platform is single-country: a store's address country and postal code
+   * must match the active CountryPack. Mismatches and unknown countries are
+   * rejected with stable codes (no silent fallback to a default country),
+   * mirroring `store_currency_mismatch`. Returns the resolved platform ISO
+   * country (or null pre-setup) so callers can reuse it for coverage sync.
+   */
+  private async assertStoreLocationMatchesPlatform(
+    country: string | null | undefined,
+    postalCode: string | null | undefined,
+  ): Promise<string | null> {
+    const policy = await this.installationProfile.findActiveCountryPolicy();
+    if (!policy) {
+      return null;
+    }
+    const expected = policy.countryCode.toUpperCase();
+
+    const raw = (country ?? '').trim();
+    if (raw) {
+      const resolved = this.resolveCountryToIso(raw);
+      if (!resolved || resolved !== expected) {
+        throw new ConflictException({
+          code: 'store_country_mismatch',
+          message: 'Restoran adresi platformun aktif ülkesiyle uyumlu değil.',
+        });
+      }
+    }
+
+    const postal = (postalCode ?? '').trim();
+    if (postal) {
+      const rule = new RegExp(policy.pack.address.postalCodeRegex);
+      if (!rule.test(postal)) {
+        throw new ConflictException({
+          code: 'invalid_postal_code',
+          message: 'Posta kodu platformun aktif ülkesiyle uyumlu değil.',
+        });
+      }
+    }
+
+    return expected;
+  }
+
   async create(ownerTenantId: string, dto: CreateStoreDto) {
+    const platformCountry = await this.assertStoreLocationMatchesPlatform(
+      dto.country,
+      dto.postalCode,
+    );
     const slug = await this.buildUniqueSlug(dto.name, dto.slug);
     const now = new Date();
     const store: Store = {
@@ -113,7 +181,7 @@ export class StoresService {
       await this.coverageSync.syncFromLegacyZones(
         store.id,
         store.deliveryZones,
-        store.country,
+        platformCountry ?? store.country,
         now,
       );
     });
@@ -279,6 +347,11 @@ export class StoresService {
       updatedAt: new Date(),
     };
 
+    const platformCountry = await this.assertStoreLocationMatchesPlatform(
+      updated.country,
+      updated.postalCode,
+    );
+
     await this.databaseService.transaction(async () => {
       await this.databaseService
         .prepare(
@@ -354,7 +427,7 @@ export class StoresService {
         await this.coverageSync.syncFromLegacyZones(
           storeId,
           zonesForSync,
-          updated.country,
+          platformCountry ?? updated.country,
           updated.updatedAt,
         );
       }

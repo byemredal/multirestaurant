@@ -1,4 +1,5 @@
 import { Injectable, Logger, ServiceUnavailableException } from '@nestjs/common';
+import { InstallationProfileService } from '../setup/installation-profile.service';
 import { PlatformSettingsService } from './platform-settings.service';
 
 export interface GeoAddressSuggestion {
@@ -36,7 +37,10 @@ interface LocationIqItem {
 export class GeoService {
   private readonly logger = new Logger(GeoService.name);
 
-  constructor(private readonly settings: PlatformSettingsService) {}
+  constructor(
+    private readonly settings: PlatformSettingsService,
+    private readonly installationProfile: InstallationProfileService,
+  ) {}
 
   async suggest(query: string, options?: { countryCode?: string }): Promise<GeoAddressSuggestion[]> {
     const trimmed = query.trim();
@@ -53,8 +57,14 @@ export class GeoService {
       });
     }
 
+    // Single-country platform: the active CountryPack is authoritative. The
+    // caller's countryCode is ignored so suggestions can never leak outside the
+    // platform country. Pre-setup (no profile) falls back to the caller hint.
+    const policy = await this.installationProfile.findActiveCountryPolicy();
+    const countryCode = policy?.countryCode ?? options?.countryCode;
+
     if (config.provider === 'locationiq') {
-      return this.locationIqSuggest(trimmed, options?.countryCode);
+      return this.locationIqSuggest(trimmed, countryCode);
     }
 
     return [];
@@ -118,7 +128,13 @@ export class GeoService {
     }
 
     const payload = (await response.json()) as LocationIqItem[];
-    return payload.map((item) => this.mapLocationIqItem(item)).filter((s): s is GeoAddressSuggestion => s !== null);
+    const expectedCountry = countryCode?.trim().toUpperCase() || null;
+    return payload
+      .map((item) => this.mapLocationIqItem(item))
+      .filter((s): s is GeoAddressSuggestion => s !== null)
+      // Defensive second layer: drop any result outside the platform country
+      // even if the provider's countrycodes bias let one through.
+      .filter((s) => !expectedCountry || !s.country || s.country === expectedCountry);
   }
 
   private mapLocationIqItem(item: LocationIqItem): GeoAddressSuggestion | null {

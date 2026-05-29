@@ -1,4 +1,8 @@
-import { BadRequestException, Injectable } from '@nestjs/common';
+import {
+  BadRequestException,
+  ConflictException,
+  Injectable,
+} from '@nestjs/common';
 import { NormalizedAddress } from './entities/discovery.entity';
 
 /** Raw address fields as they arrive from a session/customer address request. */
@@ -29,9 +33,9 @@ const POSTAL_CODE_RULES: Record<string, RegExp> = {
   CH: /^[1-9]\d{3}$/,
   // Liechtenstein shares the Swiss postal range.
   LI: /^[1-9]\d{3}$/,
+  // Türkiye — 5 digits.
+  TR: /^\d{5}$/,
 };
-
-const DEFAULT_COUNTRY = 'CH';
 
 @Injectable()
 export class AddressNormalizationService {
@@ -40,8 +44,8 @@ export class AddressNormalizationService {
    * country, validates the postal code against the per-country rule, and
    * derives a `formattedAddress` when the caller did not supply one.
    */
-  normalize(input: RawAddressInput): NormalizedAddress {
-    const countryCode = this.normalizeCountry(input.countryCode);
+  normalize(input: RawAddressInput, expectedCountryCode?: string): NormalizedAddress {
+    const countryCode = this.normalizeCountry(input.countryCode, expectedCountryCode);
     const postalCode = this.normalizePostalCode(input.postalCode, countryCode);
     const city = this.clean(input.city);
     const street = this.clean(input.street);
@@ -71,11 +75,28 @@ export class AddressNormalizationService {
     };
   }
 
-  normalizeCountry(raw: string | null | undefined): string {
+  /**
+   * Resolve the country to an ISO-3166-1 alpha-2 code. On a single-country
+   * platform the active CountryPack is authoritative: an empty country adopts
+   * the platform country, and an explicit country that disagrees is rejected
+   * with `geo_country_mismatch` — there is no silent fallback to a default.
+   */
+  normalizeCountry(raw: string | null | undefined, expectedCountryCode?: string): string {
     const value = (raw ?? '').trim().toUpperCase();
-    if (!value) return DEFAULT_COUNTRY;
+    const expected = expectedCountryCode?.trim().toUpperCase();
+
+    if (!value) {
+      if (expected) return expected;
+      throw new BadRequestException('countryCode is required.');
+    }
     if (!/^[A-Z]{2}$/.test(value)) {
       throw new BadRequestException('countryCode must be an ISO-3166-1 alpha-2 code.');
+    }
+    if (expected && value !== expected) {
+      throw new ConflictException({
+        code: 'geo_country_mismatch',
+        message: 'Adres, platformun aktif ülkesiyle uyumlu değil.',
+      });
     }
     return value;
   }

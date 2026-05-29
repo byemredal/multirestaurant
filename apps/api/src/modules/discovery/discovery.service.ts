@@ -2,6 +2,7 @@ import { randomBytes, randomUUID } from 'crypto';
 import { BadRequestException, Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { DatabaseService } from '../../database/database.service';
 import { toFiniteNumber as toNumber } from '../../common/utility/numeric';
+import { InstallationProfileService } from '../setup/installation-profile.service';
 import { AddressNormalizationService } from './address-normalization.service';
 import { CoverageService } from './coverage.service';
 import { RankingService, RankingCandidate } from './ranking.service';
@@ -61,14 +62,24 @@ export class DiscoveryService {
     private readonly addressNormalization: AddressNormalizationService,
     private readonly coverageService: CoverageService,
     private readonly rankingService: RankingService,
+    private readonly installationProfile: InstallationProfileService,
   ) {}
+
+  /** Active platform country, or undefined pre-setup. */
+  private async platformCountry(): Promise<string | undefined> {
+    const policy = await this.installationProfile.findActiveCountryPolicy();
+    return policy?.countryCode;
+  }
 
   // ===========================================================================
   // Session addresses — anonymous flow
   // ===========================================================================
 
   async createSessionAddress(dto: CreateSessionAddressDto) {
-    const address = this.addressNormalization.normalize(dto);
+    const address = this.addressNormalization.normalize(
+      dto,
+      await this.platformCountry(),
+    );
     const sessionToken = randomBytes(24).toString('base64url');
     const now = new Date();
     const expiresAt = new Date(now.getTime() + SESSION_TTL_DAYS * 86_400_000);
@@ -247,12 +258,15 @@ export class DiscoveryService {
     }
 
     if (dto.postalCode || (dto.latitude !== undefined && dto.longitude !== undefined)) {
-      const address = this.addressNormalization.normalize({
-        countryCode: dto.countryCode,
-        postalCode: dto.postalCode,
-        latitude: dto.latitude ?? null,
-        longitude: dto.longitude ?? null,
-      });
+      const address = this.addressNormalization.normalize(
+        {
+          countryCode: dto.countryCode,
+          postalCode: dto.postalCode,
+          latitude: dto.latitude ?? null,
+          longitude: dto.longitude ?? null,
+        },
+        await this.platformCountry(),
+      );
       return {
         sessionToken: null,
         context: {

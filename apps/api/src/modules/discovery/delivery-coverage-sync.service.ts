@@ -1,6 +1,12 @@
 import { randomUUID } from 'crypto';
-import { Injectable, InternalServerErrorException, Logger } from '@nestjs/common';
+import {
+  ConflictException,
+  Injectable,
+  InternalServerErrorException,
+  Logger,
+} from '@nestjs/common';
 import { DatabaseService } from '../../database/database.service';
+import { InstallationProfileService } from '../setup/installation-profile.service';
 
 /**
  * A legacy `StoreDeliveryZone` as seen by the sync layer. Structurally
@@ -25,7 +31,6 @@ const SWITZERLAND_ALIASES = new Set([
   'SUISSE',
   'SVIZZERA',
 ]);
-const DEFAULT_COUNTRY = 'CH';
 
 /**
  * Dual-write transition layer. Mirrors every legacy `StoreDeliveryZone` write
@@ -40,15 +45,25 @@ const DEFAULT_COUNTRY = 'CH';
 export class DeliveryCoverageSyncService {
   private readonly logger = new Logger(DeliveryCoverageSyncService.name);
 
-  constructor(private readonly databaseService: DatabaseService) {}
+  constructor(
+    private readonly databaseService: DatabaseService,
+    private readonly installationProfile: InstallationProfileService,
+  ) {}
 
-  /** Normalize a free-text `Store.country` to an ISO-3166-1 alpha-2 code. */
-  resolveCountryCode(rawCountry: string | null | undefined): string {
+  /**
+   * Normalize a free-text `Store.country` to an ISO-3166-1 alpha-2 code. An
+   * empty or unrecognized value falls back to the active platform country
+   * (single-country platform) — never to a hardcoded default.
+   */
+  resolveCountryCode(
+    rawCountry: string | null | undefined,
+    fallbackCountry: string,
+  ): string {
     const value = (rawCountry ?? '').trim().toUpperCase();
-    if (!value) return DEFAULT_COUNTRY;
+    if (!value) return fallbackCountry;
     if (SWITZERLAND_ALIASES.has(value)) return 'CH';
     if (/^[A-Z]{2}$/.test(value)) return value;
-    return DEFAULT_COUNTRY;
+    return fallbackCountry;
   }
 
   /**
@@ -73,7 +88,16 @@ export class DeliveryCoverageSyncService {
       );
     }
 
-    const countryCode = this.resolveCountryCode(storeCountry);
+    const policy = await this.installationProfile.findActiveCountryPolicy();
+    const countryCode = this.resolveCountryCode(
+      storeCountry,
+      policy?.countryCode ?? 'CH',
+    );
+    // Coverage postal codes must match the active platform country's format —
+    // reject malformed entries instead of persisting unreachable coverage.
+    const postalRule = policy
+      ? new RegExp(policy.pack.address.postalCodeRegex)
+      : null;
     const iso = timestamp.toISOString();
 
     // Remove the store's legacy-derived areas. The FK cascade clears their
@@ -125,6 +149,13 @@ export class DeliveryCoverageSyncService {
       });
 
       for (const postalCode of this.normalizePostalCodes(zone.postalCodes)) {
+        if (postalRule && !postalRule.test(postalCode)) {
+          throw new ConflictException({
+            code: 'invalid_coverage_postal_code',
+            message:
+              'Teslimat bölgesi posta kodu platformun aktif ülkesiyle uyumlu değil.',
+          });
+        }
         await postalStatement.run({
           $id: randomUUID(),
           $serviceAreaId: serviceAreaId,

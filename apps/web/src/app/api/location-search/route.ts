@@ -1,28 +1,27 @@
 import { NextResponse } from 'next/server';
 
+import { resolveApiBaseUrl } from '@shared/api-base-url';
 import { slugifyRegion, type RegionSearchResult } from '@/lib/home-discovery';
 
-const LOCATIONIQ_API_KEY = process.env.LOCATIONIQ_API_KEY;
 const CACHE_TTL_MS = 60_000;
 const RATE_LIMIT_WINDOW_MS = 60_000;
 const RATE_LIMIT_MAX = 30;
 const cache = new Map<string, { expiresAt: number; results: RegionSearchResult[] }>();
 const requestCounts = new Map<string, { count: number; resetAt: number }>();
 
-type LocationIqItem = {
-  place_id: string | number;
-  display_name?: string;
-  lat?: string;
-  lon?: string;
-  address?: {
-    postcode?: string;
-    town?: string;
-    city?: string;
-    village?: string;
-    municipality?: string;
-    county?: string;
-    state?: string;
-  };
+/**
+ * Provider-agnostic suggestion as returned by the backend `/geo/suggest`
+ * endpoint. The geo provider (and its API key) live entirely server-side in the
+ * API; this route only adapts the shape to the storefront's `RegionSearchResult`.
+ */
+type GeoAddressSuggestion = {
+  id: string;
+  label: string;
+  city: string | null;
+  postalCode: string | null;
+  country: string | null;
+  latitude: number | null;
+  longitude: number | null;
 };
 
 export const dynamic = 'force-dynamic';
@@ -49,31 +48,22 @@ function isRateLimited(clientKey: string) {
   return false;
 }
 
-function normalizeItem(item: LocationIqItem): RegionSearchResult | null {
-  const postalCode = item.address?.postcode?.trim();
-  const name =
-    item.address?.town?.trim() ||
-    item.address?.city?.trim() ||
-    item.address?.village?.trim() ||
-    item.address?.municipality?.trim();
-  const district =
-    item.address?.county?.trim() ||
-    item.address?.state?.trim() ||
-    name;
-
+function adaptSuggestion(item: GeoAddressSuggestion): RegionSearchResult | null {
+  const postalCode = item.postalCode?.trim();
+  const name = item.city?.trim();
   if (!postalCode || !name) {
     return null;
   }
-
   return {
-    id: String(item.place_id),
+    id: item.id,
     postalCode,
     name,
-    district: district ?? name,
+    district: name,
     slug: slugifyRegion(name, postalCode),
-    displayName: item.display_name ?? `${postalCode} ${name}`,
-    lat: item.lat,
-    lon: item.lon,
+    displayName: item.label?.trim() || `${postalCode} ${name}`,
+    country: item.country ?? undefined,
+    lat: item.latitude != null ? String(item.latitude) : undefined,
+    lon: item.longitude != null ? String(item.longitude) : undefined,
   };
 }
 
@@ -90,27 +80,17 @@ export async function GET(request: Request) {
     return NextResponse.json({ results: [], error: 'rate_limited' }, { status: 429 });
   }
 
-  if (!LOCATIONIQ_API_KEY) {
-    return NextResponse.json(
-      { results: [], error: 'locationiq_api_key_missing' },
-      { status: 500 },
-    );
-  }
-
-  const upstreamUrl = new URL('https://us1.locationiq.com/v1/search');
-  upstreamUrl.searchParams.set('key', LOCATIONIQ_API_KEY);
-  upstreamUrl.searchParams.set('q', query);
-  upstreamUrl.searchParams.set('format', 'json');
-  upstreamUrl.searchParams.set('addressdetails', '1');
-  upstreamUrl.searchParams.set('normalizecity', '1');
-  upstreamUrl.searchParams.set('countrycodes', 'ch');
-  upstreamUrl.searchParams.set('limit', '5');
-
   const cacheKey = query.toLowerCase();
   const cached = cache.get(cacheKey);
   if (cached && cached.expiresAt > Date.now()) {
     return NextResponse.json({ results: cached.results, cached: true });
   }
+
+  // The backend biases suggestions to the active platform country and enforces
+  // the provider/key, so this route stays a thin adapter — no country param or
+  // API key needed here.
+  const upstreamUrl = new URL(`${resolveApiBaseUrl()}/geo/suggest`);
+  upstreamUrl.searchParams.set('q', query);
 
   try {
     const response = await fetch(upstreamUrl.toString(), {
@@ -125,9 +105,9 @@ export async function GET(request: Request) {
       );
     }
 
-    const payload = (await response.json()) as LocationIqItem[];
-    const results = payload
-      .map(normalizeItem)
+    const payload = (await response.json()) as { results?: GeoAddressSuggestion[] };
+    const results = (payload.results ?? [])
+      .map(adaptSuggestion)
       .filter((item): item is RegionSearchResult => item !== null);
 
     cache.set(cacheKey, {

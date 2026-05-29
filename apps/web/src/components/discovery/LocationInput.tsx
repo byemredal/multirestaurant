@@ -12,7 +12,7 @@ import { useEffect, useId, useRef, useState } from 'react';
 
 import {
   defaultLocationProvider,
-  isSwissPostalCode,
+  isSupportedPostalCode,
   postalCodeSuggestion,
   type LocationSearchProvider,
 } from '@/lib/discovery/location-provider';
@@ -66,7 +66,7 @@ export default function LocationInput({
         if (!(cause instanceof DOMException && cause.name === 'AbortError')) {
           // A bare postal code still lets the visitor proceed offline.
           setSuggestions(
-            isSwissPostalCode(trimmed) ? [postalCodeSuggestion(trimmed)] : [],
+            isSupportedPostalCode(trimmed) ? [postalCodeSuggestion(trimmed)] : [],
           );
         }
       } finally {
@@ -91,7 +91,7 @@ export default function LocationInput({
 
   const onKeyDown = (event: React.KeyboardEvent<HTMLInputElement>) => {
     if (!showDropdown || suggestions.length === 0) {
-      if (event.key === 'Enter' && isSwissPostalCode(query)) {
+      if (event.key === 'Enter' && isSupportedPostalCode(query)) {
         event.preventDefault();
         choose(postalCodeSuggestion(query.trim()));
       }

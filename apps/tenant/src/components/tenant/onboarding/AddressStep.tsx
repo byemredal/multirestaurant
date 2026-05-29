@@ -32,7 +32,9 @@ function getInitialAddress(workspace: TenantOnboardingWorkspace, resolvedSession
   const businessInfo = getBusinessInfo(workspace);
   const location = workspace.locationSelection;
   return {
-    country: String(businessInfo?.country ?? location?.country ?? resolvedSession?.countryPack.country ?? 'CH'),
+    // Single-country platform: the active CountryPack country is authoritative
+    // and pinned — stale values from business info / location must not override it.
+    country: String(resolvedSession?.countryPack.country ?? businessInfo?.country ?? location?.country ?? ''),
     city: String(businessInfo?.city ?? location?.city ?? ''),
     region: '',
     postalCode: String(businessInfo?.postalCode ?? location?.postalCode ?? ''),
@@ -151,9 +153,9 @@ export function AddressStep({
             <span className="mb-2 block text-[13px] font-semibold text-ink-700">Ülke</span>
             <Input
               value={form.country}
-              maxLength={2}
-              onChange={(event) => updateField('country', event.target.value.toUpperCase())}
-              disabled={saving}
+              readOnly
+              disabled
+              title="Ülke, platformun aktif ülkesine sabittir."
               className={errors.country ? 'border-danger-200' : ''}
             />
             {errors.country ? <span className="mt-1 block text-[12px] text-danger-600">{errors.country}</span> : null}

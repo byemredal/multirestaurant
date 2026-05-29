@@ -1,4 +1,5 @@
 import { Module } from '@nestjs/common';
+import { SetupModule } from '../setup/setup.module';
 import { AddressNormalizationService } from './address-normalization.service';
 import { CoverageService } from './coverage.service';
 import { CustomerAddressController } from './customer-address.controller';
@@ -13,6 +14,7 @@ import { RankingService } from './ranking.service';
  * See apps/api/docs/delivery-discovery-engine.md.
  */
 @Module({
+  imports: [SetupModule],
   controllers: [DiscoveryController, CustomerAddressController],
   providers: [
     DiscoveryService,

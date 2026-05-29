@@ -23,12 +23,14 @@ export type RegionSearchResult = {
   district: string;
   slug: string;
   displayName: string;
+  /** ISO-3166-1 alpha-2 of the active platform country, when known. */
+  country?: string;
   lat?: string;
   lon?: string;
 };
 
-/** Swiss postal codes: 4 digits, 1000–9999. */
-const SWISS_POSTAL_CODE = /^[1-9]\d{3}$/;
+/** Postal codes across supported countries: 4 (CH) or 5 (TR) digits. */
+const POSTAL_CODE = /^[1-9]\d{3,4}$/;
 
 function toCitySlug(name: string): string {
   return name
@@ -57,8 +59,8 @@ export function slugifyRegion(name: string, postalCode: string): string {
 export function findRegionBySlug(slug?: string | null): RegionOption | null {
   if (!slug) return null;
   const trimmed = slug.trim().toLowerCase();
-  const codeMatch = trimmed.match(/\d{4}/);
-  if (!codeMatch || !SWISS_POSTAL_CODE.test(codeMatch[0])) return null;
+  const codeMatch = trimmed.match(/\d{4,5}/);
+  if (!codeMatch || !POSTAL_CODE.test(codeMatch[0])) return null;
 
   const postalCode = codeMatch[0];
   const cityPart = trimmed
