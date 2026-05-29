@@ -192,7 +192,7 @@ export default function CheckoutPage() {
     const acceptanceVersionIds = pickOrderAcceptanceVersionIds(legalDocuments);
     if (!acceptanceVersionIds) {
       setSubmitError(
-        'Yasal belgeler henüz yapılandırılmamış. Lütfen yöneticiyle iletişime geçin.',
+        'Bu restoran için yasal sipariş belgeleri henüz hazır değil. Lütfen daha sonra tekrar deneyin.',
       );
       return;
     }
@@ -507,9 +507,8 @@ export default function CheckoutPage() {
                 </p>
               ) : !legalReady ? (
                 <div className="rounded-[12px] bg-amber-50 px-4 py-3 text-[13px] text-amber-700">
-                  Yasal belgeler henüz yapılandırılmamış. Mesafeli satış
-                  sözleşmesi ve ön bilgilendirme formu admin tarafından
-                  yayınlanana kadar sipariş veremezsiniz.
+                  Bu restoran için yasal sipariş belgeleri henüz hazır değil.
+                  Lütfen daha sonra tekrar deneyin.
                 </div>
               ) : (
                 <label className="flex cursor-pointer items-start gap-3">

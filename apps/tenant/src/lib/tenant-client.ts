@@ -341,14 +341,46 @@ export type TenantStoreDeliveryFeeTier = {
   updatedAt: string;
 };
 
-export function getTenantStorePaymentMethods(
+// The backend returns a StorePaymentMethodView: the canonical code lives in
+// `code` and the custom label in `customLabel`. Normalize to the tenant-facing
+// `method`/`label` shape so the UI hydrates `isActive` against the right key.
+type RawStorePaymentMethodView = {
+  id: string;
+  storeId: string;
+  code: TenantPaymentMethodCode;
+  customLabel: string | null;
+  isActive: boolean;
+  sortOrder: number;
+  createdAt: string;
+  updatedAt: string;
+};
+
+function normalizePaymentMethod(
+  raw: RawStorePaymentMethodView,
+): TenantStorePaymentMethod {
+  return {
+    id: raw.id,
+    storeId: raw.storeId,
+    method: raw.code,
+    label: raw.customLabel ?? null,
+    isActive: raw.isActive,
+    sortOrder: raw.sortOrder,
+    createdAt: raw.createdAt,
+    updatedAt: raw.updatedAt,
+  };
+}
+
+export async function getTenantStorePaymentMethods(
   session: StoredTenantSession,
   storeId: string,
-) {
-  return request<{ paymentMethods: TenantStorePaymentMethod[] }>(
+): Promise<{ paymentMethods: TenantStorePaymentMethod[] }> {
+  const result = await request<{ paymentMethods: RawStorePaymentMethodView[] }>(
     `/tenant/stores/${storeId}/payment-methods`,
     session,
   );
+  return {
+    paymentMethods: result.paymentMethods.map(normalizePaymentMethod),
+  };
 }
 
 export function replaceTenantStorePaymentMethods(
@@ -373,14 +405,16 @@ export function replaceTenantStorePaymentMethods(
     })),
   };
 
-  return request<{ paymentMethods: TenantStorePaymentMethod[] }>(
+  return request<{ paymentMethods: RawStorePaymentMethodView[] }>(
     `/tenant/stores/${storeId}/payment-methods`,
     session,
     {
       body: JSON.stringify(payload),
       method: 'PUT',
     },
-  );
+  ).then((result) => ({
+    paymentMethods: result.paymentMethods.map(normalizePaymentMethod),
+  }));
 }
 
 export function getTenantStoreOrderingPolicy(

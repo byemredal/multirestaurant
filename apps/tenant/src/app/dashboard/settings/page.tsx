@@ -1,5 +1,5 @@
-import TenantStoreSettingsWorkspace from '@/components/tenant/TenantStoreSettingsWorkspace';
+import SettingsGeneralPanel from '@/components/tenant/settings/SettingsGeneralPanel';
 
 export default function TenantDashboardSettingsPage() {
-  return <TenantStoreSettingsWorkspace />;
+  return <SettingsGeneralPanel />;
 }

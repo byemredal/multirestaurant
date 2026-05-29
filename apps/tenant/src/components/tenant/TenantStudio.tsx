@@ -1,8 +1,8 @@
 'use client';
 
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { useRouter } from 'next/navigation';
 import TenantDashboardShell from '@/components/tenant/TenantDashboardShell';
+import StoreSettingsDrawer from '@/components/tenant/StoreSettingsDrawer';
 import { usePlatformPack } from '@/lib/platform-pack-context';
 import { TenantCuisinesPanel } from '@/components/tenant/TenantCuisinesPanel';
 import { TenantReviewsPanel } from '@/components/tenant/TenantReviewsPanel';
@@ -668,6 +668,7 @@ export default function TenantStudio() {
             setStoreForm={setStoreForm}
             storeEditing={storeEditing}
             busy={busy}
+            session={session}
             onAddStore={() => {
               setIsCreatingStore(true);
               setStoreForm(emptyStoreForm());
@@ -968,6 +969,7 @@ function ShopTab({
   setStoreForm,
   storeEditing,
   busy,
+  session,
   onAddStore,
   onEditStore,
   onCloseDrawer,
@@ -980,18 +982,19 @@ function ShopTab({
   setStoreForm: (updater: (current: StoreFormState) => StoreFormState) => void;
   storeEditing: boolean;
   busy: boolean;
+  session: StoredTenantSession | null;
   onAddStore: () => void;
   onEditStore: (id: string) => void;
   onCloseDrawer: () => void;
   onDisableStore: (id: string) => void;
   onSaveStore: () => void;
 }) {
-  const router = useRouter();
   const isCreating = !selectedStore;
   const platformPack = usePlatformPack();
   const currency = platformPack?.currency || '';
   const platformCountry = platformPack?.country || '';
   const [disableTarget, setDisableTarget] = useState<Store | null>(null);
+  const [settingsTarget, setSettingsTarget] = useState<Store | null>(null);
   // Step-accordion inside the drawer: one section open at a time.
   const [section, setSection] = useState<'info' | 'hours' | 'zones'>('info');
 
@@ -1102,10 +1105,7 @@ function ShopTab({
               <RowAction label="Düzenle" onClick={() => onEditStore(store.id)}>
                 <EditIcon />
               </RowAction>
-              <RowAction
-                label="Ayarlar"
-                onClick={() => router.push('/dashboard/settings')}
-              >
+              <RowAction label="Ayarlar" onClick={() => setSettingsTarget(store)}>
                 <SettingsIcon />
               </RowAction>
               <RowAction
@@ -1441,6 +1441,16 @@ function ShopTab({
         </FormSection>
       </div>
       </TenantSlideOver>
+
+      {session ? (
+        <StoreSettingsDrawer
+          open={Boolean(settingsTarget)}
+          storeId={settingsTarget?.id ?? null}
+          storeName={settingsTarget?.name}
+          session={session}
+          onClose={() => setSettingsTarget(null)}
+        />
+      ) : null}
     </div>
   );
 }
