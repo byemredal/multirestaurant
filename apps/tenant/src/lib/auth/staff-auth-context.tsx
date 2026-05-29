@@ -20,6 +20,10 @@ import {
   writeStaffSession,
   type StoredStaffSession,
 } from '@/lib/storage/staff-session';
+import {
+  broadcastTenantAuthEvent,
+  subscribeTenantAuthEvents,
+} from '@/lib/auth/auth-expiry';
 
 type StaffAuthValue = {
   session: StoredStaffSession | null;
@@ -107,6 +111,7 @@ export function StaffAuthProvider({ children }: { children: ReactNode }) {
     const current = session;
     setSessionState(null);
     clearStaffSession();
+    broadcastTenantAuthEvent('staff', 'manual_logout');
     if (current) {
       try {
         await logoutStaff(current);
@@ -115,6 +120,17 @@ export function StaffAuthProvider({ children }: { children: ReactNode }) {
       }
     }
   }, [session]);
+
+  // Cross-tab: a logout / session expiry on another tab (or a staff 401 in
+  // this tab handled by staffAuthedFetch) clears local state. Owner-subject
+  // events do not affect staff and vice versa.
+  useEffect(() => {
+    return subscribeTenantAuthEvents((event) => {
+      if (event.subject !== 'staff') return;
+      clearStaffSession();
+      setSessionState(null);
+    });
+  }, []);
 
   const syncFromStorage = useCallback(() => {
     setSessionState(readStaffSession());

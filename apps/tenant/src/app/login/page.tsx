@@ -1,7 +1,7 @@
 'use client';
 
-import { useState } from 'react';
-import { useRouter } from 'next/navigation';
+import { Suspense, useState } from 'react';
+import { useRouter, useSearchParams } from 'next/navigation';
 import Image from 'next/image';
 import { Button } from '@lieferzonen/ui';
 import { Input } from '@lieferzonen/ui';
@@ -14,7 +14,18 @@ const TENANT_HERO_IMAGE =
   'https://images.unsplash.com/photo-1556909114-f6e7ad7d3136?auto=format&fit=crop&w=1400&q=80';
 
 export default function TenantLoginPage() {
+  return (
+    <Suspense fallback={null}>
+      <TenantLoginPageInner />
+    </Suspense>
+  );
+}
+
+function TenantLoginPageInner() {
   const router = useRouter();
+  const searchParams = useSearchParams();
+  const sessionExpiredNotice =
+    searchParams?.get('reason') === 'session_expired';
   const { login } = useTenantAuth();
   const branding = usePlatformBranding(apiBaseUrl);
   const platformName = branding?.platformName?.trim() || 'Platform';
@@ -76,6 +87,15 @@ export default function TenantLoginPage() {
                 Restoranınızı yönetmek için stüdyoya giriş yapın.
               </p>
             </div>
+
+            {sessionExpiredNotice ? (
+              <div
+                role="status"
+                className="mt-6 rounded-2xl border border-ink-200 bg-ink-50 px-4 py-3 text-[13px] leading-relaxed text-ink-700"
+              >
+                Oturumunuz sona erdi. Lütfen tekrar giriş yapın.
+              </div>
+            ) : null}
 
             <div className="mt-8 grid gap-4">
               <div className="grid gap-1.5">

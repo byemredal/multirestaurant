@@ -3,6 +3,20 @@ import type { StoredTenantSession } from '@/lib/storage/tenant-session';
 
 export const apiBaseUrl = resolveApiBaseUrl();
 
+// Lazy import to avoid a top-level circular dependency: tenantAuthedFetch
+// imports apiBaseUrl from this module.
+let tenantAuthedFetchRef:
+  | ((path: string, init?: RequestInit) => Promise<Response>)
+  | null = null;
+
+async function getTenantAuthedFetch() {
+  if (!tenantAuthedFetchRef) {
+    const mod = await import('@/lib/auth/authed-fetch');
+    tenantAuthedFetchRef = mod.tenantAuthedFetch;
+  }
+  return tenantAuthedFetchRef;
+}
+
 /**
  * Stable backend error codes → user-facing Turkish messages. Keeps raw codes
  * out of the UI and gives a consistent message even if the backend wording
@@ -22,22 +36,15 @@ const ERROR_CODE_MESSAGES: Record<string, string> = {
 
 export async function tenantRequest<T>(
   path: string,
-  session: StoredTenantSession,
+  _session: StoredTenantSession,
   init?: RequestInit,
 ) {
-  const response = await fetch(`${apiBaseUrl}${path}`, {
-    ...init,
-    credentials: 'include',
-    headers: {
-      Authorization: `Bearer ${session.accessToken}`,
-      ...(
-        init?.body && !(init.body instanceof FormData) // init.body FormData sınıfından değilse, Content-Type başlığını application/json olarak ayarla
-          ? { 'Content-Type': 'application/json' }
-          : {}
-      ),
-      ...(init?.headers ?? {}),
-    },
-  });
+  // Centralized 401 → refresh → retry-1 → expire lives in tenantAuthedFetch.
+  // We keep the `session` param for ABI compatibility with the many call
+  // sites but ignore it; the wrapper always reads the latest token from
+  // storage so a rotated session is picked up automatically.
+  const authedFetch = await getTenantAuthedFetch();
+  const response = await authedFetch(path, init);
 
   if (!response.ok) {
     let errorMessage = `tenant_request_failed_${response.status}`;

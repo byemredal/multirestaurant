@@ -14,6 +14,8 @@ export function StaffLoginForm() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const next = searchParams.get('next') ?? '/staff/dashboard';
+  const sessionExpiredNotice =
+    searchParams.get('reason') === 'session_expired';
   const { login, loading, error } = useStaffAuth();
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
@@ -49,6 +51,15 @@ export function StaffLoginForm() {
         <p className="mt-1.5 text-[13px] leading-5 text-slate-500">
           Yöneticinizin verdiği e-posta + şifre ile giriş yapın.
         </p>
+
+        {sessionExpiredNotice ? (
+          <div
+            role="status"
+            className="mt-4 rounded-[10px] border border-slate-200 bg-slate-50 px-3 py-2 text-[12.5px] leading-5 text-slate-700"
+          >
+            Oturumunuz sona erdi. Lütfen tekrar giriş yapın.
+          </div>
+        ) : null}
 
         <form onSubmit={submit} className="mt-5 space-y-4">
           <label className="block">

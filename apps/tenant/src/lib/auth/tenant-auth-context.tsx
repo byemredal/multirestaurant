@@ -25,6 +25,10 @@ import {
   type StoredTenantSession,
 } from '@/lib/storage/tenant-session';
 import { toTenantStatus, type TenantStatus } from '@/lib/auth/tenant-status';
+import {
+  broadcastTenantAuthEvent,
+  subscribeTenantAuthEvents,
+} from '@/lib/auth/auth-expiry';
 
 type TenantAuthValue = {
   /** The authenticated tenant session, or null when signed out. */
@@ -187,7 +191,21 @@ export function TenantAuthProvider({ children }: { children: ReactNode }) {
     clearTenantSession();
     clearContinuationToken();
     applySession(null);
+    broadcastTenantAuthEvent('owner', 'manual_logout');
   }, [session, applySession]);
+
+  // Cross-tab: react to logout / session expiry triggered by another tab
+  // (or by the centralized tenantAuthedFetch when this same tab's request
+  // hit an unrecoverable 401). Only owner-subject events affect us; staff
+  // events are handled by StaffAuthProvider in /staff/*.
+  useEffect(() => {
+    return subscribeTenantAuthEvents((event) => {
+      if (event.subject !== 'owner') return;
+      clearTenantSession();
+      clearContinuationToken();
+      applySession(null);
+    });
+  }, [applySession]);
 
   const syncFromStorage = useCallback(() => {
     applySession(readTenantSession());

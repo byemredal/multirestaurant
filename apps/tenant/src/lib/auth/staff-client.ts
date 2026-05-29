@@ -1,5 +1,6 @@
 import { apiBaseUrl } from '@/lib/http/tenant-http';
 import type { StaffAccountSession, StoredStaffSession } from '@/lib/storage/staff-session';
+import { staffAuthedFetch } from '@/lib/auth/authed-fetch';
 
 /**
  * Typed staff API client. Mirrors `tenant-client` conventions: small
@@ -94,11 +95,8 @@ export type StaffMeResponse = {
   updatedAt: string;
 };
 
-export async function getStaffMe(session: StoredStaffSession): Promise<StaffMeResponse> {
-  const response = await fetch(`${apiBaseUrl}/staff/me`, {
-    credentials: 'include',
-    headers: { Authorization: `Bearer ${session.accessToken}` },
-  });
+export async function getStaffMe(_session: StoredStaffSession): Promise<StaffMeResponse> {
+  const response = await staffAuthedFetch('/staff/me');
   if (!response.ok) {
     throw new Error(await readJsonError(response, `staff_me_failed_${response.status}`));
   }
@@ -162,7 +160,7 @@ export type StaffOrderListQuery = {
   createdTo?: string;
 };
 
-function buildStaffOrderListUrl(query: StaffOrderListQuery): string {
+function buildStaffOrderListPath(query: StaffOrderListQuery): string {
   const params = new URLSearchParams();
   if (query.scope) params.set('scope', query.scope);
   if (query.status) params.set('status', query.status);
@@ -170,17 +168,14 @@ function buildStaffOrderListUrl(query: StaffOrderListQuery): string {
   if (query.createdFrom) params.set('createdFrom', query.createdFrom);
   if (query.createdTo) params.set('createdTo', query.createdTo);
   const search = params.toString();
-  return search ? `${apiBaseUrl}/staff/orders?${search}` : `${apiBaseUrl}/staff/orders`;
+  return search ? `/staff/orders?${search}` : '/staff/orders';
 }
 
 export async function listStaffOrders(
-  session: StoredStaffSession,
+  _session: StoredStaffSession,
   query: StaffOrderListQuery = {},
 ): Promise<StaffOrderListItem[]> {
-  const response = await fetch(buildStaffOrderListUrl(query), {
-    credentials: 'include',
-    headers: { Authorization: `Bearer ${session.accessToken}` },
-  });
+  const response = await staffAuthedFetch(buildStaffOrderListPath(query));
   if (!response.ok) {
     throw new Error(
       await readJsonError(response, `staff_orders_failed_${response.status}`),
@@ -198,12 +193,9 @@ export type StaffStoreSummary = {
 };
 
 export async function listStaffStores(
-  session: StoredStaffSession,
+  _session: StoredStaffSession,
 ): Promise<StaffStoreSummary[]> {
-  const response = await fetch(`${apiBaseUrl}/staff/me/stores`, {
-    credentials: 'include',
-    headers: { Authorization: `Bearer ${session.accessToken}` },
-  });
+  const response = await staffAuthedFetch('/staff/me/stores');
   if (!response.ok) {
     throw new Error(
       await readJsonError(response, `staff_stores_failed_${response.status}`),
