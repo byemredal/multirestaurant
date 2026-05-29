@@ -12,6 +12,10 @@ import CommandPalette from './CommandPalette';
 import { adminRoles, type AdminRole } from '@/lib/rbac/roles';
 import { bootstrapAdminSession, logoutAdmin } from '@/lib/admin-api/admin-auth-client';
 import {
+  broadcastAdminAuthEvent,
+  subscribeAdminAuthEvents,
+} from '@/lib/admin-api/auth-expiry';
+import {
   clearAdminSession,
   readAdminSession,
   writeAdminSession,
@@ -69,12 +73,28 @@ export default function AdminShell({
         setSession(next);
       } catch {
         clearAdminSession();
-        router.replace('/login');
+        router.replace('/login?reason=session_expired');
       } finally {
         setBooting(false);
       }
     };
     void run();
+  }, [router]);
+
+  // Cross-tab auth events: another tab logged out or saw a session expiry —
+  // clear local state and bounce to login without re-broadcasting (the source
+  // tab already broadcasted). Same-tab expiries go through window.location
+  // inside the authedFetch wrapper, so this only runs for remote tabs.
+  useEffect(() => {
+    return subscribeAdminAuthEvents((event) => {
+      clearAdminSession();
+      setSession(null);
+      router.replace(
+        event.type === 'session_expired'
+          ? '/login?reason=session_expired'
+          : '/login',
+      );
+    });
   }, [router]);
 
   // ⌘K / Ctrl+K command palette
@@ -115,6 +135,7 @@ export default function AdminShell({
       }
     }
     clearAdminSession();
+    broadcastAdminAuthEvent('manual_logout');
     router.replace('/login');
   }, [router, session]);
 

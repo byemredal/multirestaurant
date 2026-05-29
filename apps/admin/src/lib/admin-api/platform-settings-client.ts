@@ -1,5 +1,5 @@
-import { apiBaseUrl } from '@/lib/config';
 import type { StoredAdminSession } from '@/lib/storage/admin-session';
+import { adminAuthedFetch } from './authed-fetch';
 
 export type GeoProviderId = 'locationiq' | 'none';
 
@@ -11,20 +11,11 @@ export type GeoProviderConfig = {
 };
 
 async function adminRequest<T>(
-  session: StoredAdminSession,
+  _session: StoredAdminSession,
   path: string,
   init?: RequestInit,
 ): Promise<T> {
-  const response = await fetch(`${apiBaseUrl}${path}`, {
-    ...init,
-    credentials: 'include',
-    headers: {
-      Accept: 'application/json',
-      Authorization: `Bearer ${session.accessToken}`,
-      ...(init?.body ? { 'Content-Type': 'application/json' } : {}),
-      ...(init?.headers ?? {}),
-    },
-  });
+  const response = await adminAuthedFetch(path, init);
   if (!response.ok) {
     let message = `admin_platform_settings_failed_${response.status}`;
     try {

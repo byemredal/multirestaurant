@@ -1,6 +1,6 @@
-import { apiBaseUrl } from '@/lib/config';
 import type { StoredAdminSession } from '@/lib/storage/admin-session';
 import { parseJsonResponse } from './http';
+import { adminAuthedFetch } from './authed-fetch';
 
 export type ComplianceDocumentRequirement = {
   id: string;
@@ -35,20 +35,11 @@ export type ComplianceDocumentRequirementInput = Omit<ComplianceDocumentRequirem
 export type ComplianceConsentDefinitionInput = Omit<ComplianceConsentDefinition, 'id'>;
 
 async function complianceRequest<T>(
-  session: StoredAdminSession,
+  _session: StoredAdminSession,
   path: string,
   init?: RequestInit,
 ): Promise<T> {
-  const response = await fetch(`${apiBaseUrl}${path}`, {
-    ...init,
-    credentials: 'include',
-    headers: {
-      Accept: 'application/json',
-      Authorization: `Bearer ${session.accessToken}`,
-      ...(init?.body ? { 'Content-Type': 'application/json' } : {}),
-      ...(init?.headers ?? {}),
-    },
-  });
+  const response = await adminAuthedFetch(path, init);
   const payload = await parseJsonResponse(response);
   if (!response.ok) {
     const message = payload && typeof payload === 'object' && !Array.isArray(payload)

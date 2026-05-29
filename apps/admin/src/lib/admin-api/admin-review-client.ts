@@ -1,6 +1,6 @@
-import { apiBaseUrl } from '@/lib/config';
 import type { StoredAdminSession } from '@/lib/storage/admin-session';
 import { parseJsonResponse } from './http';
+import { adminAuthedFetch } from './authed-fetch';
 import type {
   ApplicationListEntry,
   AuditLogEntry,
@@ -10,20 +10,11 @@ import type {
 } from './admin-review-types';
 
 async function adminRequest(
-  session: StoredAdminSession,
+  _session: StoredAdminSession,
   path: string,
   init?: RequestInit,
 ) {
-  const response = await fetch(`${apiBaseUrl}${path}`, {
-    ...init,
-    credentials: 'include',
-    headers: {
-      Accept: 'application/json',
-      Authorization: `Bearer ${session.accessToken}`,
-      ...(init?.body ? { 'Content-Type': 'application/json' } : {}),
-      ...(init?.headers ?? {}),
-    },
-  });
+  const response = await adminAuthedFetch(path, init);
 
   if (!response.ok) {
     const payload = await parseJsonResponse(response);

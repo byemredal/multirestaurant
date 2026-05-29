@@ -1,7 +1,7 @@
 'use client';
 
-import { useRouter } from 'next/navigation';
-import { useEffect, useState } from 'react';
+import { useRouter, useSearchParams } from 'next/navigation';
+import { Suspense, useEffect, useState } from 'react';
 import { Logo } from '@lieferzonen/ui';
 import { defaultLogoDataUrl } from '@lieferzonen/assets';
 import { useAdminLanguage } from '@/lib/i18n/AdminLanguageProvider';
@@ -10,7 +10,18 @@ import { readAdminSession, writeAdminSession } from '@/lib/storage/admin-session
 import { useBranding } from '@/lib/branding/BrandingProvider';
 
 export default function AdminLoginPage() {
+  return (
+    <Suspense fallback={null}>
+      <AdminLoginPageInner />
+    </Suspense>
+  );
+}
+
+function AdminLoginPageInner() {
   const router = useRouter();
+  const searchParams = useSearchParams();
+  const sessionExpiredNotice =
+    searchParams?.get('reason') === 'session_expired';
   const { t } = useAdminLanguage();
   const branding = useBranding();
   const platformLabel = branding?.platformName?.trim() || 'Platform';
@@ -91,6 +102,25 @@ export default function AdminLoginPage() {
                 `${platformLabel} operasyon paneline yetkili hesabınızla giriş yapın.`,
               )}
             </p>
+
+            {sessionExpiredNotice ? (
+              <div
+                role="status"
+                className="admin-login-info"
+                style={{
+                  marginBottom: 16,
+                  padding: '10px 14px',
+                  borderRadius: 10,
+                  border: '1px solid var(--border)',
+                  background: 'var(--surface-2, rgba(15, 23, 42, 0.04))',
+                  color: 'var(--text, #0f172a)',
+                  fontSize: 13,
+                  lineHeight: 1.5,
+                }}
+              >
+                Oturumunuz sona erdi. Lütfen tekrar giriş yapın.
+              </div>
+            ) : null}
 
             <div className="admin-login-form">
               <div className="admin-field">

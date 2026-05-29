@@ -1,22 +1,18 @@
-import { apiBaseUrl } from '@/lib/config';
 import type { StoredAdminSession } from '@/lib/storage/admin-session';
 import { parseJsonResponse } from './http';
+import { adminAuthedFetch } from './authed-fetch';
 
 /**
  * Client for the read-only platform-wide admin operational endpoints
  * (`GET /admin/orders`, `GET /admin/stores`). Oversight only — no mutations.
+ * Routes through adminAuthedFetch so 401s trigger silent refresh + retry; an
+ * unrecoverable auth failure raises AuthExpiredError after redirecting.
  */
 async function adminGet<T>(
-  session: StoredAdminSession,
+  _session: StoredAdminSession,
   path: string,
 ): Promise<T> {
-  const response = await fetch(`${apiBaseUrl}${path}`, {
-    credentials: 'include',
-    headers: {
-      Accept: 'application/json',
-      Authorization: `Bearer ${session.accessToken}`,
-    },
-  });
+  const response = await adminAuthedFetch(path);
 
   if (!response.ok) {
     const payload = await parseJsonResponse(response);
