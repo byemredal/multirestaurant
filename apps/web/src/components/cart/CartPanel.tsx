@@ -162,8 +162,10 @@ export default function CartPanel() {
               <button
                 role="tab"
                 aria-selected={cart.serviceType === 'delivery'}
+                aria-busy={isSyncing}
+                disabled={isSyncing}
                 onClick={() => setServiceType('delivery')}
-                className={`flex-1 rounded-[10px] px-3 py-2 transition ${
+                className={`flex-1 rounded-[10px] px-3 py-2 transition disabled:cursor-not-allowed disabled:opacity-60 ${
                   cart.serviceType === 'delivery'
                     ? 'bg-white text-[#084799] shadow-sm'
                     : 'text-[#71717a] hover:text-[#18181b]'
@@ -174,8 +176,10 @@ export default function CartPanel() {
               <button
                 role="tab"
                 aria-selected={cart.serviceType === 'pickup'}
+                aria-busy={isSyncing}
+                disabled={isSyncing}
                 onClick={() => setServiceType('pickup')}
-                className={`flex-1 rounded-[10px] px-3 py-2 transition ${
+                className={`flex-1 rounded-[10px] px-3 py-2 transition disabled:cursor-not-allowed disabled:opacity-60 ${
                   cart.serviceType === 'pickup'
                     ? 'bg-white text-[#084799] shadow-sm'
                     : 'text-[#71717a] hover:text-[#18181b]'

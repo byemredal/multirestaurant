@@ -509,6 +509,8 @@ export function CartProvider({ children }: { children: ReactNode }) {
   const closeCart = useCallback(() => dispatch({ type: 'CLOSE' }), []);
 
   const setServiceType = useCallback((serviceType: CartServiceType) => {
+    const previous = cartRef.current.serviceType;
+    // Optimistic flip for snappy UI; reverted below if the server rejects it.
     dispatch({ type: 'SET_SERVICE_TYPE', serviceType });
 
     const session = readAuthSession();
@@ -526,9 +528,12 @@ export function CartProvider({ children }: { children: ReactNode }) {
     })
       .then((res) => {
         if (res.ok) {
+          // Reconcile UI with the server's authoritative cart state.
           const { cart: bc } = res.data as BackendCartResponse;
           if (bc) dispatch({ type: 'HYDRATE', state: mapBackendCart(bc) });
         } else {
+          // Roll back the optimistic flip and surface a friendly message.
+          dispatch({ type: 'SET_SERVICE_TYPE', serviceType: previous });
           setError(parseApiError(res.data, 'Hizmet tipi güncellenemedi.'));
         }
       })

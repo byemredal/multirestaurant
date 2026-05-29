@@ -677,6 +677,7 @@ export const apiGroups: ApiGroup[] = [
         path: '/cart/preferences',
         bodyFields: [
           { key: 'serviceTypeId', label: 'serviceTypeId (UUID from /system/service-types)' },
+          { key: 'serviceType', label: 'serviceType (code: delivery | pickup | dine_in)' },
           { key: 'paymentMethodId', label: 'paymentMethodId (UUID from /system/payment-methods)' },
           { key: 'deliveryDistanceKm', label: 'deliveryDistanceKm', type: 'number' },
         ],

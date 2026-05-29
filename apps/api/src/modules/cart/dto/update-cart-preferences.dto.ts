@@ -1,5 +1,5 @@
 import { ApiPropertyOptional } from '@nestjs/swagger';
-import { IsNumber, IsOptional, IsUUID, Max, Min } from 'class-validator';
+import { IsIn, IsNumber, IsOptional, IsUUID, Max, Min } from 'class-validator';
 
 export class UpdateCartPreferencesDto {
   @ApiPropertyOptional({
@@ -8,6 +8,15 @@ export class UpdateCartPreferencesDto {
   @IsOptional()
   @IsUUID('4')
   serviceTypeId?: string;
+
+  @ApiPropertyOptional({
+    enum: ['delivery', 'pickup', 'dine_in'],
+    description:
+      'Canonical ServiceType code. Backward-compatible alternative to serviceTypeId; resolved against the store active service types. serviceTypeId takes precedence when both are sent.',
+  })
+  @IsOptional()
+  @IsIn(['delivery', 'pickup', 'dine_in'])
+  serviceType?: 'delivery' | 'pickup' | 'dine_in';
 
   @ApiPropertyOptional({
     description: 'PaymentMethod.id from /system/payment-methods.',

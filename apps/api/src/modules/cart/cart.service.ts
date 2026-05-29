@@ -32,11 +32,12 @@ export class CartService {
   ) {
     if (
       dto.serviceTypeId === undefined &&
+      dto.serviceType === undefined &&
       dto.paymentMethodId === undefined &&
       dto.deliveryDistanceKm === undefined
     ) {
       throw new BadRequestException(
-        'Provide serviceTypeId, paymentMethodId or deliveryDistanceKm to update preferences.',
+        'Provide serviceTypeId, serviceType, paymentMethodId or deliveryDistanceKm to update preferences.',
       );
     }
 
@@ -47,18 +48,40 @@ export class CartService {
 
     let nextServiceTypeId: string | null = cart.serviceTypeId;
     let nextServiceTypeSnapshot = cart.serviceTypeSnapshot;
+    // serviceTypeId (UUID) keeps the original contract and takes precedence;
+    // serviceType (code) is the backward-compatible path the web cart uses.
     if (dto.serviceTypeId !== undefined) {
       const assignment = await this.storeSettingsStore.findActiveServiceTypeAssignment(
         cart.storeId,
         dto.serviceTypeId,
       );
       if (!assignment) {
-        throw new BadRequestException(
-          'This store does not offer the selected service type.',
-        );
+        throw new BadRequestException({
+          code: 'service_type_unavailable',
+          message: 'Bu restoran seçilen servis türünü desteklemiyor.',
+        });
       }
       nextServiceTypeId = assignment.serviceTypeId;
       nextServiceTypeSnapshot = assignment.code;
+    } else if (dto.serviceType !== undefined) {
+      const activeServiceTypes = await this.storeSettingsStore.listActiveServiceTypes(
+        cart.storeId,
+      );
+      if (activeServiceTypes.length === 0) {
+        throw new BadRequestException({
+          code: 'no_active_service_types',
+          message: 'Restoranın aktif servis türü bulunmuyor.',
+        });
+      }
+      const match = activeServiceTypes.find((type) => type.code === dto.serviceType);
+      if (!match) {
+        throw new BadRequestException({
+          code: 'service_type_unavailable',
+          message: 'Bu restoran seçilen servis türünü desteklemiyor.',
+        });
+      }
+      nextServiceTypeId = match.serviceTypeId;
+      nextServiceTypeSnapshot = match.code;
     }
 
     let nextPaymentMethodId: string | null = cart.paymentMethodId;
