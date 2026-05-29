@@ -556,12 +556,22 @@ export class StoreSettingsService {
     const currencyCode = dto.currencyCode?.trim() || existing.currencyCode;
     await this.assertCurrencyMatchesPlatform(currencyCode);
 
-    return this.store.upsertOrderingPolicy(storeId, {
+    const policy = await this.store.upsertOrderingPolicy(storeId, {
       minOrderAmount: dto.minOrderAmount ?? existing.minOrderAmount,
       acceptsDelivery,
       acceptsPickup,
       currencyCode,
     });
+
+    // Keep the canonical StoreServiceType assignments in sync with the policy
+    // booleans so the cart (which reads StoreServiceType) reflects the tenant's
+    // delivery/pickup choices immediately.
+    await this.store.syncServiceTypesFromOrderingPolicy(storeId, {
+      acceptsDelivery,
+      acceptsPickup,
+    });
+
+    return policy;
   }
 
   // ── Commerce: delivery fee tiers ───────────────────────────────────────────

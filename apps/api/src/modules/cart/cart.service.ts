@@ -284,7 +284,21 @@ export class CartService {
     currencySnapshot: string,
   ) {
     const now = new Date();
-    const serviceTypes = await this.storeSettingsStore.listActiveServiceTypes(storeId);
+    let serviceTypes = await this.storeSettingsStore.listActiveServiceTypes(storeId);
+
+    // Self-heal: a store with no service-type assignments (legacy / created
+    // before defaults were seeded) is backfilled from its ordering policy so
+    // add-to-cart works instead of throwing. Only genuinely corrupt data (no
+    // catalog match at all) still fails.
+    if (serviceTypes.length === 0) {
+      const policy = await this.storeSettingsStore.getOrCreateOrderingPolicy(storeId);
+      await this.storeSettingsStore.ensureDefaultStoreServiceTypes(storeId, {
+        acceptsDelivery: policy.acceptsDelivery,
+        acceptsPickup: policy.acceptsPickup,
+      });
+      serviceTypes = await this.storeSettingsStore.listActiveServiceTypes(storeId);
+    }
+
     if (serviceTypes.length === 0) {
       throw new ConflictException('Store has no active service types configured.');
     }

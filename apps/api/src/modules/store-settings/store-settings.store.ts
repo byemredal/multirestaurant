@@ -1500,6 +1500,104 @@ export class StoreSettingsStore {
     return this.listServiceTypes(storeId);
   }
 
+  /**
+   * Canonical ServiceType catalog ids keyed by code (delivery / pickup /
+   * dine_in). Only active catalog rows are returned.
+   */
+  private async getCanonicalServiceTypeIdMap(): Promise<Record<string, string>> {
+    const rows = await this.databaseService
+      .prepare(
+        `SELECT "id", "code" FROM "ServiceType" WHERE "isActive" = TRUE`,
+      )
+      .all<{ id: string; code: string }>({});
+
+    const map: Record<string, string> = {};
+    for (const row of rows) {
+      map[row.code] = row.id;
+    }
+    return map;
+  }
+
+  private async upsertServiceTypeAssignment(
+    storeId: string,
+    serviceTypeId: string,
+    isActive: boolean,
+    sortOrder: number,
+  ): Promise<void> {
+    const now = new Date().toISOString();
+    await this.databaseService
+      .prepare(
+        `INSERT INTO "StoreServiceType" (
+          "id", "storeId", "serviceTypeId", "customLabel", "isActive", "sortOrder",
+          "createdAt", "updatedAt"
+        ) VALUES (
+          $id, $storeId, $serviceTypeId, NULL, $isActive, $sortOrder, $now, $now
+        )
+        ON CONFLICT ("storeId", "serviceTypeId") DO UPDATE
+        SET "isActive" = EXCLUDED."isActive",
+            "updatedAt" = EXCLUDED."updatedAt"`,
+      )
+      .run({
+        $id: randomUUID(),
+        $storeId: storeId,
+        $serviceTypeId: serviceTypeId,
+        $isActive: isActive,
+        $sortOrder: sortOrder,
+        $now: now,
+      });
+  }
+
+  /**
+   * Guarantees a store has at least its default service-type assignments.
+   * No-op when the store already has any assignment (so an admin's explicit
+   * configuration is never overwritten). Default: pickup active, delivery
+   * active (unless policy says otherwise), dine_in inactive.
+   */
+  async ensureDefaultStoreServiceTypes(
+    storeId: string,
+    opts?: { acceptsDelivery?: boolean; acceptsPickup?: boolean },
+  ): Promise<StoreServiceTypeView[]> {
+    const existing = await this.listServiceTypes(storeId);
+    if (existing.length > 0) {
+      return existing;
+    }
+
+    const ids = await this.getCanonicalServiceTypeIdMap();
+    const deliveryActive = opts?.acceptsDelivery ?? true;
+    const pickupActive = opts?.acceptsPickup ?? true;
+
+    if (ids.pickup) {
+      await this.upsertServiceTypeAssignment(storeId, ids.pickup, pickupActive, 0);
+    }
+    if (ids.delivery) {
+      await this.upsertServiceTypeAssignment(storeId, ids.delivery, deliveryActive, 1);
+    }
+    if (ids.dine_in) {
+      await this.upsertServiceTypeAssignment(storeId, ids.dine_in, false, 2);
+    }
+
+    return this.listServiceTypes(storeId);
+  }
+
+  /**
+   * Keeps the canonical StoreServiceType assignments in sync with the tenant's
+   * OrderingPolicy booleans. delivery/pickup are upserted to match; dine_in is
+   * left untouched. Ensures the canonical rows exist even on legacy stores.
+   */
+  async syncServiceTypesFromOrderingPolicy(
+    storeId: string,
+    policy: { acceptsDelivery: boolean; acceptsPickup: boolean },
+  ): Promise<StoreServiceTypeView[]> {
+    const ids = await this.getCanonicalServiceTypeIdMap();
+    if (ids.pickup) {
+      await this.upsertServiceTypeAssignment(storeId, ids.pickup, policy.acceptsPickup, 0);
+    }
+    if (ids.delivery) {
+      await this.upsertServiceTypeAssignment(storeId, ids.delivery, policy.acceptsDelivery, 1);
+    }
+    return this.listServiceTypes(storeId);
+  }
+
   // ── Ordering policy ────────────────────────────────────────────────────────
   async getOrCreateOrderingPolicy(storeId: string): Promise<StoreOrderingPolicy> {
     const existing = await this.findOrderingPolicy(storeId);

@@ -184,6 +184,9 @@ export class StoresService {
         platformCountry ?? store.country,
         now,
       );
+      // Seed canonical service types so the store is immediately orderable.
+      // Without this the cart's createCart() throws "no active service types".
+      await this.insertDefaultServiceTypes(store.id, now);
     });
 
     return {
@@ -1076,6 +1079,43 @@ export class StoresService {
       closeTime: item.closeTime,
       isClosed: Boolean(item.isClosed),
     };
+  }
+
+  /**
+   * Seeds the default StoreServiceType assignments for a freshly created store:
+   * pickup + delivery active, dine_in inactive. Uses INSERT ... SELECT keyed on
+   * the canonical ServiceType.code so it is a no-op when the catalog row is
+   * absent, and ON CONFLICT DO NOTHING so re-runs stay idempotent.
+   */
+  private async insertDefaultServiceTypes(storeId: string, now: Date) {
+    const iso = now.toISOString();
+    const defaults: Array<{ code: string; isActive: boolean; sortOrder: number }> = [
+      { code: 'pickup', isActive: true, sortOrder: 0 },
+      { code: 'delivery', isActive: true, sortOrder: 1 },
+      { code: 'dine_in', isActive: false, sortOrder: 2 },
+    ];
+
+    for (const entry of defaults) {
+      await this.databaseService
+        .prepare(
+          `INSERT INTO "StoreServiceType" (
+            "id", "storeId", "serviceTypeId", "customLabel", "isActive", "sortOrder",
+            "createdAt", "updatedAt"
+          )
+          SELECT $id, $storeId, st."id", NULL, $isActive, $sortOrder, $now, $now
+          FROM "ServiceType" st
+          WHERE st."code" = $code AND st."isActive" = TRUE
+          ON CONFLICT ("storeId", "serviceTypeId") DO NOTHING`,
+        )
+        .run({
+          $id: randomUUID(),
+          $storeId: storeId,
+          $isActive: entry.isActive,
+          $sortOrder: entry.sortOrder,
+          $code: entry.code,
+          $now: iso,
+        });
+    }
   }
 
   private mapDeliveryZone(item: StoreDeliveryZoneRow): StoreDeliveryZone {
