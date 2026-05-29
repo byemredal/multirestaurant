@@ -120,6 +120,18 @@ export function StaffAuthProvider({ children }: { children: ReactNode }) {
     setSessionState(readStaffSession());
   }, []);
 
+  // ── Cross-tab: a logout/expiry in another tab clears this tab too. ────────
+  useEffect(() => {
+    const handleStorage = (event: StorageEvent) => {
+      if (event.key !== null && event.key !== 'auth.staff-session') return;
+      if (!readStaffSession()) {
+        setSessionState(null);
+      }
+    };
+    window.addEventListener('storage', handleStorage);
+    return () => window.removeEventListener('storage', handleStorage);
+  }, []);
+
   return (
     <StaffAuthContext.Provider
       value={{ session, loading, error, login, logout, setSession, syncFromStorage }}

@@ -1,5 +1,6 @@
 import { resolveApiBaseUrl } from '@shared/api-base-url';
 import type { StoredTenantSession } from '@/lib/storage/tenant-session';
+import { onTenantAuthExpired, refreshTenantSession } from '@/lib/auth/auth-expiry';
 
 export const apiBaseUrl = resolveApiBaseUrl();
 
@@ -20,16 +21,12 @@ const ERROR_CODE_MESSAGES: Record<string, string> = {
   geo_country_mismatch: 'Adres, platformun aktif ülkesiyle uyumlu değil.',
 };
 
-export async function tenantRequest<T>(
-  path: string,
-  session: StoredTenantSession,
-  init?: RequestInit,
-) {
-  const response = await fetch(`${apiBaseUrl}${path}`, {
+function rawTenantFetch(accessToken: string, path: string, init?: RequestInit) {
+  return fetch(`${apiBaseUrl}${path}`, {
     ...init,
     credentials: 'include',
     headers: {
-      Authorization: `Bearer ${session.accessToken}`,
+      Authorization: `Bearer ${accessToken}`,
       ...(
         init?.body && !(init.body instanceof FormData) // init.body FormData sınıfından değilse, Content-Type başlığını application/json olarak ayarla
           ? { 'Content-Type': 'application/json' }
@@ -38,6 +35,29 @@ export async function tenantRequest<T>(
       ...(init?.headers ?? {}),
     },
   });
+}
+
+export async function tenantRequest<T>(
+  path: string,
+  session: StoredTenantSession,
+  init?: RequestInit,
+) {
+  let response = await rawTenantFetch(session.accessToken, path, init);
+
+  // Expired access token — single-flight silent refresh, then retry once.
+  if (response.status === 401) {
+    const refreshed = await refreshTenantSession();
+    if (refreshed) {
+      response = await rawTenantFetch(refreshed.accessToken, path, init);
+      if (response.status === 401) {
+        onTenantAuthExpired();
+        throw new Error('tenant_session_expired');
+      }
+    } else {
+      onTenantAuthExpired();
+      throw new Error('tenant_session_expired');
+    }
+  }
 
   if (!response.ok) {
     let errorMessage = `tenant_request_failed_${response.status}`;

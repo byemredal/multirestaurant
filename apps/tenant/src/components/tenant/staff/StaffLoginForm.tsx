@@ -14,6 +14,7 @@ export function StaffLoginForm() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const next = searchParams.get('next') ?? '/staff/dashboard';
+  const sessionExpired = searchParams.get('reason') === 'session_expired';
   const { login, loading, error } = useStaffAuth();
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
@@ -79,6 +80,12 @@ export function StaffLoginForm() {
               className="w-full rounded-[10px] border border-slate-200 px-3 py-2 text-[14px] text-slate-900 focus:border-[#09479A] focus:outline-none focus:ring-2 focus:ring-[#09479A]/20"
             />
           </label>
+
+          {sessionExpired && !renderedError ? (
+            <div className="rounded-[10px] bg-blue-50 px-3 py-2 text-[12.5px] text-blue-700">
+              Oturumunuz sona erdi. Lütfen tekrar giriş yapın.
+            </div>
+          ) : null}
 
           {renderedError ? (
             <div className="rounded-[10px] bg-red-50 px-3 py-2 text-[12.5px] text-red-700">

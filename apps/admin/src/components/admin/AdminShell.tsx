@@ -77,6 +77,18 @@ export default function AdminShell({
     void run();
   }, [router]);
 
+  // Cross-tab: a logout/expiry in another tab clears the session here too.
+  useEffect(() => {
+    const handleStorage = (event: StorageEvent) => {
+      if (event.key !== null && event.key !== 'auth.admin-session') return;
+      if (!readAdminSession()) {
+        router.replace('/login?reason=session_expired');
+      }
+    };
+    window.addEventListener('storage', handleStorage);
+    return () => window.removeEventListener('storage', handleStorage);
+  }, [router]);
+
   // ⌘K / Ctrl+K command palette
   useEffect(() => {
     const onKey = (event: KeyboardEvent) => {

@@ -1,5 +1,40 @@
 import { apiBaseUrl } from '@/lib/http/tenant-http';
 import type { StaffAccountSession, StoredStaffSession } from '@/lib/storage/staff-session';
+import { onStaffAuthExpired, refreshStaffSession } from '@/lib/auth/auth-expiry';
+
+/**
+ * Authenticated staff fetch with single-flight silent refresh + one retry.
+ * On refresh failure, triggers the central staff expiry handler.
+ */
+async function staffAuthedFetch(
+  session: StoredStaffSession,
+  url: string,
+  init?: RequestInit,
+): Promise<Response> {
+  const run = (accessToken: string) =>
+    fetch(url, {
+      ...init,
+      credentials: 'include',
+      headers: {
+        ...(init?.headers ?? {}),
+        Authorization: `Bearer ${accessToken}`,
+      },
+    });
+
+  let response = await run(session.accessToken);
+  if (response.status === 401) {
+    const refreshed = await refreshStaffSession();
+    if (refreshed) {
+      response = await run(refreshed.accessToken);
+      if (response.status === 401) {
+        onStaffAuthExpired();
+      }
+    } else {
+      onStaffAuthExpired();
+    }
+  }
+  return response;
+}
 
 /**
  * Typed staff API client. Mirrors `tenant-client` conventions: small
@@ -177,10 +212,7 @@ export async function listStaffOrders(
   session: StoredStaffSession,
   query: StaffOrderListQuery = {},
 ): Promise<StaffOrderListItem[]> {
-  const response = await fetch(buildStaffOrderListUrl(query), {
-    credentials: 'include',
-    headers: { Authorization: `Bearer ${session.accessToken}` },
-  });
+  const response = await staffAuthedFetch(session, buildStaffOrderListUrl(query));
   if (!response.ok) {
     throw new Error(
       await readJsonError(response, `staff_orders_failed_${response.status}`),
@@ -200,10 +232,7 @@ export type StaffStoreSummary = {
 export async function listStaffStores(
   session: StoredStaffSession,
 ): Promise<StaffStoreSummary[]> {
-  const response = await fetch(`${apiBaseUrl}/staff/me/stores`, {
-    credentials: 'include',
-    headers: { Authorization: `Bearer ${session.accessToken}` },
-  });
+  const response = await staffAuthedFetch(session, `${apiBaseUrl}/staff/me/stores`);
   if (!response.ok) {
     throw new Error(
       await readJsonError(response, `staff_stores_failed_${response.status}`),
