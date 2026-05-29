@@ -25,6 +25,13 @@ type StoreServiceType = {
   isActive: boolean;
 };
 
+type StoreOpeningHour = {
+  dayOfWeek: string;
+  openTime: string;
+  closeTime: string;
+  isClosed: boolean;
+};
+
 type Store = {
   id: string;
   name: string;
@@ -39,6 +46,14 @@ type Store = {
   minimumOrderAmount: number | null;
   estimatedDeliveryMinutes: number | null;
   currency: string;
+  // Public location/contact fields — returned by the public store endpoint.
+  addressLine1?: string | null;
+  addressLine2?: string | null;
+  city?: string | null;
+  postalCode?: string | null;
+  country?: string | null;
+  phoneNumber?: string | null;
+  openingHours?: StoreOpeningHour[];
   cuisines?: StoreCuisine[];
   serviceTypes?: StoreServiceType[];
   reviewSummary?: StoreReviewSummary;
@@ -131,6 +146,23 @@ const ClockIcon = () => (
     <path d="M12 7v5l3 3" />
   </Icon>
 );
+const InfoIcon = () => (
+  <Icon className="h-5 w-5">
+    <circle cx="12" cy="12" r="9" />
+    <path d="M12 16v-4M12 8h.01" />
+  </Icon>
+);
+const PhoneIcon = () => (
+  <Icon className="h-4 w-4">
+    <path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6 19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72c.13.96.36 1.9.7 2.81a2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45c.91.34 1.85.57 2.81.7A2 2 0 0 1 22 16.92z" />
+  </Icon>
+);
+const PinIcon = () => (
+  <Icon className="h-4 w-4">
+    <path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z" />
+    <circle cx="12" cy="10" r="3" />
+  </Icon>
+);
 
 export default function StoreMenuPage({
   storeId,
@@ -161,6 +193,7 @@ export default function StoreMenuPage({
   const [activeCategoryId, setActiveCategoryId] = useState<string | null>(null);
   const [conflictItem, setConflictItem] = useState<MenuItem | null>(null);
   const [activeTab, setActiveTab] = useState<'menu' | 'reviews'>('menu');
+  const [infoOpen, setInfoOpen] = useState(false);
 
   // Align the browsing mode with what this store actually offers. Only steers
   // while the cart is empty so a customer's in-progress choice is never
@@ -333,13 +366,14 @@ export default function StoreMenuPage({
   const isOrderable = store.status === 'active';
   const currency = store.currency ?? 'CHF';
   const cartHasItems = totalItems > 0 && cart.storeId === store.id;
+  const activeServiceTypes = (store.serviceTypes ?? []).filter((t) => t.isActive);
 
   return (
     <div className="min-h-screen bg-[#f6f6f4]">
       {/* Global web header — consistent across all customer surfaces. */}
       <HomeHeader />
 
-      <main className="mx-auto max-w-[900px] px-5 pb-20 lg:px-8">
+      <main className="mx-auto max-w-[1180px] px-5 pb-20 lg:px-8">
         {/* Secondary breadcrumb: back action stays page-level, not in the brand bar. */}
         <button
           onClick={goBack}
@@ -376,9 +410,20 @@ export default function StoreMenuPage({
           </div>
 
           <div className="p-5">
-            <h1 className="text-[24px] font-bold text-[#18181b]">
-              {store.name}
-            </h1>
+            <div className="flex items-start gap-2">
+              <h1 className="text-[24px] font-bold text-[#18181b] lg:text-[28px]">
+                {store.name}
+              </h1>
+              <button
+                type="button"
+                onClick={() => setInfoOpen(true)}
+                aria-label="Restoran bilgilerini görüntüle"
+                aria-haspopup="dialog"
+                className="mt-0.5 inline-flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-full text-[#71717a] transition hover:bg-[#f4f4f5] hover:text-[#084799] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#084799] focus-visible:ring-offset-2"
+              >
+                <InfoIcon />
+              </button>
+            </div>
             <div className="mt-1 flex flex-wrap items-center gap-2 text-[13px] text-[#71717a]">
               <span>{store.category}</span>
               {store.reviewSummary && store.reviewSummary.totalReviews > 0 && (
@@ -447,6 +492,9 @@ export default function StoreMenuPage({
           </div>
         </section>
 
+        {/* Desktop: menu/content on the left, sticky order sidebar on the right. */}
+        <div className="lg:mt-5 lg:grid lg:grid-cols-[minmax(0,1fr)_320px] lg:items-start lg:gap-7">
+          <div className="min-w-0">
         {/* Tab switcher: menu / reviews */}
         <div
           role="tablist"
@@ -630,6 +678,78 @@ export default function StoreMenuPage({
             reviews={reviewsData?.reviews ?? []}
           />
         )}
+          </div>
+
+          {/* Desktop sticky order sidebar — hidden on mobile (sticky bottom bar covers it). */}
+          <aside className="hidden lg:block lg:sticky lg:top-5">
+            <div className="rounded-[20px] bg-white p-5 shadow-[0_2px_12px_rgba(0,0,0,0.06)]">
+              <h2 className="text-[15px] font-bold text-[#18181b]">Sipariş özeti</h2>
+              <dl className="mt-3 space-y-2 text-[13px]">
+                {typeof store.estimatedDeliveryMinutes === 'number' && (
+                  <div className="flex items-center justify-between gap-3">
+                    <dt className="text-[#71717a]">Teslimat süresi</dt>
+                    <dd className="font-semibold text-[#18181b]">
+                      {store.estimatedDeliveryMinutes} dk
+                    </dd>
+                  </div>
+                )}
+                {typeof store.deliveryFee === 'number' && (
+                  <div className="flex items-center justify-between gap-3">
+                    <dt className="text-[#71717a]">Teslimat ücreti</dt>
+                    <dd className="font-semibold text-[#18181b]">
+                      {store.deliveryFee === 0
+                        ? 'Ücretsiz'
+                        : `${store.deliveryFee.toFixed(2)} ${currency}`}
+                    </dd>
+                  </div>
+                )}
+                {typeof store.minimumOrderAmount === 'number' &&
+                  store.minimumOrderAmount > 0 && (
+                    <div className="flex items-center justify-between gap-3">
+                      <dt className="text-[#71717a]">Minimum sipariş</dt>
+                      <dd className="font-semibold text-[#18181b]">
+                        {store.minimumOrderAmount.toFixed(2)} {currency}
+                      </dd>
+                    </div>
+                  )}
+              </dl>
+
+              {activeServiceTypes.length > 0 && (
+                <div className="mt-4 flex flex-wrap gap-1.5">
+                  {activeServiceTypes.map((type) => (
+                    <span
+                      key={type.code}
+                      className="inline-flex items-center rounded-full bg-[#f4f4f5] px-2.5 py-1 text-[11.5px] font-medium text-[#52525b]"
+                    >
+                      {type.label}
+                    </span>
+                  ))}
+                </div>
+              )}
+
+              <div className="mt-5 border-t border-[#f0f0ef] pt-4">
+                {cartHasItems ? (
+                  <button
+                    onClick={openCart}
+                    className="flex w-full items-center justify-between rounded-[14px] bg-[#084799] px-4 py-3 text-white transition hover:bg-[#063d85] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#084799] focus-visible:ring-offset-2"
+                  >
+                    <span className="flex h-6 w-6 items-center justify-center rounded-full bg-white/20 text-[12px] font-bold">
+                      {totalItems}
+                    </span>
+                    <span className="text-[14px] font-semibold">Sepeti Görüntüle</span>
+                    <span className="text-[14px] font-semibold">
+                      {subtotal.toFixed(2)} {currency}
+                    </span>
+                  </button>
+                ) : (
+                  <p className="text-[13px] leading-5 text-[#71717a]">
+                    Menüden ürün ekleyerek siparişinizi oluşturun.
+                  </p>
+                )}
+              </div>
+            </div>
+          </aside>
+        </div>
       </main>
 
       {/* Sticky cart bar — visible on mobile when cart has items */}
@@ -649,6 +769,14 @@ export default function StoreMenuPage({
           </button>
         </div>
       )}
+
+      {/* Public restaurant info drawer */}
+      <StoreInfoDrawer
+        open={infoOpen}
+        onClose={() => setInfoOpen(false)}
+        store={store}
+        currency={currency}
+      />
 
       {/* Store conflict dialog */}
       {conflictItem && (
@@ -797,6 +925,228 @@ function MenuItemCard({
       </div>
     </div>
   );
+}
+
+const DAY_LABELS: Record<string, string> = {
+  monday: 'Pazartesi',
+  tuesday: 'Salı',
+  wednesday: 'Çarşamba',
+  thursday: 'Perşembe',
+  friday: 'Cuma',
+  saturday: 'Cumartesi',
+  sunday: 'Pazar',
+};
+
+function StoreInfoDrawer({
+  open,
+  onClose,
+  store,
+  currency,
+}: {
+  open: boolean;
+  onClose: () => void;
+  store: Store;
+  currency: string;
+}) {
+  // Escape-to-close + body scroll lock while the drawer is open.
+  useEffect(() => {
+    if (!open) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') onClose();
+    };
+    document.addEventListener('keydown', onKey);
+    const previousOverflow = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+    return () => {
+      document.removeEventListener('keydown', onKey);
+      document.body.style.overflow = previousOverflow;
+    };
+  }, [open, onClose]);
+
+  if (!open) return null;
+
+  const addressParts = [
+    store.addressLine1,
+    store.addressLine2,
+    [store.postalCode, store.city].filter(Boolean).join(' '),
+    store.country,
+  ].filter((part): part is string => Boolean(part && part.trim()));
+  const hasAddress = addressParts.length > 0;
+  const openingHours = (store.openingHours ?? []).filter(Boolean);
+  const activeServiceTypes = (store.serviceTypes ?? []).filter((t) => t.isActive);
+
+  return (
+    <div className="fixed inset-0 z-50">
+      <button
+        type="button"
+        aria-label="Kapat"
+        onClick={onClose}
+        className="absolute inset-0 h-full w-full cursor-default bg-[#18181b]/40"
+      />
+      <div
+        role="dialog"
+        aria-modal="true"
+        aria-label={`${store.name} bilgileri`}
+        className="absolute inset-y-0 right-0 flex h-full w-full max-w-[440px] flex-col bg-white shadow-[0_0_48px_rgba(0,0,0,0.18)]"
+      >
+        <div className="flex items-center justify-between gap-3 border-b border-[#f0f0ef] px-5 py-4">
+          <h2 className="text-[17px] font-bold text-[#18181b]">Restoran bilgileri</h2>
+          <button
+            type="button"
+            onClick={onClose}
+            aria-label="Kapat"
+            className="inline-flex h-8 w-8 items-center justify-center rounded-full text-[#71717a] transition hover:bg-[#f4f4f5] hover:text-[#18181b] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#084799] focus-visible:ring-offset-2"
+          >
+            <Icon className="h-5 w-5">
+              <path d="M6 6l12 12M18 6L6 18" />
+            </Icon>
+          </button>
+        </div>
+
+        <div className="flex-1 overflow-y-auto px-5 py-5">
+          <h3 className="text-[19px] font-bold text-[#18181b]">{store.name}</h3>
+          <p className="mt-0.5 text-[13px] text-[#71717a]">{store.category}</p>
+
+          {store.cuisines && store.cuisines.length > 0 && (
+            <div className="mt-3 flex flex-wrap gap-1.5">
+              {store.cuisines.map((cuisine) => (
+                <span
+                  key={cuisine.id}
+                  className="inline-flex items-center gap-1 rounded-full bg-[#f4f4f5] px-2.5 py-1 text-[11.5px] font-medium text-[#52525b]"
+                >
+                  {cuisine.emoji ? <span>{cuisine.emoji}</span> : null}
+                  {cuisine.name}
+                </span>
+              ))}
+            </div>
+          )}
+
+          {store.description ? (
+            <p className="mt-4 text-[14px] leading-6 text-[#3f3f46]">{store.description}</p>
+          ) : null}
+
+          <DrawerSection title="Adres">
+            {hasAddress ? (
+              <div className="flex gap-2.5 text-[14px] leading-6 text-[#3f3f46]">
+                <span className="mt-0.5 flex-shrink-0 text-[#a1a1aa]">
+                  <PinIcon />
+                </span>
+                <span>
+                  {addressParts.map((part, idx) => (
+                    <span key={idx} className="block">
+                      {part}
+                    </span>
+                  ))}
+                </span>
+              </div>
+            ) : (
+              <EmptyHint>Bu bilgi henüz eklenmemiş.</EmptyHint>
+            )}
+          </DrawerSection>
+
+          <DrawerSection title="İletişim">
+            {store.phoneNumber ? (
+              <a
+                href={`tel:${store.phoneNumber}`}
+                className="inline-flex items-center gap-2.5 text-[14px] font-medium text-[#084799] transition hover:underline"
+              >
+                <span className="text-[#a1a1aa]">
+                  <PhoneIcon />
+                </span>
+                {store.phoneNumber}
+              </a>
+            ) : (
+              <EmptyHint>Bu bilgi henüz eklenmemiş.</EmptyHint>
+            )}
+          </DrawerSection>
+
+          <DrawerSection title="Servis türleri">
+            {activeServiceTypes.length > 0 ? (
+              <div className="flex flex-wrap gap-1.5">
+                {activeServiceTypes.map((type) => (
+                  <span
+                    key={type.code}
+                    className="inline-flex items-center rounded-full bg-[#084799]/8 px-3 py-1 text-[12px] font-medium text-[#084799]"
+                  >
+                    {type.label}
+                  </span>
+                ))}
+              </div>
+            ) : (
+              <EmptyHint>Bu bilgi henüz eklenmemiş.</EmptyHint>
+            )}
+          </DrawerSection>
+
+          <DrawerSection title="Sipariş bilgileri">
+            <ul className="space-y-1.5 text-[14px] text-[#3f3f46]">
+              {typeof store.estimatedDeliveryMinutes === 'number' && (
+                <li>Tahmini teslimat: {store.estimatedDeliveryMinutes} dk</li>
+              )}
+              {typeof store.deliveryFee === 'number' && (
+                <li>
+                  Teslimat ücreti:{' '}
+                  {store.deliveryFee === 0
+                    ? 'Ücretsiz'
+                    : `${store.deliveryFee.toFixed(2)} ${currency}`}
+                </li>
+              )}
+              {typeof store.minimumOrderAmount === 'number' &&
+                store.minimumOrderAmount > 0 && (
+                  <li>
+                    Minimum sipariş: {store.minimumOrderAmount.toFixed(2)} {currency}
+                  </li>
+                )}
+              {typeof store.estimatedDeliveryMinutes !== 'number' &&
+                typeof store.deliveryFee !== 'number' &&
+                !(store.minimumOrderAmount && store.minimumOrderAmount > 0) && (
+                  <EmptyHint>Bu bilgi henüz eklenmemiş.</EmptyHint>
+                )}
+            </ul>
+          </DrawerSection>
+
+          <DrawerSection title="Çalışma saatleri">
+            {openingHours.length > 0 ? (
+              <ul className="space-y-1 text-[14px] text-[#3f3f46]">
+                {openingHours.map((hour, idx) => (
+                  <li key={idx} className="flex justify-between gap-4">
+                    <span>{DAY_LABELS[hour.dayOfWeek] ?? hour.dayOfWeek}</span>
+                    <span className="text-[#71717a]">
+                      {hour.isClosed
+                        ? 'Kapalı'
+                        : `${hour.openTime} – ${hour.closeTime}`}
+                    </span>
+                  </li>
+                ))}
+              </ul>
+            ) : (
+              <EmptyHint>Bu bilgi henüz eklenmemiş.</EmptyHint>
+            )}
+          </DrawerSection>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function DrawerSection({
+  title,
+  children,
+}: {
+  title: string;
+  children: ReactNode;
+}) {
+  return (
+    <div className="mt-5 border-t border-[#f0f0ef] pt-4">
+      <h4 className="mb-2 text-[12px] font-semibold uppercase tracking-wide text-[#a1a1aa]">
+        {title}
+      </h4>
+      {children}
+    </div>
+  );
+}
+
+function EmptyHint({ children }: { children: ReactNode }) {
+  return <p className="text-[13px] italic text-[#a1a1aa]">{children}</p>;
 }
 
 function ReviewsPanel({
