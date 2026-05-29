@@ -1,23 +1,29 @@
 'use client';
 
 import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useRouter } from 'next/navigation';
 import TenantDashboardShell from '@/components/tenant/TenantDashboardShell';
 import { usePlatformPack } from '@/lib/platform-pack-context';
 import { TenantCuisinesPanel } from '@/components/tenant/TenantCuisinesPanel';
 import { TenantReviewsPanel } from '@/components/tenant/TenantReviewsPanel';
-import { StudioStickyBar } from '@/components/tenant/studio/StudioStickyBar';
-import { CategoryRail } from '@/components/tenant/studio/CategoryRail';
-import { ProductCard } from '@/components/tenant/studio/ProductCard';
-import { StudioEmptyState } from '@/components/tenant/studio/StudioEmptyState';
 import {
-  QuickCreateProductSheet,
-  type QuickCreateProductInput,
-} from '@/components/tenant/studio/QuickCreateProductSheet';
+  TenantSlideOver,
+  TenantDataTable,
+  FormSection,
+  RowAction,
+  EditIcon,
+  TrashIcon,
+  SettingsIcon,
+  type DataTableColumn,
+} from '@/components/tenant/studio/StudioPrimitives';
+import { ConfirmDialog } from '@/components/tenant/staff/ConfirmDialog';
 import { Button } from '@lieferzonen/ui';
 import { Input } from '@lieferzonen/ui';
 import { Textarea } from '@lieferzonen/ui';
 import { Select } from '@lieferzonen/ui';
+import { Checkbox } from '@lieferzonen/ui';
 import { useTenantAuth } from '@/lib/auth/tenant-auth-context';
+import { useTenantStores } from '@/lib/tenant-store-context';
 import {
   createTenantMenuCategory,
   createTenantMenuItem,
@@ -318,11 +324,11 @@ function StatusPill({ active, children }: { active: boolean; children: React.Rea
     <span
       className={cn(
         'inline-flex items-center gap-1.5 rounded-full px-2.5 py-0.5 text-[11px] font-semibold',
-        active ? 'bg-emerald-50 text-emerald-700' : 'bg-zinc-100 text-zinc-500',
+        active ? 'bg-primary-50 text-primary-700' : 'bg-zinc-100 text-zinc-500',
       )}
     >
       <span
-        className={cn('h-1.5 w-1.5 rounded-full', active ? 'bg-emerald-500' : 'bg-zinc-400')}
+        className={cn('h-1.5 w-1.5 rounded-full', active ? 'bg-primary-500' : 'bg-zinc-400')}
       />
       {children}
     </span>
@@ -358,7 +364,7 @@ function SectionCard({
 
 function FieldLabel({ children }: { children: React.ReactNode }) {
   return (
-    <span className="text-[12px] font-semibold uppercase tracking-[0.06em] text-[#a8a29e]">
+    <span className="text-[12.5px] font-semibold leading-none tracking-[-0.005em] text-[#57534e]">
       {children}
     </span>
   );
@@ -374,10 +380,10 @@ function Field({
   children: React.ReactNode;
 }) {
   return (
-    <label className="grid gap-1.5">
+    <label className="grid gap-2">
       <FieldLabel>{label}</FieldLabel>
       {children}
-      {hint ? <span className="text-[11.5px] text-[#a8a29e]">{hint}</span> : null}
+      {hint ? <span className="text-[11.5px] leading-4 text-[#a8a29e]">{hint}</span> : null}
     </label>
   );
 }
@@ -389,10 +395,19 @@ export default function TenantStudio() {
   const [feedback, setFeedback] = useState<string | null>(null);
   const [tab, setTab] = useState<StudioTab>('shop');
 
+  // Active store selection is owned by the sidebar's TenantStoreProvider (single
+  // source of truth). This page reads/sets it through the context and keeps a
+  // local full-detail `stores` list only for the management table + edit form.
+  const {
+    activeStoreId,
+    setActiveStore,
+    refresh: refreshStoreContext,
+  } = useTenantStores();
+  const selectedStoreId = activeStoreId ?? '';
   const [stores, setStores] = useState<Store[]>([]);
   const [categories, setCategories] = useState<Category[]>([]);
   const [items, setItems] = useState<MenuItem[]>([]);
-  const [selectedStoreId, setSelectedStoreId] = useState('');
+  const [isCreatingStore, setIsCreatingStore] = useState(false);
   const [selectedItemId, setSelectedItemId] = useState('');
   const [itemDetail, setItemDetail] = useState<ItemDetail | null>(null);
   const [currencies, setCurrencies] = useState<SystemCurrency[]>([]);
@@ -409,9 +424,12 @@ export default function TenantStudio() {
   const [groupForm, setGroupForm] = useState(emptyGroupForm());
   const [optionForm, setOptionForm] = useState(emptyOptionForm());
 
+  // When creating a brand-new store the form must not bind to any existing
+  // store, otherwise the save handler would update instead of create.
   const selectedStore = useMemo(
-    () => stores.find((entry) => entry.id === selectedStoreId) ?? null,
-    [stores, selectedStoreId],
+    () =>
+      isCreatingStore ? null : stores.find((entry) => entry.id === selectedStoreId) ?? null,
+    [stores, selectedStoreId, isCreatingStore],
   );
 
   const userName = session
@@ -422,9 +440,9 @@ export default function TenantStudio() {
   const loadStores = async (activeSession: StoredTenantSession) => {
     const data = (await listTenantStores(activeSession)) as Store[];
     setStores(data);
-    setSelectedStoreId((current) =>
-      data.some((store) => store.id === current) ? current : data[0]?.id ?? '',
-    );
+    // Active-store selection (and default fallback) lives in the shared store
+    // context; refresh it so the sidebar switcher and this page stay in sync.
+    await refreshStoreContext();
   };
 
   const loadPreview = useCallback(async (storeId: string) => {
@@ -463,15 +481,20 @@ export default function TenantStudio() {
     [loadPreview],
   );
 
-  const run = async (action: () => Promise<void>, successMessage?: string) => {
+  const run = async (
+    action: () => Promise<void>,
+    successMessage?: string,
+  ): Promise<boolean> => {
     try {
       setBusy(true);
       setError(null);
       setFeedback(null);
       await action();
       if (successMessage) setFeedback(successMessage);
+      return true;
     } catch (actionError) {
       setError(actionError instanceof Error ? actionError.message : 'İşlem başarısız.');
+      return false;
     } finally {
       setBusy(false);
     }
@@ -517,7 +540,6 @@ export default function TenantStudio() {
   useEffect(() => {
     if (!selectedStore) {
       setStoreForm(emptyStoreForm());
-      setStoreEditing(false);
       return;
     }
     setStoreForm({
@@ -552,7 +574,6 @@ export default function TenantStudio() {
           }))
         : buildDefaultZone(),
     });
-    setStoreEditing(false);
   }, [selectedStore]);
 
   useEffect(() => {
@@ -585,20 +606,8 @@ export default function TenantStudio() {
       userName={userName}
     >
       <div className="grid gap-4">
-        <StoreHeader
-          stores={stores}
-          selectedId={selectedStoreId}
-          onSelect={(id) => setSelectedStoreId(id)}
-          onNew={() => {
-            setSelectedStoreId('');
-            setStoreForm(emptyStoreForm());
-            setStoreEditing(true);
-            setTab('shop');
-          }}
-        />
-
         {feedback ? (
-          <div className="rounded-[14px] border border-emerald-200 bg-emerald-50 px-4 py-3 text-[13px] text-emerald-700">
+          <div className="rounded-[14px] border border-primary-200 bg-primary-50 px-4 py-3 text-[13px] text-primary-700">
             {feedback}
           </div>
         ) : null}
@@ -608,40 +617,78 @@ export default function TenantStudio() {
           </div>
         ) : null}
 
-        <div className="flex flex-wrap gap-1.5 rounded-[16px] border border-[#ece2d2] bg-white p-1.5">
-          {TAB_ITEMS.map((entry) => (
-            <button
-              key={entry.id}
-              type="button"
-              onClick={() => setTab(entry.id)}
-              className={cn(
-                'flex flex-1 min-w-[180px] flex-col gap-0.5 rounded-[12px] px-3.5 py-2 text-left transition',
-                tab === entry.id
-                  ? 'bg-[#f97316] text-white shadow-[0_8px_22px_rgba(249,115,22,0.25)]'
-                  : 'text-[#44403c] hover:bg-[#f3f6fb]',
-              )}
-            >
-              <span className="text-[13px] font-bold">{entry.label}</span>
-              <span
+        <div
+          role="tablist"
+          aria-label="Restoran ve menü sekmeleri"
+          className="flex flex-wrap gap-1 rounded-[16px] border border-[#ece2d2] bg-[#fbfaf7] p-1.5"
+        >
+          {TAB_ITEMS.map((entry) => {
+            const active = tab === entry.id;
+            return (
+              <button
+                key={entry.id}
+                type="button"
+                role="tab"
+                aria-selected={active}
+                onClick={() => setTab(entry.id)}
                 className={cn(
-                  'text-[11px]',
-                  tab === entry.id ? 'text-white/85' : 'text-[#a8a29e]',
+                  'group flex flex-1 min-w-[160px] flex-col gap-0.5 rounded-[12px] px-3.5 py-2 text-left transition-all duration-200 ease-out focus:outline-none focus-visible:ring-2 focus-visible:ring-[#24A94A]/40',
+                  active
+                    ? 'bg-white text-[#1c1917] shadow-[0_6px_18px_rgba(28,25,23,0.08)] ring-1 ring-[#ece2d2]'
+                    : 'text-[#57534e] hover:bg-white/70',
                 )}
               >
-                {entry.hint}
-              </span>
-            </button>
-          ))}
+                <span className="flex items-center gap-2 text-[13px] font-bold">
+                  <span
+                    className={cn(
+                      'h-1.5 w-1.5 rounded-full transition-colors duration-200',
+                      active ? 'bg-[#24A94A]' : 'bg-transparent group-hover:bg-[#d6c9ad]',
+                    )}
+                  />
+                  {entry.label}
+                </span>
+                <span
+                  className={cn(
+                    'pl-3.5 text-[11px] transition-colors duration-200',
+                    active ? 'text-[#78716c]' : 'text-[#a8a29e]',
+                  )}
+                >
+                  {entry.hint}
+                </span>
+              </button>
+            );
+          })}
         </div>
 
         {tab === 'shop' ? (
           <ShopTab
+            stores={stores}
             selectedStore={selectedStore}
             storeForm={storeForm}
             setStoreForm={setStoreForm}
             storeEditing={storeEditing}
-            setStoreEditing={setStoreEditing}
             busy={busy}
+            onAddStore={() => {
+              setIsCreatingStore(true);
+              setStoreForm(emptyStoreForm());
+              setStoreEditing(true);
+            }}
+            onEditStore={(id) => {
+              setIsCreatingStore(false);
+              setActiveStore(id);
+              setStoreEditing(true);
+            }}
+            onCloseDrawer={() => {
+              setStoreEditing(false);
+              setIsCreatingStore(false);
+            }}
+            onDisableStore={(id) =>
+              void run(async () => {
+                if (!session) return;
+                await updateTenantStore(session, id, { status: 'inactive' });
+                await loadStores(session);
+              }, 'Restoran pasifleştirildi.')
+            }
             onSaveStore={() =>
               void run(async () => {
                 if (!session) return;
@@ -686,16 +733,8 @@ export default function TenantStudio() {
                 }
                 await loadStores(session);
                 setStoreEditing(false);
+                setIsCreatingStore(false);
               }, selectedStore ? 'Restoran güncellendi.' : 'Restoran oluşturuldu.')
-            }
-            onArchiveStore={() =>
-              void run(async () => {
-                if (!session || !selectedStore) return;
-                await updateTenantStore(session, selectedStore.id, {
-                  status: 'inactive',
-                });
-                await loadStores(session);
-              }, 'Restoran arşivlendi.')
             }
           />
         ) : null}
@@ -711,10 +750,9 @@ export default function TenantStudio() {
             setCategoryForm={setCategoryForm}
             itemForm={itemForm}
             setItemForm={setItemForm}
-            selectedItemId={selectedItemId}
             onSelectItem={(id) => setSelectedItemId(id)}
             onSaveCategory={() =>
-              void run(async () => {
+              run(async () => {
                 if (!session || !selectedStoreId) return;
                 const payload = {
                   name: categoryForm.name,
@@ -732,21 +770,17 @@ export default function TenantStudio() {
                 setCategoryForm(emptyCategoryForm());
               }, categoryForm.id ? 'Kategori güncellendi.' : 'Kategori oluşturuldu.')
             }
-            onArchiveCategory={() =>
-              void run(async () => {
-                if (!session || !selectedStoreId || !categoryForm.id) return;
-                await updateTenantMenuCategory(
-                  session,
-                  selectedStoreId,
-                  categoryForm.id,
-                  { isActive: false },
-                );
+            onArchiveCategory={(id) =>
+              run(async () => {
+                if (!session || !selectedStoreId) return;
+                await updateTenantMenuCategory(session, selectedStoreId, id, {
+                  isActive: false,
+                });
                 await loadWorkspace(session, selectedStoreId);
-                setCategoryForm(emptyCategoryForm());
-              }, 'Kategori arşivlendi.')
+              }, 'Kategori pasifleştirildi.')
             }
             onSaveItem={() =>
-              void run(async () => {
+              run(async () => {
                 if (!session || !selectedStoreId) return;
                 const payload = {
                   categoryId: itemForm.categoryId || null,
@@ -765,38 +799,18 @@ export default function TenantStudio() {
                   await createTenantMenuItem(session, selectedStoreId, payload);
                 }
                 await loadWorkspace(session, selectedStoreId);
-                if (!itemForm.id) setItemForm(emptyItemForm());
+                setItemForm(emptyItemForm());
               }, itemForm.id ? 'Ürün güncellendi.' : 'Ürün eklendi.')
             }
-            onArchiveItem={() =>
-              void run(async () => {
-                if (!session || !selectedStoreId || !itemForm.id) return;
-                await updateTenantMenuItem(session, selectedStoreId, itemForm.id, {
+            onArchiveItem={(id) =>
+              run(async () => {
+                if (!session || !selectedStoreId) return;
+                await updateTenantMenuItem(session, selectedStoreId, id, {
                   isActive: false,
                 });
                 await loadWorkspace(session, selectedStoreId);
-                setItemForm(emptyItemForm());
-              }, 'Ürün arşivlendi.')
+              }, 'Ürün pasifleştirildi.')
             }
-            onNewItem={() => setItemForm(emptyItemForm())}
-            onQuickCreateProduct={(input) =>
-              void run(async () => {
-                if (!session || !selectedStoreId) return;
-                const payload = {
-                  categoryId: input.categoryId || null,
-                  name: input.name,
-                  description: '',
-                  basePrice: Number(input.basePrice || '0'),
-                  currencyId: input.currencyId,
-                  sortOrder: 0,
-                  availabilityType: 'always',
-                  isActive: true,
-                };
-                await createTenantMenuItem(session, selectedStoreId, payload);
-                await loadWorkspace(session, selectedStoreId);
-              }, 'Ürün eklendi.')
-            }
-            storeIsActive={selectedStore ? selectedStore.status !== 'inactive' : true}
           />
         ) : null}
 
@@ -812,7 +826,7 @@ export default function TenantStudio() {
             optionForm={optionForm}
             setOptionForm={setOptionForm}
             onSaveGroup={() =>
-              void run(async () => {
+              run(async () => {
                 if (!session || !selectedStoreId || !selectedItemId) return;
                 const payload = {
                   name: groupForm.name,
@@ -848,14 +862,14 @@ export default function TenantStudio() {
                 setGroupForm(emptyGroupForm());
               }, groupForm.id ? 'Seçenek grubu güncellendi.' : 'Seçenek grubu oluşturuldu.')
             }
-            onArchiveGroup={() =>
-              void run(async () => {
-                if (!session || !selectedStoreId || !selectedItemId || !groupForm.id) return;
+            onArchiveGroup={(groupId) =>
+              run(async () => {
+                if (!session || !selectedStoreId || !selectedItemId) return;
                 await updateTenantOptionGroup(
                   session,
                   selectedStoreId,
                   selectedItemId,
-                  groupForm.id,
+                  groupId,
                   { isActive: false },
                 );
                 const refreshed = await getTenantMenuItem(
@@ -864,11 +878,10 @@ export default function TenantStudio() {
                   selectedItemId,
                 );
                 setItemDetail(refreshed.item as ItemDetail);
-                setGroupForm(emptyGroupForm());
-              }, 'Seçenek grubu arşivlendi.')
+              }, 'Seçenek grubu pasifleştirildi.')
             }
             onSaveOption={(groupId) =>
-              void run(async () => {
+              run(async () => {
                 if (!session || !selectedStoreId || !selectedItemId) return;
                 const payload = {
                   name: optionForm.name,
@@ -905,7 +918,7 @@ export default function TenantStudio() {
               }, optionForm.id ? 'Malzeme güncellendi.' : 'Malzeme eklendi.')
             }
             onArchiveOption={(groupId, optionId) =>
-              void run(async () => {
+              run(async () => {
                 if (!session || !selectedStoreId || !selectedItemId) return;
                 await updateTenantOptionItem(
                   session,
@@ -946,86 +959,50 @@ export default function TenantStudio() {
   );
 }
 
-// ─── Store header ──────────────────────────────────────────────────────
-
-function StoreHeader({
-  stores,
-  selectedId,
-  onSelect,
-  onNew,
-}: {
-  stores: Store[];
-  selectedId: string;
-  onSelect: (id: string) => void;
-  onNew: () => void;
-}) {
-  return (
-    <div className="rounded-[20px] border border-[#ece2d2] bg-white p-4 shadow-[0_8px_24px_rgba(28,25,23,0.04)] lg:p-5">
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <div className="min-w-0">
-          <div className="text-[11px] font-bold uppercase tracking-[0.18em] text-[#a8a29e]">
-            Aktif Restoran
-          </div>
-          <div className="mt-0.5 flex flex-wrap items-center gap-2">
-            {stores.length > 0 ? (
-              <Select
-                className="!w-auto min-w-[220px] !py-2 !text-[13.5px] !font-semibold"
-                value={selectedId}
-                onChange={(event) => onSelect(event.target.value)}
-              >
-                <option value="">Restoran seçin</option>
-                {stores.map((store) => (
-                  <option key={store.id} value={store.id}>
-                    {store.name}
-                  </option>
-                ))}
-              </Select>
-            ) : (
-              <span className="text-[14px] font-semibold text-[#1c1917]">
-                Henüz restoran eklenmedi
-              </span>
-            )}
-            <span className="text-[12.5px] text-[#78716c]">
-              {stores.length > 0
-                ? `${stores.length} restoran`
-                : 'Çalışmaya başlamak için bir restoran oluşturun.'}
-            </span>
-          </div>
-        </div>
-        <Button onClick={onNew} variant="secondary">
-          + Yeni restoran
-        </Button>
-      </div>
-    </div>
-  );
-}
-
 // ─── Shop tab ───────────────────────────────────────────────────────────────
 
 function ShopTab({
+  stores,
   selectedStore,
   storeForm,
   setStoreForm,
   storeEditing,
-  setStoreEditing,
   busy,
+  onAddStore,
+  onEditStore,
+  onCloseDrawer,
+  onDisableStore,
   onSaveStore,
-  onArchiveStore,
 }: {
+  stores: Store[];
   selectedStore: Store | null;
   storeForm: StoreFormState;
   setStoreForm: (updater: (current: StoreFormState) => StoreFormState) => void;
   storeEditing: boolean;
-  setStoreEditing: (value: boolean) => void;
   busy: boolean;
+  onAddStore: () => void;
+  onEditStore: (id: string) => void;
+  onCloseDrawer: () => void;
+  onDisableStore: (id: string) => void;
   onSaveStore: () => void;
-  onArchiveStore: () => void;
 }) {
+  const router = useRouter();
   const isCreating = !selectedStore;
-  const isEditing = storeEditing || isCreating;
   const platformPack = usePlatformPack();
   const currency = platformPack?.currency || '';
   const platformCountry = platformPack?.country || '';
+  const [disableTarget, setDisableTarget] = useState<Store | null>(null);
+  // Step-accordion inside the drawer: one section open at a time.
+  const [section, setSection] = useState<'info' | 'hours' | 'zones'>('info');
+
+  // Reset to the first step every time the drawer (re)opens.
+  useEffect(() => {
+    if (storeEditing) setSection('info');
+  }, [storeEditing]);
+
+  const infoComplete = storeForm.name.trim().length > 0;
+  const zoneCount = storeForm.deliveryZones.length;
+  const openDays = storeForm.openingHours.filter((h) => !h.isClosed).length;
 
   // Single-country platform: the store country is pinned to the active
   // CountryPack. Keep the form in sync so the locked field always submits the
@@ -1058,351 +1035,412 @@ function ShopTab({
       ),
     }));
 
-  // ── Read-only summary ────────────────────────────────────────────────
-  if (!isEditing && selectedStore) {
-    const addressLine = [
-      selectedStore.addressLine1,
-      selectedStore.postalCode,
-      selectedStore.city,
-      selectedStore.country,
-    ]
-      .filter((part) => part && String(part).trim())
-      .join(', ');
+  const columns: DataTableColumn<Store>[] = [
+    {
+      key: 'name',
+      header: 'Restoran',
+      render: (store) => (
+        <div className="font-semibold text-[#1c1917]">{store.name}</div>
+      ),
+    },
+    {
+      key: 'location',
+      header: 'Şehir / posta',
+      render: (store) =>
+        [store.city, store.postalCode].filter(Boolean).join(' · ') || '—',
+    },
+    {
+      key: 'status',
+      header: 'Durum',
+      render: (store) => (
+        <StatusPill active={store.status !== 'inactive'}>
+          {store.status !== 'inactive' ? 'Aktif' : 'Pasif'}
+        </StatusPill>
+      ),
+    },
+    {
+      key: 'currency',
+      header: 'Para birimi',
+      render: () => currency || '—',
+    },
+    {
+      key: 'category',
+      header: 'Kategori',
+      render: (store) => store.category,
+      hideOnMobile: true,
+    },
+  ];
 
-    return (
-      <SectionCard
-        title="Restoran bilgileri"
-        description="Restoranınızın profil, adres ve teslimat bilgileri."
-        toolbar={
-          <Button variant="secondary" onClick={() => setStoreEditing(true)}>
-            Düzenle
-          </Button>
-        }
-      >
-        <div className="grid gap-3 text-[13.5px]">
-          <div className="flex flex-wrap items-center gap-2">
-            <span className="text-[16px] font-bold text-[#1c1917]">{selectedStore.name}</span>
-            <StatusPill active={selectedStore.status !== 'inactive'}>
-              {selectedStore.status !== 'inactive' ? 'Aktif' : 'Pasif'}
-            </StatusPill>
-          </div>
-          <div className="grid grid-cols-2 gap-3 text-[12.5px] text-[#44403c]">
-            <div>
-              <FieldLabel>Slug</FieldLabel>
-              <div className="mt-1 font-medium text-[#1c1917]">{selectedStore.slug}</div>
-            </div>
-            <div>
-              <FieldLabel>Kategori</FieldLabel>
-              <div className="mt-1 font-medium text-[#1c1917]">{selectedStore.category}</div>
-            </div>
-            <div>
-              <FieldLabel>Telefon</FieldLabel>
-              <div className="mt-1 font-medium text-[#1c1917]">
-                {selectedStore.phoneNumber || '—'}
-              </div>
-            </div>
-            <div>
-              <FieldLabel>Adres</FieldLabel>
-              <div className="mt-1 font-medium text-[#1c1917]">{addressLine || '—'}</div>
-            </div>
-          </div>
-          {selectedStore.description ? (
-            <div>
-              <FieldLabel>Açıklama</FieldLabel>
-              <p className="mt-1 text-[13px] leading-6 text-[#44403c]">
-                {selectedStore.description}
-              </p>
-            </div>
-          ) : null}
-          <div className="flex gap-2">
-            <Button variant="secondary" onClick={() => setStoreEditing(true)}>
-              Düzenle
-            </Button>
-            <Button variant="ghost" onClick={onArchiveStore} disabled={busy}>
-              Arşivle
-            </Button>
-          </div>
-        </div>
-      </SectionCard>
-    );
-  }
-
-  // ── Create / edit form ───────────────────────────────────────────────
   return (
     <div className="grid gap-4">
       <SectionCard
-        title={isCreating ? 'Yeni restoran' : 'Restoran profili'}
-        description={
-          isCreating
-            ? 'İlk restoranınızı oluşturun. Restoran; adres, çalışma saatleri ve teslimat ayarlarını tek başına taşır.'
-            : 'Restoranınızın kimlik ve konum bilgilerini güncelleyin.'
+        title="Restoranlar"
+        description="Restoranlarınızı yönetin. Eklemek veya düzenlemek için sağdan açılan formu kullanın."
+        toolbar={
+          stores.length > 0 ? (
+            <Button onClick={onAddStore} shimmer={true}>
+              + Restoran Ekle
+            </Button>
+          ) : null
         }
       >
-        <div className="grid gap-3 sm:grid-cols-2">
-          <Field label="Restoran adı">
-            <Input
-              value={storeForm.name}
-              placeholder="Lieferzonen Zürich"
-              onChange={(event) =>
-                setStoreForm((current) => ({ ...current, name: event.target.value }))
-              }
-            />
-          </Field>
-          <Field label="Slug" hint="URL'de kullanılır">
-            <Input
-              value={storeForm.slug}
-              placeholder="lieferzonen-zurich"
-              onChange={(event) =>
-                setStoreForm((current) => ({ ...current, slug: event.target.value }))
-              }
-            />
-          </Field>
-          <Field label="Kategori">
-            <Select
-              value={storeForm.category}
-              onChange={(event) =>
-                setStoreForm((current) => ({ ...current, category: event.target.value }))
-              }
-            >
-              {STORE_CATEGORIES.map((category) => (
-                <option key={category} value={category}>
-                  {category}
-                </option>
-              ))}
-            </Select>
-          </Field>
-          <Field label="Görsel URL">
-            <Input
-              value={storeForm.imageUrl}
-              placeholder="https://..."
-              onChange={(event) =>
-                setStoreForm((current) => ({ ...current, imageUrl: event.target.value }))
-              }
-            />
-          </Field>
-        </div>
-        <Field label="Açıklama">
-          <Textarea
-            rows={3}
-            value={storeForm.description}
-            placeholder="Kısa restoran açıklaması..."
-            onChange={(event) =>
-              setStoreForm((current) => ({ ...current, description: event.target.value }))
-            }
-          />
-        </Field>
-
-        <div className="grid gap-3 sm:grid-cols-2">
-          <Field label="Telefon">
-            <Input
-              value={storeForm.phoneNumber}
-              placeholder="+41 ..."
-              onChange={(event) =>
-                setStoreForm((current) => ({ ...current, phoneNumber: event.target.value }))
-              }
-            />
-          </Field>
-          <Field label="Posta kodu">
-            <Input
-              value={storeForm.postalCode}
-              placeholder="8001"
-              onChange={(event) =>
-                setStoreForm((current) => ({ ...current, postalCode: event.target.value }))
-              }
-            />
-          </Field>
-          <Field label="Adres satırı 1">
-            <Input
-              value={storeForm.addressLine1}
-              placeholder="Bahnhofstrasse 1"
-              onChange={(event) =>
-                setStoreForm((current) => ({ ...current, addressLine1: event.target.value }))
-              }
-            />
-          </Field>
-          <Field label="Adres satırı 2">
-            <Input
-              value={storeForm.addressLine2}
-              onChange={(event) =>
-                setStoreForm((current) => ({ ...current, addressLine2: event.target.value }))
-              }
-            />
-          </Field>
-          <Field label="Şehir">
-            <Input
-              value={storeForm.city}
-              placeholder="Zürich"
-              onChange={(event) =>
-                setStoreForm((current) => ({ ...current, city: event.target.value }))
-              }
-            />
-          </Field>
-          <Field label="Ülke">
-            <Input
-              value={platformCountry || storeForm.country}
-              readOnly
-              disabled
-              title="Ülke, platformun aktif ülkesine sabittir."
-            />
-          </Field>
-        </div>
-
-        <div className="flex flex-wrap gap-4 rounded-[12px] bg-[#f7fafd] p-3 text-[13px] text-[#44403c]">
-          <label className="flex items-center gap-2">
-            <input
-              type="checkbox"
-              checked={storeForm.isActive}
-              onChange={(event) =>
-                setStoreForm((current) => ({ ...current, isActive: event.target.checked }))
-              }
-            />
-            Vitrinde görünür
-          </label>
-        </div>
+        <TenantDataTable
+          columns={columns}
+          rows={stores}
+          getRowId={(store) => store.id}
+          empty={
+            <div className="rounded-[14px] border border-dashed border-[#ece2d2] bg-[#f7fafd] px-4 py-8 text-center">
+              <p className="text-[14px] font-semibold text-[#1c1917]">Henüz restoran yok.</p>
+              <p className="mt-1 text-[13px] text-[#78716c]">İlk restoranını ekle.</p>
+              <div className="mt-3 flex justify-center">
+                <Button onClick={onAddStore}>+ Restoran Ekle</Button>
+              </div>
+            </div>
+          }
+          rowActions={(store) => (
+            <>
+              <RowAction label="Düzenle" onClick={() => onEditStore(store.id)}>
+                <EditIcon />
+              </RowAction>
+              <RowAction
+                label="Ayarlar"
+                onClick={() => router.push('/dashboard/settings')}
+              >
+                <SettingsIcon />
+              </RowAction>
+              <RowAction
+                label="Pasifleştir"
+                tone="danger"
+                disabled={store.status === 'inactive'}
+                onClick={() => setDisableTarget(store)}
+              >
+                <TrashIcon />
+              </RowAction>
+            </>
+          )}
+        />
       </SectionCard>
 
-      <SectionCard
-        title="Çalışma saatleri ve teslimat"
-        description="Restoranın açık olduğu saatler ve hizmet verdiği teslimat bölgeleri."
+      <ConfirmDialog
+        open={Boolean(disableTarget)}
+        title="Restoranı pasifleştir"
+        body={
+          <span>
+            <strong>{disableTarget?.name}</strong> vitrinde görünmez olacak. Bu işlem
+            menü ve ürün verilerini silmez; istediğinde tekrar aktifleştirebilirsin.
+          </span>
+        }
+        confirmLabel="Pasifleştir"
+        busy={busy}
+        onConfirm={() => {
+          if (disableTarget) onDisableStore(disableTarget.id);
+          setDisableTarget(null);
+        }}
+        onClose={() => setDisableTarget(null)}
+      />
+
+      <TenantSlideOver
+        open={storeEditing}
+        busy={busy}
+        title={isCreating ? 'Restoran Ekle' : 'Restoranı düzenle'}
+        description={
+          isCreating
+            ? 'Yeni restoran; adres, çalışma saatleri ve teslimat ayarlarını tek başına taşır.'
+            : 'Restoranın kimlik ve konum bilgilerini güncelle.'
+        }
+        onClose={onCloseDrawer}
+        footer={
+          <>
+            <Button variant="ghost" onClick={onCloseDrawer} disabled={busy}>
+              Vazgeç
+            </Button>
+            <Button onClick={onSaveStore} shimmer={true} disabled={busy || !storeForm.name.trim()}>
+              {isCreating ? 'Restoranı oluştur' : 'Değişiklikleri kaydet'}
+            </Button>
+          </>
+        }
       >
-        <div className="grid gap-2">
-          <FieldLabel>Çalışma saatleri</FieldLabel>
-          <div className="grid gap-1.5">
-            {storeForm.openingHours.map((hour, index) => (
-              <div
-                key={hour.dayOfWeek}
-                className="grid items-center gap-2 rounded-[12px] bg-white px-3 py-2 md:grid-cols-[110px_1fr_1fr_auto]"
-              >
-                <span className="text-[12.5px] font-semibold text-[#1c1917]">
-                  {WEEKDAY_LABEL[hour.dayOfWeek]}
-                </span>
+      <div className="grid gap-3">
+        <FormSection
+          title="Restoran bilgileri"
+          index={1}
+          open={section === 'info'}
+          done={infoComplete && section !== 'info'}
+          summary={
+            infoComplete
+              ? [storeForm.name, storeForm.city].filter(Boolean).join(' · ')
+              : undefined
+          }
+          onToggle={() => setSection('info')}
+        >
+          <div className="grid gap-4">
+            <div className="grid gap-3 sm:grid-cols-2">
+              <Field label="Restoran adı">
                 <Input
-                  value={hour.openTime}
-                  placeholder="09:00"
-                  disabled={hour.isClosed}
-                  onChange={(event) => updateHour(index, { openTime: event.target.value })}
+                  value={storeForm.name}
+                  placeholder="Lieferzonen Zürich"
+                  onChange={(event) =>
+                    setStoreForm((current) => ({ ...current, name: event.target.value }))
+                  }
                 />
+              </Field>
+              <Field label="Slug" hint="URL'de kullanılır">
                 <Input
-                  value={hour.closeTime}
-                  placeholder="22:00"
-                  disabled={hour.isClosed}
-                  onChange={(event) => updateHour(index, { closeTime: event.target.value })}
+                  value={storeForm.slug}
+                  placeholder="lieferzonen-zurich"
+                  onChange={(event) =>
+                    setStoreForm((current) => ({ ...current, slug: event.target.value }))
+                  }
                 />
-                <label className="flex items-center gap-2 text-[12px] text-[#44403c]">
-                  <input
-                    type="checkbox"
+              </Field>
+              <Field label="Kategori">
+                <Select
+                  value={storeForm.category}
+                  onChange={(event) =>
+                    setStoreForm((current) => ({ ...current, category: event.target.value }))
+                  }
+                >
+                  {STORE_CATEGORIES.map((category) => (
+                    <option key={category} value={category}>
+                      {category}
+                    </option>
+                  ))}
+                </Select>
+              </Field>
+              <Field label="Görsel URL">
+                <Input
+                  value={storeForm.imageUrl}
+                  placeholder="https://..."
+                  onChange={(event) =>
+                    setStoreForm((current) => ({ ...current, imageUrl: event.target.value }))
+                  }
+                />
+              </Field>
+            </div>
+            <Field label="Açıklama">
+              <Textarea
+                rows={3}
+                value={storeForm.description}
+                placeholder="Kısa restoran açıklaması..."
+                onChange={(event) =>
+                  setStoreForm((current) => ({ ...current, description: event.target.value }))
+                }
+              />
+            </Field>
+            <div className="grid gap-3 sm:grid-cols-2">
+              <Field label="Telefon">
+                <Input
+                  value={storeForm.phoneNumber}
+                  placeholder="+41 ..."
+                  onChange={(event) =>
+                    setStoreForm((current) => ({ ...current, phoneNumber: event.target.value }))
+                  }
+                />
+              </Field>
+              <Field label="Posta kodu">
+                <Input
+                  value={storeForm.postalCode}
+                  placeholder="8001"
+                  onChange={(event) =>
+                    setStoreForm((current) => ({ ...current, postalCode: event.target.value }))
+                  }
+                />
+              </Field>
+              <Field label="Adres satırı 1">
+                <Input
+                  value={storeForm.addressLine1}
+                  placeholder="Bahnhofstrasse 1"
+                  onChange={(event) =>
+                    setStoreForm((current) => ({ ...current, addressLine1: event.target.value }))
+                  }
+                />
+              </Field>
+              <Field label="Adres satırı 2">
+                <Input
+                  value={storeForm.addressLine2}
+                  onChange={(event) =>
+                    setStoreForm((current) => ({ ...current, addressLine2: event.target.value }))
+                  }
+                />
+              </Field>
+              <Field label="Şehir">
+                <Input
+                  value={storeForm.city}
+                  placeholder="Zürich"
+                  onChange={(event) =>
+                    setStoreForm((current) => ({ ...current, city: event.target.value }))
+                  }
+                />
+              </Field>
+              <Field label="Ülke">
+                <Input
+                  value={platformCountry || storeForm.country}
+                  readOnly
+                  disabled
+                  title="Ülke, platformun aktif ülkesine sabittir."
+                />
+              </Field>
+            </div>
+            <div className="rounded-[12px] bg-[#f7fafd] p-3">
+              <Checkbox
+                label="Vitrinde görünür"
+                checked={storeForm.isActive}
+                onChange={(event) =>
+                  setStoreForm((current) => ({ ...current, isActive: event.target.checked }))
+                }
+              />
+            </div>
+            <div className="flex justify-end">
+              <Button onClick={() => setSection('hours')} disabled={!infoComplete}>
+                Devam: Çalışma saatleri
+              </Button>
+            </div>
+          </div>
+        </FormSection>
+
+        <FormSection
+          title="Çalışma saatleri"
+          index={2}
+          open={section === 'hours'}
+          done={section === 'zones'}
+          summary={`${openDays} gün açık`}
+          onToggle={() => setSection('hours')}
+        >
+          <div className="grid gap-4">
+            <div className="grid gap-1.5">
+              {storeForm.openingHours.map((hour, index) => (
+                <div
+                  key={hour.dayOfWeek}
+                  className="grid items-center gap-2 rounded-[12px] bg-white px-3 py-2 md:grid-cols-[110px_1fr_1fr_auto]"
+                >
+                  <span className="text-[12.5px] font-semibold text-[#1c1917]">
+                    {WEEKDAY_LABEL[hour.dayOfWeek]}
+                  </span>
+                  <Input
+                    value={hour.openTime}
+                    placeholder="09:00"
+                    disabled={hour.isClosed}
+                    onChange={(event) => updateHour(index, { openTime: event.target.value })}
+                  />
+                  <Input
+                    value={hour.closeTime}
+                    placeholder="22:00"
+                    disabled={hour.isClosed}
+                    onChange={(event) => updateHour(index, { closeTime: event.target.value })}
+                  />
+                  <Checkbox
+                    label="Kapalı"
                     checked={Boolean(hour.isClosed)}
                     onChange={(event) => updateHour(index, { isClosed: event.target.checked })}
                   />
-                  Kapalı
-                </label>
+                </div>
+              ))}
+            </div>
+            <div className="flex justify-end">
+              <Button onClick={() => setSection('zones')}>Devam: Teslimat bölgeleri</Button>
+            </div>
+          </div>
+        </FormSection>
+
+        <FormSection
+          title="Teslimat bölgeleri"
+          index={3}
+          open={section === 'zones'}
+          summary={`${zoneCount} bölge`}
+          onToggle={() => setSection('zones')}
+        >
+          <div className="grid gap-2">
+            <div className="flex items-center justify-end">
+              <Button
+                variant="ghost"
+                shimmer={true}
+                onClick={() =>
+                  setStoreForm((current) => ({
+                    ...current,
+                    deliveryZones: [
+                      ...current.deliveryZones,
+                      {
+                        name: `Bölge ${current.deliveryZones.length + 1}`,
+                        postalCodes: current.postalCode ? [current.postalCode] : [],
+                        radiusKm: 5,
+                        minimumOrderAmount: 0,
+                        deliveryFee: 0,
+                        estimatedDeliveryMinutes: 30,
+                      },
+                    ],
+                  }))
+                }
+              >
+                + Bölge ekle
+              </Button>
+            </div>
+            {storeForm.deliveryZones.map((zone, index) => (
+              <div key={`${zone.name}-${index}`} className="grid gap-2 rounded-[12px] bg-white p-3">
+                <div className="grid gap-2 md:grid-cols-2">
+                  <Field label="Bölge adı">
+                    <Input
+                      value={zone.name}
+                      onChange={(event) => updateZone(index, { name: event.target.value })}
+                    />
+                  </Field>
+                  <Field label="Posta kodları (virgülle)">
+                    <Input
+                      value={zone.postalCodes.join(', ')}
+                      onChange={(event) =>
+                        updateZone(index, {
+                          postalCodes: event.target.value
+                            .split(',')
+                            .map((value) => value.trim())
+                            .filter(Boolean),
+                        })
+                      }
+                    />
+                  </Field>
+                  <Field label="Yarıçap (km)">
+                    <Input
+                      value={zone.radiusKm?.toString() ?? ''}
+                      inputMode="decimal"
+                      onChange={(event) =>
+                        updateZone(index, { radiusKm: asNumber(event.target.value) })
+                      }
+                    />
+                  </Field>
+                  <Field label={`Min sipariş${currency ? ` (${currency})` : ''}`}>
+                    <Input
+                      value={zone.minimumOrderAmount?.toString() ?? ''}
+                      inputMode="decimal"
+                      onChange={(event) =>
+                        updateZone(index, { minimumOrderAmount: asNumber(event.target.value) })
+                      }
+                    />
+                  </Field>
+                  <Field label={`Teslimat ücreti${currency ? ` (${currency})` : ''}`}>
+                    <Input
+                      value={zone.deliveryFee?.toString() ?? ''}
+                      inputMode="decimal"
+                      onChange={(event) =>
+                        updateZone(index, { deliveryFee: asNumber(event.target.value) })
+                      }
+                    />
+                  </Field>
+                  <Field label="Tahmini süre (dk)">
+                    <Input
+                      value={zone.estimatedDeliveryMinutes?.toString() ?? ''}
+                      inputMode="numeric"
+                      onChange={(event) =>
+                        updateZone(index, {
+                          estimatedDeliveryMinutes: asNumber(event.target.value),
+                        })
+                      }
+                    />
+                  </Field>
+                </div>
               </div>
             ))}
           </div>
-        </div>
-
-        <div className="grid gap-2">
-          <div className="flex items-center justify-between">
-            <FieldLabel>Teslimat bölgeleri</FieldLabel>
-            <Button
-              variant="ghost"
-              shimmer={true}
-              onClick={() =>
-                setStoreForm((current) => ({
-                  ...current,
-                  deliveryZones: [
-                    ...current.deliveryZones,
-                    {
-                      name: `Bölge ${current.deliveryZones.length + 1}`,
-                      postalCodes: current.postalCode ? [current.postalCode] : [],
-                      radiusKm: 5,
-                      minimumOrderAmount: 0,
-                      deliveryFee: 0,
-                      estimatedDeliveryMinutes: 30,
-                    },
-                  ],
-                }))
-              }
-            >
-              + Bölge ekle
-            </Button>
-          </div>
-          {storeForm.deliveryZones.map((zone, index) => (
-            <div key={`${zone.name}-${index}`} className="grid gap-2 rounded-[12px] bg-white p-3">
-              <div className="grid gap-2 md:grid-cols-2">
-                <Field label="Bölge adı">
-                  <Input
-                    value={zone.name}
-                    onChange={(event) => updateZone(index, { name: event.target.value })}
-                  />
-                </Field>
-                <Field label="Posta kodları (virgülle)">
-                  <Input
-                    value={zone.postalCodes.join(', ')}
-                    onChange={(event) =>
-                      updateZone(index, {
-                        postalCodes: event.target.value
-                          .split(',')
-                          .map((value) => value.trim())
-                          .filter(Boolean),
-                      })
-                    }
-                  />
-                </Field>
-                <Field label="Yarıçap (km)">
-                  <Input
-                    value={zone.radiusKm?.toString() ?? ''}
-                    inputMode="decimal"
-                    onChange={(event) =>
-                      updateZone(index, { radiusKm: asNumber(event.target.value) })
-                    }
-                  />
-                </Field>
-                <Field label={`Min sipariş${currency ? ` (${currency})` : ''}`}>
-                  <Input
-                    value={zone.minimumOrderAmount?.toString() ?? ''}
-                    inputMode="decimal"
-                    onChange={(event) =>
-                      updateZone(index, { minimumOrderAmount: asNumber(event.target.value) })
-                    }
-                  />
-                </Field>
-                <Field label={`Teslimat ücreti${currency ? ` (${currency})` : ''}`}>
-                  <Input
-                    value={zone.deliveryFee?.toString() ?? ''}
-                    inputMode="decimal"
-                    onChange={(event) =>
-                      updateZone(index, { deliveryFee: asNumber(event.target.value) })
-                    }
-                  />
-                </Field>
-                <Field label="Tahmini süre (dk)">
-                  <Input
-                    value={zone.estimatedDeliveryMinutes?.toString() ?? ''}
-                    inputMode="numeric"
-                    onChange={(event) =>
-                      updateZone(index, {
-                        estimatedDeliveryMinutes: asNumber(event.target.value),
-                      })
-                    }
-                  />
-                </Field>
-              </div>
-            </div>
-          ))}
-        </div>
-      </SectionCard>
-
-      <div className="flex flex-wrap gap-2">
-        <Button onClick={onSaveStore} shimmer={true} disabled={busy || !storeForm.name.trim()}>
-          {isCreating ? 'Restoranı oluştur' : 'Değişiklikleri kaydet'}
-        </Button>
-        {!isCreating ? (
-          <Button variant="ghost" shimmer={true} onClick={() => setStoreEditing(false)}>
-            Vazgeç
-          </Button>
-        ) : null}
+        </FormSection>
       </div>
+      </TenantSlideOver>
     </div>
   );
 }
@@ -1419,15 +1457,11 @@ function MenuTab({
   setCategoryForm,
   itemForm,
   setItemForm,
-  selectedItemId,
   onSelectItem,
   onSaveCategory,
   onArchiveCategory,
   onSaveItem,
   onArchiveItem,
-  onNewItem,
-  onQuickCreateProduct,
-  storeIsActive,
 }: {
   disabled: boolean;
   busy: boolean;
@@ -1442,65 +1476,71 @@ function MenuTab({
   setItemForm: (
     updater: (current: ReturnType<typeof emptyItemForm>) => ReturnType<typeof emptyItemForm>,
   ) => void;
-  selectedItemId: string;
   onSelectItem: (id: string) => void;
-  onSaveCategory: () => void;
-  onArchiveCategory: () => void;
-  onSaveItem: () => void;
-  onArchiveItem: () => void;
-  onNewItem: () => void;
-  onQuickCreateProduct: (input: QuickCreateProductInput) => void;
-  storeIsActive: boolean;
+  onSaveCategory: () => Promise<boolean>;
+  onArchiveCategory: (id: string) => Promise<boolean>;
+  onSaveItem: () => Promise<boolean>;
+  onArchiveItem: (id: string) => Promise<boolean>;
 }) {
-  // Faz C — operational studio görünümü
-  const [quickCreateOpen, setQuickCreateOpen] = useState(false);
-  const [filterCategoryId, setFilterCategoryId] = useState<string | null>(null);
+  const platformCurrency = usePlatformPack()?.currency || '';
+  const defaultCurrencyId = useMemo(
+    () => currencies.find((c) => c.code === platformCurrency)?.id ?? currencies[0]?.id ?? '',
+    [currencies, platformCurrency],
+  );
+  const [categoryDrawerOpen, setCategoryDrawerOpen] = useState(false);
+  const [productDrawerOpen, setProductDrawerOpen] = useState(false);
+  const [productSection, setProductSection] = useState<'info' | 'pricing'>('info');
+  const [categoryDisableTarget, setCategoryDisableTarget] = useState<Category | null>(null);
+  const [itemDisableTarget, setItemDisableTarget] = useState<MenuItem | null>(null);
+
+  // Reset the product step-accordion to the first section each time it opens.
+  useEffect(() => {
+    if (productDrawerOpen) setProductSection('info');
+  }, [productDrawerOpen]);
+  const productInfoComplete = itemForm.name.trim().length > 0;
 
   const productCountByCategory = useMemo(() => {
     const map = new Map<string, number>();
     for (const item of items) {
-      if (item.categoryId) {
-        map.set(item.categoryId, (map.get(item.categoryId) ?? 0) + 1);
-      }
+      if (item.categoryId) map.set(item.categoryId, (map.get(item.categoryId) ?? 0) + 1);
     }
     return map;
   }, [items]);
 
-  const uncategorizedCount = useMemo(
-    () => items.filter((i) => !i.categoryId).length,
-    [items],
-  );
+  const categoryNameById = useMemo(() => {
+    const map = new Map<string, string>();
+    for (const c of categories) map.set(c.id, c.name);
+    return map;
+  }, [categories]);
 
-  const filteredItems = useMemo(() => {
-    if (filterCategoryId === null) return items;
-    if (filterCategoryId === '__uncategorized__') return items.filter((i) => !i.categoryId);
-    return items.filter((i) => i.categoryId === filterCategoryId);
-  }, [items, filterCategoryId]);
+  if (disabled) {
+    return (
+      <SectionCard title="Menü">
+        <p className="text-[13px] text-[#78716c]">Menüyü görmek için bir restoran seçin.</p>
+      </SectionCard>
+    );
+  }
 
-  const publishedCount = items.filter((i) => (i.isActive ?? true) === true).length;
-  const filterLabel =
-    filterCategoryId === '__uncategorized__'
-      ? 'Kategorisiz'
-      : categories.find((c) => c.id === filterCategoryId)?.name;
-
-  function handleCreateCategoryFromBar() {
+  function openCategoryCreate() {
     setCategoryForm(() => emptyCategoryForm());
+    setCategoryDrawerOpen(true);
   }
-
-  function handleEditCategory(category: { id: string; name: string; sortOrder: number; isActive?: boolean }) {
-    const full = categories.find((c) => c.id === category.id);
-    if (!full) return;
+  function openCategoryEdit(category: Category) {
     setCategoryForm(() => ({
-      id: full.id,
-      name: full.name,
-      description: full.description ?? '',
-      imageUrl: full.imageUrl ?? '',
-      sortOrder: String(full.sortOrder),
-      isActive: full.isActive ?? true,
+      id: category.id,
+      name: category.name,
+      description: category.description ?? '',
+      imageUrl: category.imageUrl ?? '',
+      sortOrder: String(category.sortOrder),
+      isActive: category.isActive ?? true,
     }));
+    setCategoryDrawerOpen(true);
   }
-
-  function handleSelectProduct(item: MenuItem) {
+  function openProductCreate() {
+    setItemForm(() => ({ ...emptyItemForm(), currencyId: defaultCurrencyId }));
+    setProductDrawerOpen(true);
+  }
+  function openProductEdit(item: MenuItem) {
     onSelectItem(item.id);
     setItemForm(() => ({
       id: item.id,
@@ -1514,314 +1554,369 @@ function MenuTab({
       availabilityType: item.availabilityType,
       isActive: item.isActive ?? true,
     }));
+    setProductDrawerOpen(true);
+  }
+  async function saveCategory() {
+    const ok = await onSaveCategory();
+    if (ok) setCategoryDrawerOpen(false);
+  }
+  async function saveItem() {
+    const ok = await onSaveItem();
+    if (ok) setProductDrawerOpen(false);
   }
 
-  if (disabled) {
-    return (
-      <SectionCard title="Menü">
-        <p className="text-[13px] text-[#78716c]">Menüyü görmek için bir restoran seçin.</p>
-      </SectionCard>
-    );
-  }
+  const categoryColumns: DataTableColumn<Category>[] = [
+    {
+      key: 'name',
+      header: 'Kategori',
+      render: (c) => <span className="font-semibold text-[#1c1917]">{c.name}</span>,
+    },
+    { key: 'sort', header: 'Sıra', render: (c) => c.sortOrder, hideOnMobile: true },
+    { key: 'count', header: 'Ürün', render: (c) => productCountByCategory.get(c.id) ?? 0 },
+    {
+      key: 'status',
+      header: 'Durum',
+      render: (c) => (
+        <StatusPill active={c.isActive ?? true}>{c.isActive ?? true ? 'Aktif' : 'Pasif'}</StatusPill>
+      ),
+    },
+  ];
 
-  const emptyVariant: 'no-category' | 'no-product' | 'empty-filter' =
-    categories.length === 0 && items.length === 0
-      ? 'no-category'
-      : filterCategoryId !== null
-        ? 'empty-filter'
-        : 'no-product';
+  const productColumns: DataTableColumn<MenuItem>[] = [
+    {
+      key: 'name',
+      header: 'Ürün',
+      render: (i) => <span className="font-semibold text-[#1c1917]">{i.name}</span>,
+    },
+    {
+      key: 'category',
+      header: 'Kategori',
+      render: (i) => (i.categoryId ? categoryNameById.get(i.categoryId) ?? '—' : 'Kategorisiz'),
+      hideOnMobile: true,
+    },
+    {
+      key: 'price',
+      header: 'Fiyat',
+      render: (i) => `${i.basePrice} ${i.currencyCode || platformCurrency}`,
+    },
+    {
+      key: 'status',
+      header: 'Durum',
+      render: (i) => (
+        <StatusPill active={i.isActive ?? true}>{i.isActive ?? true ? 'Aktif' : 'Pasif'}</StatusPill>
+      ),
+    },
+  ];
 
   return (
     <div className="grid gap-4">
-      <StudioStickyBar
-        categoryCount={categories.length}
-        productCount={items.length}
-        publishedCount={publishedCount}
-        storeIsActive={storeIsActive}
-        onCreateCategory={handleCreateCategoryFromBar}
-        onCreateProduct={() => setQuickCreateOpen(true)}
+      <SectionCard
+        title="Kategoriler"
+        description="Menü kategorilerini yönetin."
+        toolbar={
+          <Button onClick={openCategoryCreate} shimmer={true}>
+            + Kategori Ekle
+          </Button>
+        }
+      >
+        <TenantDataTable
+          columns={categoryColumns}
+          rows={categories}
+          getRowId={(c) => c.id}
+          empty={
+            <div className="rounded-[14px] border border-dashed border-[#ece2d2] bg-[#f7fafd] px-4 py-8 text-center">
+              <p className="text-[14px] font-semibold text-[#1c1917]">Henüz kategori yok.</p>
+              <p className="mt-1 text-[13px] text-[#78716c]">İlk kategorini ekle.</p>
+              <div className="mt-3 flex justify-center">
+                <Button onClick={openCategoryCreate}>+ Kategori Ekle</Button>
+              </div>
+            </div>
+          }
+          rowActions={(c) => (
+            <>
+              <RowAction label="Düzenle" onClick={() => openCategoryEdit(c)}>
+                <EditIcon />
+              </RowAction>
+              <RowAction
+                label="Pasifleştir"
+                tone="danger"
+                disabled={(c.isActive ?? true) === false}
+                onClick={() => setCategoryDisableTarget(c)}
+              >
+                <TrashIcon />
+              </RowAction>
+            </>
+          )}
+        />
+      </SectionCard>
+
+      <SectionCard
+        title="Ürünler"
+        description="Menü ürünlerini yönetin."
+        toolbar={
+          <Button onClick={openProductCreate} shimmer={true}>
+            + Ürün Ekle
+          </Button>
+        }
+      >
+        <TenantDataTable
+          columns={productColumns}
+          rows={items}
+          getRowId={(i) => i.id}
+          empty={
+            <div className="rounded-[14px] border border-dashed border-[#ece2d2] bg-[#f7fafd] px-4 py-8 text-center">
+              <p className="text-[14px] font-semibold text-[#1c1917]">Henüz ürün yok.</p>
+              <p className="mt-1 text-[13px] text-[#78716c]">İlk ürününü ekle.</p>
+              <div className="mt-3 flex justify-center">
+                <Button onClick={openProductCreate}>+ Ürün Ekle</Button>
+              </div>
+            </div>
+          }
+          rowActions={(i) => (
+            <>
+              <RowAction label="Düzenle" onClick={() => openProductEdit(i)}>
+                <EditIcon />
+              </RowAction>
+              <RowAction
+                label="Pasifleştir"
+                tone="danger"
+                disabled={(i.isActive ?? true) === false}
+                onClick={() => setItemDisableTarget(i)}
+              >
+                <TrashIcon />
+              </RowAction>
+            </>
+          )}
+        />
+      </SectionCard>
+
+      <ConfirmDialog
+        open={Boolean(categoryDisableTarget)}
+        title="Kategoriyi pasifleştir"
+        body={
+          <span>
+            <strong>{categoryDisableTarget?.name}</strong> vitrinde görünmez olacak.
+          </span>
+        }
+        confirmLabel="Pasifleştir"
+        busy={busy}
+        onConfirm={async () => {
+          if (categoryDisableTarget) await onArchiveCategory(categoryDisableTarget.id);
+          setCategoryDisableTarget(null);
+        }}
+        onClose={() => setCategoryDisableTarget(null)}
+      />
+      <ConfirmDialog
+        open={Boolean(itemDisableTarget)}
+        title="Ürünü pasifleştir"
+        body={
+          <span>
+            <strong>{itemDisableTarget?.name}</strong> vitrinde görünmez olacak.
+          </span>
+        }
+        confirmLabel="Pasifleştir"
+        busy={busy}
+        onConfirm={async () => {
+          if (itemDisableTarget) await onArchiveItem(itemDisableTarget.id);
+          setItemDisableTarget(null);
+        }}
+        onClose={() => setItemDisableTarget(null)}
       />
 
-      <div className="grid gap-4 lg:grid-cols-[260px_minmax(0,1fr)]">
-        <CategoryRail
-          categories={categories.map((c) => ({
-            id: c.id,
-            name: c.name,
-            sortOrder: c.sortOrder,
-            isActive: c.isActive,
-          }))}
-          selectedCategoryId={filterCategoryId}
-          productCountByCategory={productCountByCategory}
-          uncategorizedCount={uncategorizedCount}
-          totalCount={items.length}
-          editingCategoryId={categoryForm.id || null}
-          onSelect={setFilterCategoryId}
-          onEdit={handleEditCategory}
-        />
-
-        <div className="min-w-0">
-          {filteredItems.length === 0 ? (
-            <StudioEmptyState
-              variant={emptyVariant}
-              filterLabel={filterLabel}
-              onPrimary={() => {
-                if (emptyVariant === 'no-category') {
-                  handleCreateCategoryFromBar();
-                } else {
-                  setQuickCreateOpen(true);
-                }
-              }}
-            />
-          ) : (
-            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-3">
-              {filteredItems.map((item) => (
-                <ProductCard
-                  key={item.id}
-                  item={item}
-                  isSelected={selectedItemId === item.id}
-                  onClick={() => handleSelectProduct(item)}
-                />
-              ))}
-            </div>
-          )}
-        </div>
-      </div>
-
-      <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_minmax(0,1.4fr)]">
-        <SectionCard
-          title="Kategori formu"
-          description="Yeni kategori ekle veya seçili kategoriyi düzenle."
-          toolbar={
-            categoryForm.id ? (
-              <Button
-                variant="ghost"
-                shimmer={true}
-                onClick={() => setCategoryForm(() => emptyCategoryForm())}
-              >
-                + Yeni
-              </Button>
-            ) : null
-          }
-        >
-        <div className="grid gap-3">
+      <TenantSlideOver
+        open={categoryDrawerOpen}
+        busy={busy}
+        title={categoryForm.id ? 'Kategoriyi düzenle' : 'Kategori Ekle'}
+        description="Kategori adını ve görünürlüğünü ayarla."
+        onClose={() => setCategoryDrawerOpen(false)}
+        footer={
+          <>
+            <Button variant="ghost" onClick={() => setCategoryDrawerOpen(false)} disabled={busy}>
+              Vazgeç
+            </Button>
+            <Button onClick={saveCategory} shimmer={true} disabled={busy || !categoryForm.name.trim()}>
+              {categoryForm.id ? 'Kaydet' : 'Kategori ekle'}
+            </Button>
+          </>
+        }
+      >
+        <div className="grid gap-4">
           <Field label="Kategori adı">
             <Input
               value={categoryForm.name}
               placeholder="Başlangıçlar"
-              onChange={(event) =>
-                setCategoryForm((current) => ({ ...current, name: event.target.value }))
-              }
+              onChange={(e) => setCategoryForm((c) => ({ ...c, name: e.target.value }))}
             />
           </Field>
           <Field label="Açıklama">
             <Textarea
               rows={2}
               value={categoryForm.description}
-              placeholder="Kategori için kısa açıklama..."
-              onChange={(event) =>
-                setCategoryForm((current) => ({ ...current, description: event.target.value }))
-              }
+              onChange={(e) => setCategoryForm((c) => ({ ...c, description: e.target.value }))}
             />
           </Field>
           <div className="grid gap-3 sm:grid-cols-2">
             <Field label="Görsel URL">
               <Input
                 value={categoryForm.imageUrl}
-                onChange={(event) =>
-                  setCategoryForm((current) => ({ ...current, imageUrl: event.target.value }))
-                }
+                onChange={(e) => setCategoryForm((c) => ({ ...c, imageUrl: e.target.value }))}
               />
             </Field>
             <Field label="Sıra">
               <Input
                 value={categoryForm.sortOrder}
                 inputMode="numeric"
-                onChange={(event) =>
-                  setCategoryForm((current) => ({ ...current, sortOrder: event.target.value }))
-                }
+                onChange={(e) => setCategoryForm((c) => ({ ...c, sortOrder: e.target.value }))}
               />
             </Field>
           </div>
-          <label className="flex items-center gap-2 text-[13px] text-[#44403c]">
-            <input
-              type="checkbox"
-              checked={categoryForm.isActive}
-              onChange={(event) =>
-                setCategoryForm((current) => ({ ...current, isActive: event.target.checked }))
-              }
-            />
-            Vitrinde görünür
-          </label>
-          <div className="flex flex-wrap gap-2">
-            <Button onClick={onSaveCategory} shimmer={true} disabled={busy || !categoryForm.name.trim()}>
-              {categoryForm.id ? 'Kategoriyi güncelle' : 'Kategori ekle'}
-            </Button>
-            {categoryForm.id ? (
-              <Button variant="ghost" shimmer={true} onClick={onArchiveCategory} disabled={busy}>
-                Arşivle
-              </Button>
-            ) : null}
-          </div>
+          <Checkbox
+            label="Vitrinde görünür"
+            checked={categoryForm.isActive}
+            onChange={(e) => setCategoryForm((c) => ({ ...c, isActive: e.target.checked }))}
+          />
         </div>
-      </SectionCard>
+      </TenantSlideOver>
 
-      <SectionCard
-        title="Ürün formu"
-        description="Seçili ürünü düzenle veya yeni ürünü detayları ile birlikte oluştur."
-        toolbar={
-          itemForm.id ? (
-            <Button variant="ghost" onClick={onNewItem}>
-              + Yeni
+      <TenantSlideOver
+        open={productDrawerOpen}
+        busy={busy}
+        title={itemForm.id ? 'Ürünü düzenle' : 'Ürün Ekle'}
+        description="Ürün bilgilerini ve fiyatını ayarla."
+        onClose={() => setProductDrawerOpen(false)}
+        footer={
+          <>
+            <Button variant="ghost" onClick={() => setProductDrawerOpen(false)} disabled={busy}>
+              Vazgeç
             </Button>
-          ) : null
+            <Button
+              onClick={saveItem}
+              shimmer={true}
+              disabled={
+                busy || !itemForm.name.trim() || !itemForm.basePrice.trim() || !itemForm.currencyId
+              }
+            >
+              {itemForm.id ? 'Kaydet' : 'Ürün ekle'}
+            </Button>
+          </>
         }
       >
         <div className="grid gap-3">
-          <Field label="Ürün adı">
-            <Input
-              value={itemForm.name}
-              placeholder="Adana Kebap"
-              onChange={(event) =>
-                setItemForm((current) => ({ ...current, name: event.target.value }))
-              }
-            />
-          </Field>
-          <div className="grid gap-3 sm:grid-cols-2">
-            <Field label="Kategori">
-              <Select
-                value={itemForm.categoryId}
-                onChange={(event) =>
-                  setItemForm((current) => ({ ...current, categoryId: event.target.value }))
-                }
-              >
-                <option value="">Kategorisiz</option>
-                {categories.map((category) => (
-                  <option key={category.id} value={category.id}>
-                    {category.name}
-                  </option>
-                ))}
-              </Select>
-            </Field>
-            <Field label="Görsel URL">
-              <Input
-                value={itemForm.imageUrl}
-                onChange={(event) =>
-                  setItemForm((current) => ({ ...current, imageUrl: event.target.value }))
-                }
-              />
-            </Field>
-          </div>
-          <Field label="Açıklama">
-            <Textarea
-              rows={2}
-              value={itemForm.description}
-              placeholder="Ürün açıklaması..."
-              onChange={(event) =>
-                setItemForm((current) => ({ ...current, description: event.target.value }))
-              }
-            />
-          </Field>
-          <div className="grid gap-3 sm:grid-cols-3">
-            <Field label="Fiyat">
-              <Input
-                value={itemForm.basePrice}
-                inputMode="decimal"
-                onChange={(event) =>
-                  setItemForm((current) => ({ ...current, basePrice: event.target.value }))
-                }
-              />
-            </Field>
-            <Field label="Para birimi">
-              <Select
-                value={itemForm.currencyId}
-                onChange={(event) =>
-                  setItemForm((current) => ({ ...current, currencyId: event.target.value }))
-                }
-              >
-                <option value="">Para birimi seçin</option>
-                {currencies.map((currency) => (
-                  <option key={currency.id} value={currency.id}>
-                    {currency.code}
-                    {currency.symbol ? ` (${currency.symbol})` : ''}
-                  </option>
-                ))}
-              </Select>
-            </Field>
-            <Field label="Sıra">
-              <Input
-                value={itemForm.sortOrder}
-                inputMode="numeric"
-                onChange={(event) =>
-                  setItemForm((current) => ({ ...current, sortOrder: event.target.value }))
-                }
-              />
-            </Field>
-          </div>
-          <div className="grid gap-3 sm:grid-cols-2">
-            <Field label="Mevcudiyet" hint="Ürünün vitrinde sipariş edilebilir olma koşulu">
-              <Select
-                value={itemForm.availabilityType}
-                onChange={(event) =>
-                  setItemForm((current) => ({
-                    ...current,
-                    availabilityType: event.target.value,
-                  }))
-                }
-              >
-                <option value="always">Her zaman mevcut</option>
-                <option value="inherit_store_status">Restoran açıkken mevcut</option>
-              </Select>
-            </Field>
-            <label className="flex items-center gap-2 self-end text-[13px] text-[#44403c]">
-              <input
-                type="checkbox"
-                checked={itemForm.isActive}
-                onChange={(event) =>
-                  setItemForm((current) => ({ ...current, isActive: event.target.checked }))
-                }
-              />
-              Vitrinde görünür
-            </label>
-          </div>
-          <div className="flex flex-wrap gap-2">
-            <Button
-              onClick={onSaveItem}
-              disabled={
-                busy ||
-                !itemForm.name.trim() ||
-                !itemForm.basePrice.trim() ||
-                !itemForm.currencyId
-              }
-            >
-              {itemForm.id ? 'Ürünü güncelle' : 'Ürün ekle'}
-            </Button>
-            {itemForm.id ? (
-              <Button variant="ghost" onClick={onArchiveItem} disabled={busy}>
-                Arşivle
-              </Button>
-            ) : null}
-          </div>
-        </div>
-      </SectionCard>
-      </div>
+          <FormSection
+            title="Ürün bilgileri"
+            index={1}
+            open={productSection === 'info'}
+            done={productInfoComplete && productSection !== 'info'}
+            summary={productInfoComplete ? itemForm.name : undefined}
+            onToggle={() => setProductSection('info')}
+          >
+            <div className="grid gap-4">
+              <Field label="Ürün adı">
+                <Input
+                  value={itemForm.name}
+                  placeholder="Adana Kebap"
+                  onChange={(e) => setItemForm((c) => ({ ...c, name: e.target.value }))}
+                />
+              </Field>
+              <div className="grid gap-3 sm:grid-cols-2">
+                <Field label="Kategori">
+                  <Select
+                    value={itemForm.categoryId}
+                    onChange={(e) => setItemForm((c) => ({ ...c, categoryId: e.target.value }))}
+                  >
+                    <option value="">Kategorisiz</option>
+                    {categories.map((category) => (
+                      <option key={category.id} value={category.id}>
+                        {category.name}
+                      </option>
+                    ))}
+                  </Select>
+                </Field>
+                <Field label="Görsel URL">
+                  <Input
+                    value={itemForm.imageUrl}
+                    onChange={(e) => setItemForm((c) => ({ ...c, imageUrl: e.target.value }))}
+                  />
+                </Field>
+              </div>
+              <Field label="Açıklama">
+                <Textarea
+                  rows={2}
+                  value={itemForm.description}
+                  onChange={(e) => setItemForm((c) => ({ ...c, description: e.target.value }))}
+                />
+              </Field>
+              <div className="flex justify-end">
+                <Button onClick={() => setProductSection('pricing')} disabled={!productInfoComplete}>
+                  Devam: Fiyat ve görünürlük
+                </Button>
+              </div>
+            </div>
+          </FormSection>
 
-      <QuickCreateProductSheet
-        open={quickCreateOpen}
-        busy={busy}
-        categories={categories.map((c) => ({ id: c.id, name: c.name }))}
-        currencies={currencies.map((c) => ({ id: c.id, code: c.code, symbol: c.symbol }))}
-        defaultCategoryId={
-          filterCategoryId && filterCategoryId !== '__uncategorized__' ? filterCategoryId : null
-        }
-        onClose={() => setQuickCreateOpen(false)}
-        onSubmit={(input) => {
-          onQuickCreateProduct(input);
-          setQuickCreateOpen(false);
-        }}
-        onSwitchToFullForm={() => {
-          onNewItem();
-        }}
-      />
+          <FormSection
+            title="Fiyat ve görünürlük"
+            index={2}
+            open={productSection === 'pricing'}
+            summary={
+              itemForm.basePrice ? `${itemForm.basePrice} ${platformCurrency}` : undefined
+            }
+            onToggle={() => setProductSection('pricing')}
+          >
+            <div className="grid gap-4">
+              <div className="grid gap-3 sm:grid-cols-3">
+                <Field label="Fiyat">
+                  <Input
+                    value={itemForm.basePrice}
+                    inputMode="decimal"
+                    onChange={(e) => setItemForm((c) => ({ ...c, basePrice: e.target.value }))}
+                  />
+                </Field>
+                <Field label="Para birimi">
+                  <Select
+                    value={itemForm.currencyId}
+                    onChange={(e) => setItemForm((c) => ({ ...c, currencyId: e.target.value }))}
+                  >
+                    <option value="">Para birimi seçin</option>
+                    {currencies.map((currency) => (
+                      <option key={currency.id} value={currency.id}>
+                        {currency.code}
+                        {currency.symbol ? ` (${currency.symbol})` : ''}
+                      </option>
+                    ))}
+                  </Select>
+                </Field>
+                <Field label="Sıra">
+                  <Input
+                    value={itemForm.sortOrder}
+                    inputMode="numeric"
+                    onChange={(e) => setItemForm((c) => ({ ...c, sortOrder: e.target.value }))}
+                  />
+                </Field>
+              </div>
+              <div className="grid gap-3 sm:grid-cols-2">
+                <Field label="Mevcudiyet" hint="Ürünün vitrinde sipariş edilebilir olma koşulu">
+                  <Select
+                    value={itemForm.availabilityType}
+                    onChange={(e) =>
+                      setItemForm((c) => ({ ...c, availabilityType: e.target.value }))
+                    }
+                  >
+                    <option value="always">Her zaman mevcut</option>
+                    <option value="inherit_store_status">Restoran açıkken mevcut</option>
+                  </Select>
+                </Field>
+                <Checkbox
+                  className="self-end pb-2.5"
+                  label="Vitrinde görünür"
+                  checked={itemForm.isActive}
+                  onChange={(e) => setItemForm((c) => ({ ...c, isActive: e.target.checked }))}
+                />
+              </div>
+            </div>
+          </FormSection>
+        </div>
+      </TenantSlideOver>
     </div>
   );
 }
@@ -1856,11 +1951,21 @@ function OptionsTab({
   setOptionForm: (
     updater: (current: ReturnType<typeof emptyOptionForm>) => ReturnType<typeof emptyOptionForm>,
   ) => void;
-  onSaveGroup: () => void;
-  onArchiveGroup: () => void;
-  onSaveOption: (groupId: string) => void;
-  onArchiveOption: (groupId: string, optionId: string) => void;
+  onSaveGroup: () => Promise<boolean>;
+  onArchiveGroup: (id: string) => Promise<boolean>;
+  onSaveOption: (groupId: string) => Promise<boolean>;
+  onArchiveOption: (groupId: string, optionId: string) => Promise<boolean>;
 }) {
+  const [groupDrawerOpen, setGroupDrawerOpen] = useState(false);
+  const [optionsGroupId, setOptionsGroupId] = useState<string | null>(null);
+  const [groupDisableTarget, setGroupDisableTarget] = useState<OptionGroup | null>(null);
+
+  const groups = itemDetail?.optionGroups ?? [];
+  const optionsGroup = optionsGroupId
+    ? groups.find((g) => g.id === optionsGroupId) ?? null
+    : null;
+  const editingOption = optionForm.groupId === optionsGroupId;
+
   if (items.length === 0) {
     return (
       <SectionCard title="Seçenekler & Malzemeler">
@@ -1870,6 +1975,51 @@ function OptionsTab({
       </SectionCard>
     );
   }
+
+  function openGroupCreate() {
+    setGroupForm(() => emptyGroupForm());
+    setGroupDrawerOpen(true);
+  }
+  function openGroupEdit(group: OptionGroup) {
+    setGroupForm(() => ({
+      id: group.id,
+      name: group.name,
+      description: group.description ?? '',
+      minSelections: String(group.minSelections),
+      maxSelections: group.maxSelections?.toString() ?? '1',
+      isRequired: Boolean(group.isRequired),
+      sortOrder: String(group.sortOrder ?? 0),
+      isActive: group.isActive ?? true,
+    }));
+    setGroupDrawerOpen(true);
+  }
+  async function saveGroup() {
+    const ok = await onSaveGroup();
+    if (ok) setGroupDrawerOpen(false);
+  }
+
+  const groupColumns: DataTableColumn<OptionGroup>[] = [
+    {
+      key: 'name',
+      header: 'Grup',
+      render: (g) => <span className="font-semibold text-[#1c1917]">{g.name}</span>,
+    },
+    { key: 'required', header: 'Zorunlu', render: (g) => (g.isRequired ? 'Evet' : 'Hayır') },
+    {
+      key: 'range',
+      header: 'Min / Max',
+      render: (g) => `${g.minSelections} / ${g.maxSelections ?? 1}`,
+      hideOnMobile: true,
+    },
+    { key: 'count', header: 'Seçenek', render: (g) => g.options.length },
+    {
+      key: 'status',
+      header: 'Durum',
+      render: (g) => (
+        <StatusPill active={g.isActive ?? true}>{g.isActive ?? true ? 'Aktif' : 'Pasif'}</StatusPill>
+      ),
+    },
+  ];
 
   return (
     <div className="grid gap-4 lg:grid-cols-[minmax(220px,260px)_minmax(0,1fr)]">
@@ -1883,7 +2033,7 @@ function OptionsTab({
               className={cn(
                 'rounded-[12px] border px-3 py-2.5 text-left transition',
                 selectedItemId === item.id
-                  ? 'border-[#f97316] bg-[#fff1e6]'
+                  ? 'border-[#24A94A] bg-[#EAF6EE]'
                   : 'border-[#ece2d2] bg-white hover:border-[#d6c9ad]',
               )}
             >
@@ -1899,309 +2049,272 @@ function OptionsTab({
       <SectionCard
         title="Seçenek grupları"
         description="Beden, soslar, ekstra malzemeler gibi seçimleri burada yönetin."
+        toolbar={
+          itemDetail ? (
+            <Button onClick={openGroupCreate} shimmer={true}>
+              + Ek Seçenek Grubu Ekle
+            </Button>
+          ) : null
+        }
       >
         {!itemDetail ? (
-          <p className="text-[13px] text-[#78716c]">Yükleniyor...</p>
+          <p className="text-[13px] text-[#78716c]">Seçenekleri görmek için bir ürün seçin.</p>
         ) : (
-          <>
-            <div className="rounded-[14px] bg-[#f6f9ff] px-4 py-3">
-              <div className="text-[12px] uppercase tracking-[0.06em] text-[#78716c]">
-                Seçili ürün
-              </div>
-              <div className="text-[14px] font-bold text-[#1c1917]">{itemDetail.name}</div>
-              <div className="text-[12px] text-[#78716c]">
-                Baz fiyat: {itemDetail.basePrice} {itemDetail.currencyCode}
-              </div>
-            </div>
-
-            <div className="grid gap-3 rounded-[14px] border border-[#ece2d2] bg-white p-4">
-              <div className="text-[13px] font-bold text-[#1c1917]">
-                {groupForm.id ? 'Seçenek grubunu güncelle' : 'Yeni seçenek grubu'}
-              </div>
-              <Field label="Grup adı">
-                <Input
-                  value={groupForm.name}
-                  placeholder="Ekstra malzemeler"
-                  onChange={(event) =>
-                    setGroupForm((current) => ({ ...current, name: event.target.value }))
-                  }
-                />
-              </Field>
-              <Field label="Açıklama">
-                <Textarea
-                  rows={2}
-                  value={groupForm.description}
-                  onChange={(event) =>
-                    setGroupForm((current) => ({ ...current, description: event.target.value }))
-                  }
-                />
-              </Field>
-              <div className="grid gap-3 sm:grid-cols-3">
-                <Field label="Min seçim">
-                  <Input
-                    value={groupForm.minSelections}
-                    inputMode="numeric"
-                    onChange={(event) =>
-                      setGroupForm((current) => ({
-                        ...current,
-                        minSelections: event.target.value,
-                      }))
-                    }
-                  />
-                </Field>
-                <Field label="Max seçim">
-                  <Input
-                    value={groupForm.maxSelections}
-                    inputMode="numeric"
-                    onChange={(event) =>
-                      setGroupForm((current) => ({
-                        ...current,
-                        maxSelections: event.target.value,
-                      }))
-                    }
-                  />
-                </Field>
-                <Field label="Sıra">
-                  <Input
-                    value={groupForm.sortOrder}
-                    inputMode="numeric"
-                    onChange={(event) =>
-                      setGroupForm((current) => ({ ...current, sortOrder: event.target.value }))
-                    }
-                  />
-                </Field>
-              </div>
-              <div className="flex flex-wrap gap-3 text-[13px] text-[#44403c]">
-                <label className="flex items-center gap-2">
-                  <input
-                    type="checkbox"
-                    checked={groupForm.isRequired}
-                    onChange={(event) =>
-                      setGroupForm((current) => ({
-                        ...current,
-                        isRequired: event.target.checked,
-                      }))
-                    }
-                  />
-                  Zorunlu
-                </label>
-                <label className="flex items-center gap-2">
-                  <input
-                    type="checkbox"
-                    checked={groupForm.isActive}
-                    onChange={(event) =>
-                      setGroupForm((current) => ({
-                        ...current,
-                        isActive: event.target.checked,
-                      }))
-                    }
-                  />
-                  Vitrinde görünür
-                </label>
-              </div>
-              <div className="flex flex-wrap gap-2">
-                <Button onClick={onSaveGroup} disabled={busy || !groupForm.name.trim()}>
-                  {groupForm.id ? 'Grubu güncelle' : 'Grubu oluştur'}
-                </Button>
-                {groupForm.id ? (
-                  <>
-                    <Button variant="ghost" onClick={() => setGroupForm(() => emptyGroupForm())}>
-                      + Yeni
-                    </Button>
-                    <Button variant="ghost" onClick={onArchiveGroup} disabled={busy}>
-                      Arşivle
-                    </Button>
-                  </>
-                ) : null}
-              </div>
-            </div>
-
-            <div className="grid gap-3">
-              {itemDetail.optionGroups.length === 0 ? (
-                <div className="rounded-[14px] border border-dashed border-[#ece2d2] bg-[#f7fafd] px-4 py-5 text-center text-[13px] text-[#78716c]">
+          <TenantDataTable
+            columns={groupColumns}
+            rows={groups}
+            getRowId={(g) => g.id}
+            empty={
+              <div className="rounded-[14px] border border-dashed border-[#ece2d2] bg-[#f7fafd] px-4 py-8 text-center">
+                <p className="text-[14px] font-semibold text-[#1c1917]">
                   Bu ürün için henüz seçenek grubu yok.
+                </p>
+                <p className="mt-1 text-[13px] text-[#78716c]">İlk grubu ekle.</p>
+                <div className="mt-3 flex justify-center">
+                  <Button onClick={openGroupCreate}>+ Ek Seçenek Grubu Ekle</Button>
+                </div>
+              </div>
+            }
+            rowActions={(g) => (
+              <>
+                <RowAction label="Malzemeler" onClick={() => setOptionsGroupId(g.id)}>
+                  <SettingsIcon />
+                </RowAction>
+                <RowAction label="Düzenle" onClick={() => openGroupEdit(g)}>
+                  <EditIcon />
+                </RowAction>
+                <RowAction
+                  label="Pasifleştir"
+                  tone="danger"
+                  disabled={(g.isActive ?? true) === false}
+                  onClick={() => setGroupDisableTarget(g)}
+                >
+                  <TrashIcon />
+                </RowAction>
+              </>
+            )}
+          />
+        )}
+      </SectionCard>
+
+      <ConfirmDialog
+        open={Boolean(groupDisableTarget)}
+        title="Seçenek grubunu pasifleştir"
+        body={
+          <span>
+            <strong>{groupDisableTarget?.name}</strong> ve içindeki seçenekler vitrinde
+            görünmez olacak.
+          </span>
+        }
+        confirmLabel="Pasifleştir"
+        busy={busy}
+        onConfirm={async () => {
+          if (groupDisableTarget) await onArchiveGroup(groupDisableTarget.id);
+          setGroupDisableTarget(null);
+        }}
+        onClose={() => setGroupDisableTarget(null)}
+      />
+
+      <TenantSlideOver
+        open={groupDrawerOpen}
+        busy={busy}
+        title={groupForm.id ? 'Seçenek grubunu düzenle' : 'Ek Seçenek Grubu Ekle'}
+        description="Grup adı, seçim kuralları ve zorunluluk."
+        onClose={() => setGroupDrawerOpen(false)}
+        footer={
+          <>
+            <Button variant="ghost" onClick={() => setGroupDrawerOpen(false)} disabled={busy}>
+              Vazgeç
+            </Button>
+            <Button onClick={saveGroup} shimmer={true} disabled={busy || !groupForm.name.trim()}>
+              {groupForm.id ? 'Kaydet' : 'Grubu oluştur'}
+            </Button>
+          </>
+        }
+      >
+        <div className="grid gap-4">
+          <Field label="Grup adı">
+            <Input
+              value={groupForm.name}
+              placeholder="Ekstra malzemeler"
+              onChange={(e) => setGroupForm((c) => ({ ...c, name: e.target.value }))}
+            />
+          </Field>
+          <Field label="Açıklama">
+            <Textarea
+              rows={2}
+              value={groupForm.description}
+              onChange={(e) => setGroupForm((c) => ({ ...c, description: e.target.value }))}
+            />
+          </Field>
+          <div className="grid gap-3 sm:grid-cols-3">
+            <Field label="Min seçim">
+              <Input
+                value={groupForm.minSelections}
+                inputMode="numeric"
+                onChange={(e) => setGroupForm((c) => ({ ...c, minSelections: e.target.value }))}
+              />
+            </Field>
+            <Field label="Max seçim">
+              <Input
+                value={groupForm.maxSelections}
+                inputMode="numeric"
+                onChange={(e) => setGroupForm((c) => ({ ...c, maxSelections: e.target.value }))}
+              />
+            </Field>
+            <Field label="Sıra">
+              <Input
+                value={groupForm.sortOrder}
+                inputMode="numeric"
+                onChange={(e) => setGroupForm((c) => ({ ...c, sortOrder: e.target.value }))}
+              />
+            </Field>
+          </div>
+          <div className="flex flex-wrap gap-5 rounded-[12px] bg-[#f7fafd] p-3">
+            <Checkbox
+              label="Zorunlu"
+              checked={groupForm.isRequired}
+              onChange={(e) => setGroupForm((c) => ({ ...c, isRequired: e.target.checked }))}
+            />
+            <Checkbox
+              label="Vitrinde görünür"
+              checked={groupForm.isActive}
+              onChange={(e) => setGroupForm((c) => ({ ...c, isActive: e.target.checked }))}
+            />
+          </div>
+          {!groupForm.id ? (
+            <p className="rounded-[10px] bg-[#f7fafd] px-3 py-2 text-[12px] text-[#78716c]">
+              Grup kaydedildikten sonra satırdaki “Malzemeler” aksiyonundan seçenek
+              ekleyebilirsiniz.
+            </p>
+          ) : null}
+        </div>
+      </TenantSlideOver>
+
+      <TenantSlideOver
+        open={Boolean(optionsGroupId)}
+        busy={busy}
+        title={optionsGroup ? `Malzemeler — ${optionsGroup.name}` : 'Malzemeler'}
+        description="Bu gruptaki seçenekleri ekle, düzenle veya pasifleştir."
+        onClose={() => {
+          setOptionsGroupId(null);
+          setOptionForm(() => emptyOptionForm());
+        }}
+        footer={
+          <Button
+            variant="ghost"
+            onClick={() => {
+              setOptionsGroupId(null);
+              setOptionForm(() => emptyOptionForm());
+            }}
+            disabled={busy}
+          >
+            Kapat
+          </Button>
+        }
+      >
+        {!optionsGroup ? (
+          <p className="text-[13px] text-[#78716c]">Grup bulunamadı.</p>
+        ) : (
+          <div className="grid gap-4">
+            <div className="grid gap-1.5">
+              {optionsGroup.options.length === 0 ? (
+                <div className="rounded-[12px] bg-[#f7fafd] px-3 py-3 text-[12.5px] text-[#78716c]">
+                  Henüz malzeme yok.
                 </div>
               ) : (
-                itemDetail.optionGroups.map((group) => (
-                  <OptionGroupCard
-                    key={group.id}
-                    group={group}
-                    busy={busy}
-                    optionForm={optionForm}
-                    setOptionForm={setOptionForm}
-                    onEditGroup={() =>
-                      setGroupForm(() => ({
-                        id: group.id,
-                        name: group.name,
-                        description: group.description ?? '',
-                        minSelections: String(group.minSelections),
-                        maxSelections: group.maxSelections?.toString() ?? '1',
-                        isRequired: Boolean(group.isRequired),
-                        sortOrder: String(group.sortOrder ?? 0),
-                        isActive: group.isActive ?? true,
-                      }))
-                    }
-                    onSaveOption={() => onSaveOption(group.id)}
-                    onArchiveOption={(optionId) => onArchiveOption(group.id, optionId)}
-                  />
+                optionsGroup.options.map((option) => (
+                  <div
+                    key={option.id}
+                    className="flex flex-wrap items-center justify-between gap-2 rounded-[12px] bg-[#f7fafd] px-3 py-2"
+                  >
+                    <button
+                      type="button"
+                      className="flex-1 text-left"
+                      onClick={() =>
+                        setOptionForm(() => ({
+                          groupId: optionsGroup.id,
+                          id: option.id,
+                          name: option.name,
+                          description: option.description ?? '',
+                          priceDelta: String(option.priceDelta),
+                          sortOrder: String(option.sortOrder ?? 0),
+                          isActive: option.isActive ?? true,
+                        }))
+                      }
+                    >
+                      <div className="text-[13px] font-semibold text-[#1c1917]">{option.name}</div>
+                      <div className="text-[11.5px] text-[#78716c]">
+                        {option.priceDelta >= 0 ? '+' : ''}
+                        {option.priceDelta} ek
+                      </div>
+                    </button>
+                    <StatusPill active={option.isActive ?? true}>
+                      {option.isActive ?? true ? 'Aktif' : 'Pasif'}
+                    </StatusPill>
+                    <RowAction
+                      label="Pasifleştir"
+                      tone="danger"
+                      disabled={busy}
+                      onClick={() => void onArchiveOption(optionsGroup.id, option.id)}
+                    >
+                      <TrashIcon />
+                    </RowAction>
+                  </div>
                 ))
               )}
             </div>
-          </>
-        )}
-      </SectionCard>
-    </div>
-  );
-}
 
-function OptionGroupCard({
-  group,
-  busy,
-  optionForm,
-  setOptionForm,
-  onEditGroup,
-  onSaveOption,
-  onArchiveOption,
-}: {
-  group: OptionGroup;
-  busy: boolean;
-  optionForm: ReturnType<typeof emptyOptionForm>;
-  setOptionForm: (
-    updater: (current: ReturnType<typeof emptyOptionForm>) => ReturnType<typeof emptyOptionForm>,
-  ) => void;
-  onEditGroup: () => void;
-  onSaveOption: () => void;
-  onArchiveOption: (optionId: string) => void;
-}) {
-  const editingThisGroup = optionForm.groupId === group.id;
-  const currency = usePlatformPack()?.currency || '';
-  const setLocal = (patch: Partial<ReturnType<typeof emptyOptionForm>>) =>
-    setOptionForm((current) => ({ ...current, ...patch, groupId: group.id }));
-
-  return (
-    <div className="rounded-[14px] border border-[#ece2d2] bg-white p-4">
-      <div className="flex flex-wrap items-start justify-between gap-2">
-        <div>
-          <div className="flex items-center gap-2">
-            <span className="text-[14px] font-bold text-[#1c1917]">{group.name}</span>
-            <StatusPill active={group.isActive ?? true}>
-              {group.isActive ?? true ? 'Aktif' : 'Arşiv'}
-            </StatusPill>
-          </div>
-          <div className="mt-0.5 text-[11.5px] text-[#78716c]">
-            min {group.minSelections} · max {group.maxSelections ?? 1} ·{' '}
-            {group.isRequired ? 'zorunlu' : 'opsiyonel'}
-          </div>
-        </div>
-        <Button variant="ghost" onClick={onEditGroup}>
-          Grubu düzenle
-        </Button>
-      </div>
-
-      <div className="mt-3 grid gap-1.5">
-        {group.options.length === 0 ? (
-          <div className="rounded-[12px] bg-[#f7fafd] px-3 py-2 text-[12.5px] text-[#78716c]">
-            Henüz malzeme yok.
-          </div>
-        ) : (
-          group.options.map((option) => (
-            <div
-              key={option.id}
-              className="flex flex-wrap items-center justify-between gap-2 rounded-[12px] bg-[#f7fafd] px-3 py-2"
-            >
-              <button
-                type="button"
-                onClick={() =>
-                  setOptionForm(() => ({
-                    groupId: group.id,
-                    id: option.id,
-                    name: option.name,
-                    description: option.description ?? '',
-                    priceDelta: String(option.priceDelta),
-                    sortOrder: String(option.sortOrder ?? 0),
-                    isActive: option.isActive ?? true,
-                  }))
-                }
-                className="flex-1 text-left"
-              >
-                <div className="text-[13px] font-semibold text-[#1c1917]">{option.name}</div>
-                <div className="text-[11.5px] text-[#78716c]">
-                  {option.priceDelta >= 0 ? '+' : ''}
-                  {option.priceDelta} ek
-                </div>
-              </button>
-              <StatusPill active={option.isActive ?? true}>
-                {option.isActive ?? true ? 'Aktif' : 'Arşiv'}
-              </StatusPill>
-              <button
-                type="button"
-                className="text-[11.5px] font-semibold text-red-600 hover:underline"
-                disabled={busy}
-                onClick={() => onArchiveOption(option.id)}
-              >
-                Arşivle
-              </button>
+            <div className="grid gap-2 rounded-[12px] border border-[#ece2d2] bg-[#fafbfd] p-3">
+              <div className="text-[12px] font-bold text-[#1c1917]">
+                {editingOption && optionForm.id ? 'Malzemeyi güncelle' : 'Yeni malzeme ekle'}
+              </div>
+              <div className="grid gap-2 sm:grid-cols-2">
+                <Input
+                  placeholder="Malzeme adı (ör. mantar)"
+                  value={editingOption ? optionForm.name : ''}
+                  onChange={(e) =>
+                    setOptionForm(() => ({
+                      ...optionForm,
+                      groupId: optionsGroup.id,
+                      name: e.target.value,
+                    }))
+                  }
+                />
+                <Input
+                  placeholder="Ek fiyat"
+                  inputMode="decimal"
+                  value={editingOption ? optionForm.priceDelta : ''}
+                  onChange={(e) =>
+                    setOptionForm(() => ({
+                      ...optionForm,
+                      groupId: optionsGroup.id,
+                      priceDelta: e.target.value,
+                    }))
+                  }
+                />
+              </div>
+              <div className="flex flex-wrap justify-end gap-2">
+                {editingOption && optionForm.id ? (
+                  <Button
+                    variant="ghost"
+                    onClick={() => setOptionForm(() => ({ ...emptyOptionForm(), groupId: optionsGroup.id }))}
+                  >
+                    + Yeni
+                  </Button>
+                ) : null}
+                <Button
+                  onClick={() => void onSaveOption(optionsGroup.id)}
+                  shimmer={true}
+                  disabled={busy || !editingOption || !optionForm.name.trim()}
+                >
+                  {editingOption && optionForm.id ? 'Güncelle' : 'Ekle'}
+                </Button>
+              </div>
             </div>
-          ))
-        )}
-      </div>
-
-      <div className="mt-3 grid gap-2 rounded-[12px] bg-[#fafbfd] p-3">
-        <div className="text-[12px] font-bold text-[#1c1917]">
-          {editingThisGroup && optionForm.id ? 'Malzemeyi güncelle' : 'Yeni malzeme ekle'}
-        </div>
-        <div className="grid gap-2 sm:grid-cols-2">
-          <Input
-            placeholder="Malzeme adı (ör. mantar)"
-            value={editingThisGroup ? optionForm.name : ''}
-            onChange={(event) => setLocal({ name: event.target.value })}
-          />
-          <Input
-            placeholder={`Ek fiyat${currency ? ` (${currency})` : ''}`}
-            inputMode="decimal"
-            value={editingThisGroup ? optionForm.priceDelta : ''}
-            onChange={(event) => setLocal({ priceDelta: event.target.value })}
-          />
-        </div>
-        <Textarea
-          rows={2}
-          placeholder="Açıklama (opsiyonel)"
-          value={editingThisGroup ? optionForm.description : ''}
-          onChange={(event) => setLocal({ description: event.target.value })}
-        />
-        <div className="flex flex-wrap items-center gap-3 text-[12.5px] text-[#44403c]">
-          <Input
-            className="!w-20"
-            placeholder="Sıra"
-            inputMode="numeric"
-            value={editingThisGroup ? optionForm.sortOrder : ''}
-            onChange={(event) => setLocal({ sortOrder: event.target.value })}
-          />
-          <label className="flex items-center gap-2">
-            <input
-              type="checkbox"
-              checked={editingThisGroup ? optionForm.isActive : true}
-              onChange={(event) => setLocal({ isActive: event.target.checked })}
-            />
-            Vitrinde görünür
-          </label>
-          <div className="ml-auto flex flex-wrap gap-2">
-            {editingThisGroup && optionForm.id ? (
-              <Button
-                variant="ghost"
-                onClick={() =>
-                  setOptionForm(() => ({ ...emptyOptionForm(), groupId: group.id }))
-                }
-              >
-                + Yeni
-              </Button>
-            ) : null}
-            <Button onClick={onSaveOption} disabled={busy || !optionForm.name.trim() || !editingThisGroup}>
-              {editingThisGroup && optionForm.id ? 'Güncelle' : 'Ekle'}
-            </Button>
           </div>
-        </div>
-      </div>
+        )}
+      </TenantSlideOver>
     </div>
   );
 }
@@ -2266,7 +2379,7 @@ function PreviewTab({ preview }: { preview: PublicPreview }) {
                       {item.categoryName ?? 'Kategorisiz'}
                     </div>
                   </div>
-                  <div className="text-[13px] font-bold text-[#f97316]">
+                  <div className="text-[13px] font-bold text-[#24A94A]">
                     {item.basePrice} {item.currencyCode}
                   </div>
                 </div>

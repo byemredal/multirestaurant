@@ -9,6 +9,7 @@ import {
   useRef,
   useState,
 } from 'react';
+import Link from 'next/link';
 import { cn } from '@lieferzonen/ui';
 import { useTenantStores } from '@/lib/tenant-store-context';
 
@@ -42,7 +43,7 @@ function DotIcon({ isActive }: { isActive: boolean }) {
   return (
     <span
       aria-hidden
-      className={cn('h-1.5 w-1.5 rounded-full', isActive ? 'bg-emerald-500' : 'bg-slate-300')}
+      className={cn('h-1.5 w-1.5 rounded-full', isActive ? 'bg-primary-500' : 'bg-slate-300')}
     />
   );
 }
@@ -89,7 +90,26 @@ export function StoreSwitcher(): ReactElement | null {
     );
   }
 
-  if (stores.length === 0) return null;
+  // No stores yet: keep the panel visible (do NOT hide the section) with an
+  // empty state + a single CTA that routes to the studio create flow.
+  if (stores.length === 0) {
+    return (
+      <div className="mt-3 rounded-[14px] border border-dashed border-slate-200 bg-white p-3">
+        <div className="text-[10px] font-bold uppercase tracking-[0.22em] text-slate-400">
+          Aktif restoran
+        </div>
+        <p className="mt-1.5 text-[12.5px] leading-5 text-slate-500">
+          Henüz restoran yok. İlk restoranını ekleyerek başla.
+        </p>
+        <Link
+          href="/dashboard/studio"
+          className="mt-2.5 inline-flex w-full items-center justify-center gap-1.5 rounded-[10px] bg-[#24A94A] px-3 py-2 text-[12.5px] font-semibold text-white transition hover:bg-[#1B7A37]"
+        >
+          + Restoran Ekle
+        </Link>
+      </div>
+    );
+  }
 
   const isSingle = stores.length === 1;
 
@@ -100,7 +120,7 @@ export function StoreSwitcher(): ReactElement | null {
           Aktif restoran
         </div>
         <div className="mt-1.5 flex items-center gap-2">
-          <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-[8px] border border-slate-100 bg-slate-50 text-[#09479A]">
+          <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-[8px] border border-slate-100 bg-slate-50 text-[#24A94A]">
             <StoreIcon className="h-4 w-4" />
           </span>
           <span className="min-w-0 flex-1">
@@ -165,12 +185,12 @@ export function StoreSwitcher(): ReactElement | null {
         className={cn(
           'flex w-full items-center justify-between gap-2 rounded-[14px] border bg-white p-3 text-left transition',
           open
-            ? 'border-[#09479A]/30 ring-2 ring-[#09479A]/15'
-            : 'border-slate-100 hover:border-[#09479A]/20',
+            ? 'border-[#24A94A]/30 ring-2 ring-[#24A94A]/15'
+            : 'border-slate-100 hover:border-[#24A94A]/20',
         )}
       >
         <span className="flex min-w-0 items-center gap-2">
-          <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-[8px] border border-slate-100 bg-slate-50 text-[#09479A]">
+          <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-[8px] border border-slate-100 bg-slate-50 text-[#24A94A]">
             <StoreIcon className="h-4 w-4" />
           </span>
           <span className="min-w-0 flex-1">
@@ -214,18 +234,18 @@ export function StoreSwitcher(): ReactElement | null {
                 className={cn(
                   'flex w-full items-center gap-2 rounded-[10px] px-2.5 py-2 text-left transition',
                   isActive
-                    ? 'bg-[#09479A]/[0.06] text-[#09479A]'
+                    ? 'bg-[#24A94A]/[0.06] text-[#24A94A]'
                     : 'text-slate-700 hover:bg-slate-50',
                 )}
               >
-                <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-[8px] border border-slate-100 bg-white text-[#09479A]">
+                <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-[8px] border border-slate-100 bg-white text-[#24A94A]">
                   <StoreIcon className="h-4 w-4" />
                 </span>
                 <span className="min-w-0 flex-1">
                   <span
                     className={cn(
                       'block truncate text-[13px] font-semibold tracking-[-0.005em]',
-                      isActive ? 'text-[#09479A]' : 'text-slate-900',
+                      isActive ? 'text-[#24A94A]' : 'text-slate-900',
                     )}
                   >
                     {store.name}
@@ -236,7 +256,7 @@ export function StoreSwitcher(): ReactElement | null {
                   </span>
                 </span>
                 {isActive ? (
-                  <CheckIcon className="h-4 w-4 shrink-0 text-[#09479A]" aria-hidden />
+                  <CheckIcon className="h-4 w-4 shrink-0 text-[#24A94A]" aria-hidden />
                 ) : null}
               </button>
             );

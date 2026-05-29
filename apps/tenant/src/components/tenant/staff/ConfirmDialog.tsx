@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect } from 'react';
+import { createPortal } from 'react-dom';
 
 /**
  * Minimal destructive-action modal. Used for staff deactivation and resend-
@@ -38,16 +39,16 @@ export function ConfirmDialog({
     return () => window.removeEventListener('keydown', onKey);
   }, [open, busy, onClose]);
 
-  if (!open) return null;
+  if (!open || typeof document === 'undefined') return null;
 
   const confirmClasses =
     tone === 'danger'
       ? 'bg-red-600 hover:bg-red-700 text-white'
-      : 'bg-[#09479A] hover:bg-[#06366f] text-white';
+      : 'bg-[#24A94A] hover:bg-[#1B7A37] text-white';
 
-  return (
+  return createPortal(
     <div
-      className="fixed inset-0 z-50 flex items-end justify-center bg-slate-900/40 p-0 sm:items-center sm:p-4"
+      className="fixed inset-0 z-[110] flex items-end justify-center bg-slate-900/40 p-0 sm:items-center sm:p-4"
       role="dialog"
       aria-modal="true"
       aria-labelledby="confirm-dialog-title"
@@ -83,6 +84,7 @@ export function ConfirmDialog({
           </button>
         </div>
       </div>
-    </div>
+    </div>,
+    document.body,
   );
 }

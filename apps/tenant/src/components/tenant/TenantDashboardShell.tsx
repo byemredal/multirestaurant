@@ -193,7 +193,7 @@ export default function TenantDashboardShell({
   const sections = Array.from(new Set(navItems.map((item) => item.section)));
 
   const sidebar = (
-    <aside className="flex h-full flex-col rounded-[24px] border border-slate-100 bg-white p-4 lg:sticky lg:top-4">
+    <aside className="flex h-full flex-col border-r border-slate-100 bg-white p-4">
       <div className="flex flex-col items-start gap-3 border-b border-slate-100 px-2 pb-4">
         <div className="flex min-h-[34px] min-w-[46px] items-center justify-center pt-0.5">
           <PlatformLogo apiBaseUrl={apiBaseUrl} height={30} />
@@ -210,7 +210,7 @@ export default function TenantDashboardShell({
           type="button"
           aria-label="Menüyü kapat"
           onClick={() => setMobileDrawerOpen(false)}
-          className="-mr-1 mt-1 flex h-9 w-9 shrink-0 items-center justify-center rounded-full border border-slate-200 bg-white text-slate-500 transition hover:border-[#09479A]/30 hover:text-[#09479A] lg:hidden"
+          className="-mr-1 mt-1 flex h-9 w-9 shrink-0 items-center justify-center rounded-full border border-slate-200 bg-white text-slate-500 transition hover:border-[#24A94A]/30 hover:text-[#24A94A] lg:hidden"
         >
           <CloseIcon className="h-4 w-4" />
         </button>
@@ -218,7 +218,7 @@ export default function TenantDashboardShell({
 
       <div className="mt-4 rounded-[16px] border border-slate-100 bg-slate-50/60 p-4">
         <div className="flex items-start gap-3">
-          <div className="flex h-12 w-12 items-center justify-center rounded-[14px] bg-[linear-gradient(135deg,#09479A,#2563eb)] text-white shadow-[0_10px_22px_rgba(9,71,154,0.22)]">
+          <div className="flex h-12 w-12 items-center justify-center rounded-[14px] bg-[linear-gradient(135deg,#24A94A,#1F9D52)] text-white shadow-[0_10px_22px_rgba(9,71,154,0.22)]">
             <UserIcon className="h-5 w-5" />
           </div>
           <div className="min-w-0 flex-1 pt-0.5">
@@ -232,7 +232,7 @@ export default function TenantDashboardShell({
 
       <StoreSwitcher />
 
-      <nav className="mt-4 flex-1 overflow-y-auto pr-1">
+      <nav className="mt-4 flex-1 overflow-y-auto pr-1 [scrollbar-width:thin] [&::-webkit-scrollbar]:w-1.5 [&::-webkit-scrollbar-thumb]:rounded-full [&::-webkit-scrollbar-thumb]:bg-slate-200 [&::-webkit-scrollbar-track]:bg-transparent hover:[&::-webkit-scrollbar-thumb]:bg-slate-300">
         <div className="grid gap-4">
           {sections.map((section) => (
             <div key={section}>
@@ -273,22 +273,22 @@ export default function TenantDashboardShell({
                           className={cn(
                             baseClass,
                             item.active
-                              ? 'border-[#09479A]/25 bg-[#09479A]/[0.06]'
-                              : 'border-slate-100 bg-white hover:border-[#09479A]/20 hover:bg-[#09479A]/[0.03]',
+                              ? 'border-[#24A94A]/25 bg-[#24A94A]/[0.06]'
+                              : 'border-slate-100 bg-white hover:border-[#24A94A]/20 hover:bg-[#24A94A]/[0.03]',
                           )}
                         >
                           <span className="flex items-center gap-3">
                             {
                               item.active ? (
                                 <span
-                                  className="rounded-full animate-pulse bg-[#09479A] w-2 h-2"></span>
+                                  className="rounded-full animate-pulse bg-[#24A94A] w-2 h-2"></span>
                               ) : null
                             }
                             <span
                               className={cn(
                                 'flex h-9 w-9 items-center justify-center rounded-[10px] border transition',
                                 item.active
-                                  ? 'border-[#09479A]/20 bg-white text-[#09479A]'
+                                  ? 'border-[#24A94A]/20 bg-white text-[#24A94A]'
                                   : 'border-slate-100 bg-slate-50 text-slate-500',
                               )}
                             >
@@ -298,7 +298,7 @@ export default function TenantDashboardShell({
                               <span
                                 className={cn(
                                   'block text-[13px] font-semibold tracking-[-0.005em]',
-                                  item.active ? 'text-[#09479A]' : 'text-slate-900',
+                                  item.active ? 'text-[#24A94A]' : 'text-slate-900',
                                 )}
                               >
                                 {item.label}
@@ -348,7 +348,7 @@ export default function TenantDashboardShell({
           aria-label="Menüyü aç"
           aria-expanded={mobileDrawerOpen}
           onClick={() => setMobileDrawerOpen(true)}
-          className="flex h-10 w-10 items-center justify-center rounded-[12px] border border-slate-200 bg-white text-slate-700 transition hover:border-[#09479A]/30 hover:text-[#09479A]"
+          className="flex h-10 w-10 items-center justify-center rounded-[12px] border border-slate-200 bg-white text-slate-700 transition hover:border-[#24A94A]/30 hover:text-[#24A94A]"
         >
           <MenuIcon className="h-5 w-5" />
         </button>
@@ -385,15 +385,18 @@ export default function TenantDashboardShell({
         </div>
       ) : null}
 
+      {/* Desktop sidebar — fixed, flush to the viewport's left edge, full height */}
+      <div className="fixed left-0 top-0 z-30 hidden h-screen w-[284px] lg:block">
+        {sidebar}
+      </div>
+
       <div
         className={cn(
-          'mx-auto grid min-h-screen gap-6 px-4 py-4 lg:grid-cols-[300px_minmax(0,1fr)] xl:px-6',
+          'min-h-screen px-4 py-4 lg:pl-[284px] xl:px-6 xl:pl-[284px]',
           mobileStickyActions ? 'pb-24 lg:pb-4' : '',
         )}
       >
-        <div className="hidden lg:block">{sidebar}</div>
-
-        <main className="min-w-0">
+        <main className="min-w-0 lg:px-6 lg:py-2">
           <div className="rounded-[24px] border border-slate-100 bg-white/80 backdrop-blur">
             <div className="p-4 lg:p-6">
               <section className="rounded-[20px] border border-slate-100 bg-white p-5 lg:p-6">
