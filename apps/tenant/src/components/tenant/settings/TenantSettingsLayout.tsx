@@ -17,14 +17,32 @@ type SettingsNavItem = {
 const SETTINGS_NAV: SettingsNavItem[] = [
   { href: '/dashboard/settings', label: 'Genel', description: 'Hesap ve vitrin özeti' },
   {
-    href: '/dashboard/settings/legal',
-    label: 'Yasal / Dokümanlar',
-    description: 'Mesafeli satış ve ön bilgilendirme',
+    href: '/dashboard/settings/storefront',
+    label: 'Vitrin',
+    description: 'Görünüm ve marka',
+    comingSoon: true,
+  },
+  {
+    href: '/dashboard/settings/notifications',
+    label: 'Bildirimler',
+    description: 'E-posta ve sipariş bildirimleri',
+    comingSoon: true,
   },
   {
     href: '/dashboard/settings/billing',
     label: 'Faturalama / Vergi',
     description: 'Platform faturalama',
+    comingSoon: true,
+  },
+  {
+    href: '/dashboard/settings/legal',
+    label: 'Yasal / Dokümanlar',
+    description: 'Mesafeli satış ve ön bilgilendirme',
+  },
+  {
+    href: '/dashboard/settings/integrations',
+    label: 'Entegrasyonlar',
+    description: 'Ödeme, teslimat ve servisler',
     comingSoon: true,
   },
   {
