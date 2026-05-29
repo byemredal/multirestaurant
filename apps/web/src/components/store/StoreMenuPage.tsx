@@ -4,6 +4,7 @@ import { useEffect, useState, type ReactNode } from 'react';
 import { useRouter } from 'next/navigation';
 import { useCart } from '@/lib/cart/cart-context';
 import { apiBaseUrl } from '@/lib/config';
+import HomeHeader from '@/components/shell/HomeHeader';
 
 type StoreCuisine = {
   id: string;
@@ -128,13 +129,6 @@ const ClockIcon = () => (
   <Icon className="h-3.5 w-3.5">
     <circle cx="12" cy="12" r="9" />
     <path d="M12 7v5l3 3" />
-  </Icon>
-);
-const CartIcon = () => (
-  <Icon className="h-5 w-5">
-    <path d="M6 2L3 6v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V6l-3-4Z" />
-    <path d="M3 6h18" />
-    <path d="M16 10a4 4 0 0 1-8 0" />
   </Icon>
 );
 
@@ -314,12 +308,14 @@ export default function StoreMenuPage({
   if (error || !store) {
     return (
       <div className="min-h-screen bg-[#f6f6f4]">
+        <HomeHeader />
         <div className="mx-auto max-w-[900px] px-5 py-8">
           <button
             onClick={goBack}
-            className="flex h-10 w-10 items-center justify-center rounded-full bg-white text-[#71717a] shadow-sm transition hover:text-[#18181b]"
+            className="inline-flex items-center gap-1.5 rounded-full px-1 text-[13px] font-medium text-[#52525b] transition hover:text-[#18181b]"
           >
             <BackIcon />
+            <span>Geri</span>
           </button>
           <div className="mt-6 rounded-[20px] bg-white px-6 py-12 text-center shadow-sm">
             <p className="text-[18px] font-semibold text-[#18181b]">
@@ -340,46 +336,19 @@ export default function StoreMenuPage({
 
   return (
     <div className="min-h-screen bg-[#f6f6f4]">
-      {/* Sticky header */}
-      <header className="sticky top-0 z-30 border-b border-[#e4e4e7] bg-white/95 backdrop-blur-sm">
-        <div className="mx-auto flex max-w-[900px] items-center gap-3 px-5 py-3">
-          <button
-            onClick={goBack}
-            aria-label="Geri git"
-            className="flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-full bg-[#f4f4f5] text-[#71717a] transition hover:bg-[#e4e4e7] hover:text-[#18181b]"
-          >
-            <BackIcon />
-          </button>
-          <div className="min-w-0 flex-1">
-            <div className="truncate text-[15px] font-bold text-[#18181b]">
-              {store.name}
-            </div>
-            <div className="text-[12px] text-[#71717a]">
-              {store.category}
-            </div>
-          </div>
-          {/* Cart shortcut */}
-          <button
-            onClick={openCart}
-            className="relative flex h-9 items-center gap-2 rounded-full bg-[#084799] px-4 text-[13px] font-semibold text-white transition hover:bg-[#063d85]"
-          >
-            <CartIcon />
-            {cartHasItems ? (
-              <>
-                <span>{totalItems} ürün</span>
-                <span className="text-white/70">·</span>
-                <span>
-                  {subtotal.toFixed(2)} {currency}
-                </span>
-              </>
-            ) : (
-              <span>Sepet</span>
-            )}
-          </button>
-        </div>
-      </header>
+      {/* Global web header — consistent across all customer surfaces. */}
+      <HomeHeader />
 
       <main className="mx-auto max-w-[900px] px-5 pb-20 lg:px-8">
+        {/* Secondary breadcrumb: back action stays page-level, not in the brand bar. */}
+        <button
+          onClick={goBack}
+          className="mt-4 inline-flex items-center gap-1.5 rounded-full px-1 text-[13px] font-medium text-[#52525b] transition hover:text-[#18181b]"
+        >
+          <BackIcon />
+          <span>Geri</span>
+        </button>
+
         {/* Hero card */}
         <section className="mt-5 overflow-hidden rounded-[22px] bg-white shadow-[0_2px_12px_rgba(0,0,0,0.06)]">
           <div
@@ -957,7 +926,7 @@ function ReviewsPanel({
 function LoadingSkeleton() {
   return (
     <div className="min-h-screen bg-[#f6f6f4]">
-      <div className="sticky top-0 z-30 h-[60px] border-b border-[#e4e4e7] bg-white" />
+      <HomeHeader />
       <div className="mx-auto max-w-[900px] px-5 py-5">
         <div className="animate-pulse space-y-4">
           <div className="h-[200px] rounded-[22px] bg-[#e4e4e7]" />

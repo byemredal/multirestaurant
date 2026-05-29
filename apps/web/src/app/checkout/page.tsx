@@ -3,6 +3,7 @@
 import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
+import HomeHeader from '@/components/shell/HomeHeader';
 import { useCart, type CartServiceType } from '@/lib/cart/cart-context';
 import { readAuthSession } from '@/lib/storage/auth-session';
 import { apiClient } from '@/lib/api/api-client';
@@ -72,17 +73,23 @@ function LockIcon() {
 
 function PageHeader() {
   return (
-    <header className="border-b border-[#e4e4e7] bg-white">
-      <div className="mx-auto flex max-w-[860px] items-center gap-4 px-5 py-4">
-        <Link
-          href="/"
-          className="flex h-9 w-9 items-center justify-center rounded-full bg-[#f4f4f5] text-[#71717a] transition hover:bg-[#e4e4e7]"
-        >
-          <BackIcon />
-        </Link>
-        <h1 className="text-[18px] font-bold text-[#18181b]">Ödeme</h1>
+    <>
+      {/* Global web header — brand/cart/auth stay consistent on checkout. */}
+      <HomeHeader />
+      {/* Secondary bar: the checkout title + back link live below the brand. */}
+      <div className="border-b border-[#e4e4e7] bg-white">
+        <div className="mx-auto flex max-w-[860px] items-center gap-4 px-5 py-4">
+          <Link
+            href="/"
+            aria-label="Ana sayfaya dön"
+            className="flex h-9 w-9 items-center justify-center rounded-full bg-[#f4f4f5] text-[#71717a] transition hover:bg-[#e4e4e7]"
+          >
+            <BackIcon />
+          </Link>
+          <h1 className="text-[18px] font-bold text-[#18181b]">Ödeme</h1>
+        </div>
       </div>
-    </header>
+    </>
   );
 }
 
