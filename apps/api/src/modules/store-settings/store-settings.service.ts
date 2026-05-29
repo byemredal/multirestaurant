@@ -457,28 +457,57 @@ export class StoreSettingsService {
   ) {
     await this.ensureOwnedStore(storeId, tenantId);
 
+    // Accept either a paymentMethodId (UUID) or a canonical paymentMethod code.
+    // The tenant dashboard sends codes; resolve them to ids here so the save
+    // works without forcing the frontend to know catalog UUIDs.
+    const codeToId = await this.store.getCanonicalPaymentMethodIdMap();
+
     const seen = new Set<string>();
-    for (const entry of dto.paymentMethods) {
-      if (seen.has(entry.paymentMethodId)) {
+    const normalized: Array<{
+      paymentMethodId: string;
+      customLabel: string | null;
+      isActive: boolean;
+      sortOrder: number;
+    }> = [];
+
+    for (const [index, entry] of dto.paymentMethods.entries()) {
+      let paymentMethodId = entry.paymentMethodId;
+      if (!paymentMethodId && entry.paymentMethod) {
+        paymentMethodId = codeToId[entry.paymentMethod];
+        if (!paymentMethodId) {
+          throw new BadRequestException({
+            code: 'payment_method_unavailable',
+            message: 'Seçilen ödeme yöntemi geçersiz veya kullanılamıyor.',
+          });
+        }
+      }
+      if (!paymentMethodId) {
+        throw new BadRequestException({
+          code: 'invalid_payment_method',
+          message: 'Her ödeme yöntemi için paymentMethodId veya paymentMethod kodu gerekli.',
+        });
+      }
+      if (seen.has(paymentMethodId)) {
         throw new BadRequestException(
-          `Duplicate paymentMethodId "${entry.paymentMethodId}" in payload.`,
+          `Duplicate payment method "${entry.paymentMethod ?? paymentMethodId}" in payload.`,
         );
       }
-      seen.add(entry.paymentMethodId);
-      await this.systemTaxonomyService.getPaymentMethodByIdOrThrow(entry.paymentMethodId);
+      seen.add(paymentMethodId);
+      await this.systemTaxonomyService.getPaymentMethodByIdOrThrow(paymentMethodId);
+
+      normalized.push({
+        paymentMethodId,
+        customLabel: entry.customLabel?.trim() || null,
+        isActive: entry.isActive ?? true,
+        sortOrder: entry.sortOrder ?? index,
+      });
     }
 
-    const normalized = dto.paymentMethods.map((entry, index) => ({
-      paymentMethodId: entry.paymentMethodId,
-      customLabel: entry.customLabel?.trim() || null,
-      isActive: entry.isActive ?? true,
-      sortOrder: entry.sortOrder ?? index,
-    }));
-
     if (normalized.filter((entry) => entry.isActive).length === 0) {
-      throw new BadRequestException(
-        'At least one active payment method is required for ordering.',
-      );
+      throw new BadRequestException({
+        code: 'at_least_one_payment_method_required',
+        message: 'En az bir ödeme yöntemi aktif olmalıdır.',
+      });
     }
 
     return {

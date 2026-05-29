@@ -1393,6 +1393,81 @@ export class StoreSettingsStore {
     return this.listPaymentMethods(storeId);
   }
 
+  /** Canonical PaymentMethod catalog ids keyed by code; active rows only. */
+  async getCanonicalPaymentMethodIdMap(): Promise<Record<string, string>> {
+    const rows = await this.databaseService
+      .prepare(`SELECT "id", "code" FROM "PaymentMethod" WHERE "isActive" = TRUE`)
+      .all<{ id: string; code: string }>({});
+    const map: Record<string, string> = {};
+    for (const row of rows) {
+      map[row.code] = row.id;
+    }
+    return map;
+  }
+
+  private async upsertPaymentMethodAssignment(
+    storeId: string,
+    paymentMethodId: string,
+    isActive: boolean,
+    sortOrder: number,
+  ): Promise<void> {
+    const now = new Date().toISOString();
+    await this.databaseService
+      .prepare(
+        `INSERT INTO "StorePaymentMethod" (
+          "id", "storeId", "paymentMethodId", "customLabel", "isActive", "sortOrder",
+          "createdAt", "updatedAt"
+        ) VALUES (
+          $id, $storeId, $paymentMethodId, NULL, $isActive, $sortOrder, $now, $now
+        )
+        ON CONFLICT ("storeId", "paymentMethodId") DO UPDATE
+        SET "isActive" = EXCLUDED."isActive",
+            "updatedAt" = EXCLUDED."updatedAt"`,
+      )
+      .run({
+        $id: randomUUID(),
+        $storeId: storeId,
+        $paymentMethodId: paymentMethodId,
+        $isActive: isActive,
+        $sortOrder: sortOrder,
+        $now: now,
+      });
+  }
+
+  /**
+   * Guarantees a store has at least its default payment-method assignments.
+   * No-op when the store already has any assignment (admin/tenant config is
+   * never overwritten). Default: pay-on-delivery methods (cash, credit_card)
+   * active; provider-backed methods (online_card, meal_card, wallet) inactive
+   * until a payment provider is configured.
+   */
+  async ensureDefaultStorePaymentMethods(
+    storeId: string,
+  ): Promise<StorePaymentMethodView[]> {
+    const existing = await this.listPaymentMethods(storeId);
+    if (existing.length > 0) {
+      return existing;
+    }
+
+    const ids = await this.getCanonicalPaymentMethodIdMap();
+    const defaults: Array<{ code: string; isActive: boolean }> = [
+      { code: 'cash', isActive: true },
+      { code: 'credit_card', isActive: true },
+      { code: 'online_card', isActive: false },
+      { code: 'meal_card', isActive: false },
+      { code: 'wallet', isActive: false },
+    ];
+    let sortOrder = 0;
+    for (const entry of defaults) {
+      const id = ids[entry.code];
+      if (!id) continue;
+      await this.upsertPaymentMethodAssignment(storeId, id, entry.isActive, sortOrder);
+      sortOrder += 1;
+    }
+
+    return this.listPaymentMethods(storeId);
+  }
+
   // ── Service types (assignment table → joined view) ─────────────────────────
   async listServiceTypes(storeId: string): Promise<StoreServiceTypeView[]> {
     const rows = await this.databaseService

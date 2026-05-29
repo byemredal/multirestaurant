@@ -15,9 +15,22 @@ import {
 } from 'class-validator';
 
 export class StorePaymentMethodAssignmentEntryDto {
-  @ApiProperty({ description: 'PaymentMethod.id from /system/payment-methods.' })
+  @ApiPropertyOptional({
+    description:
+      'PaymentMethod.id from /system/payment-methods. Either paymentMethodId or paymentMethod (code) must be provided.',
+  })
+  @IsOptional()
   @IsUUID('4')
-  paymentMethodId!: string;
+  paymentMethodId?: string;
+
+  @ApiPropertyOptional({
+    description: 'Canonical PaymentMethod code (e.g. cash, credit_card). Resolved server-side.',
+    example: 'cash',
+  })
+  @IsOptional()
+  @IsString()
+  @MaxLength(40)
+  paymentMethod?: string;
 
   @ApiPropertyOptional({ default: true })
   @IsOptional()

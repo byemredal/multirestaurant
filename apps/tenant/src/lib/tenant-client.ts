@@ -286,24 +286,25 @@ export function updateTenantStoreReceiptSettings(
 }
 
 // ── Commerce: payment methods, ordering policy, delivery fee tiers ─────────
+// Codes MUST match the backend PaymentMethod catalog (migration 0004); otherwise
+// the assignment save rejects unknown codes. provider-backed methods are listed
+// but stay inactive until a payment provider is wired up.
 export type TenantPaymentMethodCode =
   | 'cash'
   | 'credit_card'
-  | 'online_payment'
-  | 'sodexo'
-  | 'meal_voucher'
-  | 'bank_transfer';
+  | 'online_card'
+  | 'meal_card'
+  | 'wallet';
 
 export const TENANT_PAYMENT_METHODS: Array<{
   code: TenantPaymentMethodCode;
   defaultLabel: string;
 }> = [
-  { code: 'cash', defaultLabel: 'Nakit' },
+  { code: 'cash', defaultLabel: 'Nakit (kapıda)' },
   { code: 'credit_card', defaultLabel: 'Kredi kartı (kapıda)' },
-  { code: 'online_payment', defaultLabel: 'Online ödeme' },
-  { code: 'sodexo', defaultLabel: 'Sodexo' },
-  { code: 'meal_voucher', defaultLabel: 'Yemek çeki' },
-  { code: 'bank_transfer', defaultLabel: 'Havale / EFT' },
+  { code: 'online_card', defaultLabel: 'Online kart' },
+  { code: 'meal_card', defaultLabel: 'Yemek kartı' },
+  { code: 'wallet', defaultLabel: 'Cüzdan' },
 ];
 
 export type TenantStorePaymentMethod = {
@@ -360,11 +361,23 @@ export function replaceTenantStorePaymentMethods(
     sortOrder?: number;
   }>,
 ) {
+  // Map to the backend assignment contract: it resolves the canonical
+  // `paymentMethod` code to a PaymentMethod id and stores the label as
+  // `customLabel`.
+  const payload = {
+    paymentMethods: paymentMethods.map((entry) => ({
+      paymentMethod: entry.method,
+      customLabel: entry.label ?? null,
+      isActive: entry.isActive,
+      sortOrder: entry.sortOrder,
+    })),
+  };
+
   return request<{ paymentMethods: TenantStorePaymentMethod[] }>(
     `/tenant/stores/${storeId}/payment-methods`,
     session,
     {
-      body: JSON.stringify({ paymentMethods }),
+      body: JSON.stringify(payload),
       method: 'PUT',
     },
   );

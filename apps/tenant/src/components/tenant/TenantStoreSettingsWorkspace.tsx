@@ -616,10 +616,10 @@ export default function TenantStoreSettingsWorkspace() {
 
         {!selectedStoreId && stores.length === 0 ? (
           <SectionCard
-            title="Henüz restoran yok"
-            description="Ayarları düzenlemek için önce restoran panelinden bir restoran oluşturun."
+            title="Restoran özel ayarları için önce bir restoran oluşturun"
+            description="Bu sayfadaki ödeme, teslimat ve vitrin ayarları restoran düzeyinde tutulur. Bir restoran oluşturduğunuzda burada görünür."
           >
-            <Button onClick={() => router.push('/dashboard')}>Restoran paneline git</Button>
+            <Button onClick={() => router.push('/dashboard')}>Restoran oluştur</Button>
           </SectionCard>
         ) : (
           <div className="grid gap-4 lg:grid-cols-2">

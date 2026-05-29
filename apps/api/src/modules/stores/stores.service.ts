@@ -187,6 +187,9 @@ export class StoresService {
       // Seed canonical service types so the store is immediately orderable.
       // Without this the cart's createCart() throws "no active service types".
       await this.insertDefaultServiceTypes(store.id, now);
+      // Seed canonical payment methods (pay-on-delivery active) so checkout
+      // does not block with "no active payment method" on a brand-new store.
+      await this.insertDefaultPaymentMethods(store.id, now);
     });
 
     return {
@@ -1151,6 +1154,45 @@ export class StoresService {
           FROM "ServiceType" st
           WHERE st."code" = $code AND st."isActive" = TRUE
           ON CONFLICT ("storeId", "serviceTypeId") DO NOTHING`,
+        )
+        .run({
+          $id: randomUUID(),
+          $storeId: storeId,
+          $isActive: entry.isActive,
+          $sortOrder: entry.sortOrder,
+          $code: entry.code,
+          $now: iso,
+        });
+    }
+  }
+
+  /**
+   * Seeds default StorePaymentMethod assignments for a new store: pay-on-delivery
+   * methods (cash, credit_card) active; provider-backed methods inactive until a
+   * provider is configured. INSERT ... SELECT keyed on PaymentMethod.code, with
+   * ON CONFLICT DO NOTHING for idempotency.
+   */
+  private async insertDefaultPaymentMethods(storeId: string, now: Date) {
+    const iso = now.toISOString();
+    const defaults: Array<{ code: string; isActive: boolean; sortOrder: number }> = [
+      { code: 'cash', isActive: true, sortOrder: 0 },
+      { code: 'credit_card', isActive: true, sortOrder: 1 },
+      { code: 'online_card', isActive: false, sortOrder: 2 },
+      { code: 'meal_card', isActive: false, sortOrder: 3 },
+      { code: 'wallet', isActive: false, sortOrder: 4 },
+    ];
+
+    for (const entry of defaults) {
+      await this.databaseService
+        .prepare(
+          `INSERT INTO "StorePaymentMethod" (
+            "id", "storeId", "paymentMethodId", "customLabel", "isActive", "sortOrder",
+            "createdAt", "updatedAt"
+          )
+          SELECT $id, $storeId, pm."id", NULL, $isActive, $sortOrder, $now, $now
+          FROM "PaymentMethod" pm
+          WHERE pm."code" = $code AND pm."isActive" = TRUE
+          ON CONFLICT ("storeId", "paymentMethodId") DO NOTHING`,
         )
         .run({
           $id: randomUUID(),

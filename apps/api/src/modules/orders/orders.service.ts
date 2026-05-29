@@ -123,11 +123,20 @@ export class OrdersService {
   }
 
   private async loadCommerceContext(storeId: string) {
-    const [orderingPolicy, paymentMethods, deliveryFeeTiers] = await Promise.all([
+    const [orderingPolicy, deliveryFeeTiers] = await Promise.all([
       this.storeSettingsStore.getOrCreateOrderingPolicy(storeId),
-      this.storeSettingsStore.listActivePaymentMethods(storeId),
       this.storeSettingsStore.listDeliveryFeeTiers(storeId),
     ]);
+
+    let paymentMethods = await this.storeSettingsStore.listActivePaymentMethods(storeId);
+    // Self-heal: legacy stores created before default seeding have no payment
+    // assignments. Backfill the safe defaults so checkout is not blocked with
+    // NO_ACTIVE_PAYMENT_METHOD; only truly corrupt data stays empty.
+    if (paymentMethods.length === 0) {
+      await this.storeSettingsStore.ensureDefaultStorePaymentMethods(storeId);
+      paymentMethods = await this.storeSettingsStore.listActivePaymentMethods(storeId);
+    }
+
     return { orderingPolicy, paymentMethods, deliveryFeeTiers };
   }
 
