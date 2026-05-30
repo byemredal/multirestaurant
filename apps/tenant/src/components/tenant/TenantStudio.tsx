@@ -715,14 +715,6 @@ export default function TenantStudio() {
                     closeTime: hour.closeTime,
                     isClosed: hour.isClosed,
                   })),
-                  deliveryZones: storeForm.deliveryZones.map((zone) => ({
-                    name: zone.name,
-                    postalCodes: zone.postalCodes,
-                    radiusKm: zone.radiusKm ?? undefined,
-                    minimumOrderAmount: zone.minimumOrderAmount ?? undefined,
-                    deliveryFee: zone.deliveryFee ?? undefined,
-                    estimatedDeliveryMinutes: zone.estimatedDeliveryMinutes ?? undefined,
-                  })),
                 };
                 if (selectedStore) {
                   await updateTenantStore(session, selectedStore.id, {
@@ -996,7 +988,7 @@ function ShopTab({
   const [disableTarget, setDisableTarget] = useState<Store | null>(null);
   const [settingsTarget, setSettingsTarget] = useState<Store | null>(null);
   // Step-accordion inside the drawer: one section open at a time.
-  const [section, setSection] = useState<'info' | 'hours' | 'zones'>('info');
+  const [section, setSection] = useState<'info' | 'hours'>('info');
 
   // Reset to the first step every time the drawer (re)opens.
   useEffect(() => {
@@ -1004,7 +996,6 @@ function ShopTab({
   }, [storeEditing]);
 
   const infoComplete = storeForm.name.trim().length > 0;
-  const zoneCount = storeForm.deliveryZones.length;
   const openDays = storeForm.openingHours.filter((h) => !h.isClosed).length;
 
   // Single-country platform: the store country is pinned to the active
@@ -1023,17 +1014,6 @@ function ShopTab({
     setStoreForm((current) => ({
       ...current,
       openingHours: current.openingHours.map((entry, i) =>
-        i === index ? { ...entry, ...patch } : entry,
-      ),
-    }));
-
-  const updateZone = (
-    index: number,
-    patch: Partial<StoreFormState['deliveryZones'][number]>,
-  ) =>
-    setStoreForm((current) => ({
-      ...current,
-      deliveryZones: current.deliveryZones.map((entry, i) =>
         i === index ? { ...entry, ...patch } : entry,
       ),
     }));
@@ -1302,7 +1282,7 @@ function ShopTab({
           title="Çalışma saatleri"
           index={2}
           open={section === 'hours'}
-          done={section === 'zones'}
+          done={false}
           summary={`${openDays} gün açık`}
           onToggle={() => setSection('hours')}
         >
@@ -1336,109 +1316,12 @@ function ShopTab({
                 </div>
               ))}
             </div>
-            <div className="flex justify-end">
-              <Button onClick={() => setSection('zones')}>Devam: Teslimat bölgeleri</Button>
+            <div className="rounded-[10px] border border-dashed border-ink-200 bg-ink-50 px-3 py-3 text-[12.5px] leading-5 text-ink-600">
+              Teslimat bölgelerini restoran ayarlarından (satırdaki ⚙ ikon) yönetebilirsiniz.
             </div>
           </div>
         </FormSection>
 
-        <FormSection
-          title="Teslimat bölgeleri"
-          index={3}
-          open={section === 'zones'}
-          summary={`${zoneCount} bölge`}
-          onToggle={() => setSection('zones')}
-        >
-          <div className="grid gap-2">
-            <div className="flex items-center justify-end">
-              <Button
-                variant="ghost"
-                shimmer={true}
-                onClick={() =>
-                  setStoreForm((current) => ({
-                    ...current,
-                    deliveryZones: [
-                      ...current.deliveryZones,
-                      {
-                        name: `Bölge ${current.deliveryZones.length + 1}`,
-                        postalCodes: current.postalCode ? [current.postalCode] : [],
-                        radiusKm: 5,
-                        minimumOrderAmount: 0,
-                        deliveryFee: 0,
-                        estimatedDeliveryMinutes: 30,
-                      },
-                    ],
-                  }))
-                }
-              >
-                + Bölge ekle
-              </Button>
-            </div>
-            {storeForm.deliveryZones.map((zone, index) => (
-              <div key={`${zone.name}-${index}`} className="grid gap-2 rounded-[12px] bg-white p-3">
-                <div className="grid gap-2 md:grid-cols-2">
-                  <Field label="Bölge adı">
-                    <Input
-                      value={zone.name}
-                      onChange={(event) => updateZone(index, { name: event.target.value })}
-                    />
-                  </Field>
-                  <Field label="Posta kodları (virgülle)">
-                    <Input
-                      value={zone.postalCodes.join(', ')}
-                      onChange={(event) =>
-                        updateZone(index, {
-                          postalCodes: event.target.value
-                            .split(',')
-                            .map((value) => value.trim())
-                            .filter(Boolean),
-                        })
-                      }
-                    />
-                  </Field>
-                  <Field label="Yarıçap (km)">
-                    <Input
-                      value={zone.radiusKm?.toString() ?? ''}
-                      inputMode="decimal"
-                      onChange={(event) =>
-                        updateZone(index, { radiusKm: asNumber(event.target.value) })
-                      }
-                    />
-                  </Field>
-                  <Field label={`Min sipariş${currency ? ` (${currency})` : ''}`}>
-                    <Input
-                      value={zone.minimumOrderAmount?.toString() ?? ''}
-                      inputMode="decimal"
-                      onChange={(event) =>
-                        updateZone(index, { minimumOrderAmount: asNumber(event.target.value) })
-                      }
-                    />
-                  </Field>
-                  <Field label={`Teslimat ücreti${currency ? ` (${currency})` : ''}`}>
-                    <Input
-                      value={zone.deliveryFee?.toString() ?? ''}
-                      inputMode="decimal"
-                      onChange={(event) =>
-                        updateZone(index, { deliveryFee: asNumber(event.target.value) })
-                      }
-                    />
-                  </Field>
-                  <Field label="Tahmini süre (dk)">
-                    <Input
-                      value={zone.estimatedDeliveryMinutes?.toString() ?? ''}
-                      inputMode="numeric"
-                      onChange={(event) =>
-                        updateZone(index, {
-                          estimatedDeliveryMinutes: asNumber(event.target.value),
-                        })
-                      }
-                    />
-                  </Field>
-                </div>
-              </div>
-            ))}
-          </div>
-        </FormSection>
       </div>
       </TenantSlideOver>
 

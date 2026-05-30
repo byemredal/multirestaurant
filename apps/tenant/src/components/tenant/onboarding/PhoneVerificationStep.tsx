@@ -3,6 +3,7 @@
 import { useMemo, useState } from 'react';
 import { Card, Input } from '@lieferzonen/ui';
 import {
+  PhoneCodeDeliveryError,
   sendTenantOnboardingPhoneCode,
   type TenantOnboardingResolvedSession,
   type TenantOnboardingWorkspace,
@@ -26,9 +27,16 @@ function getSeedPhone(workspace: TenantOnboardingWorkspace) {
   return workspace.phoneVerification?.phoneNumber ?? ownerData?.phoneNumber ?? '';
 }
 
-function formatSendError(message: string) {
+function formatSendError(error: unknown) {
+  if (error instanceof PhoneCodeDeliveryError) {
+    return 'Doğrulama kodu şu anda gönderilemiyor. Lütfen daha sonra tekrar deneyin veya destek ekibiyle iletişime geçin.';
+  }
+  const message = error instanceof Error ? error.message : 'Kod gönderilemedi.';
   if (message.toLowerCase().includes('phone number')) {
     return 'Lütfen geçerli bir telefon numarası girin.';
+  }
+  if (/^tenant_onboarding_phone_(send|resend)_failed_/i.test(message) || message === 'phone_code_request_failed') {
+    return 'Doğrulama kodu gönderilemedi. Lütfen tekrar deneyin.';
   }
   return message;
 }
@@ -74,8 +82,7 @@ export function PhoneVerificationStep({
         navigating = true;
         onNavigate(getTenantOnboardingStepUrl(workspace.stateToken, nextStep));
       } catch (sendError) {
-        const message = sendError instanceof Error ? sendError.message : 'Kod gönderilemedi.';
-        setError(formatSendError(message));
+        setError(formatSendError(sendError));
       } finally {
         if (!navigating) {
           setSending(false);

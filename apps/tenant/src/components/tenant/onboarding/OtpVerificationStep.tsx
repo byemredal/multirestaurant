@@ -3,6 +3,7 @@
 import { useCallback, useMemo, useRef, useState, type KeyboardEvent } from 'react';
 import { Card } from '@lieferzonen/ui';
 import {
+  PhoneCodeDeliveryError,
   resendTenantOnboardingPhoneCode,
   verifyTenantOnboardingPhoneCode,
   type TenantOnboardingResolvedSession,
@@ -20,6 +21,13 @@ type OtpVerificationStepProps = {
   onWorkspaceResolved: (workspace: TenantOnboardingWorkspace) => void;
   onNavigate: (url: string) => void;
 };
+
+function formatResendError(error: unknown) {
+  if (error instanceof PhoneCodeDeliveryError) {
+    return 'Doğrulama kodu şu anda gönderilemiyor. Lütfen daha sonra tekrar deneyin.';
+  }
+  return error instanceof Error ? error.message : 'Kod yeniden gönderilemedi.';
+}
 
 function formatVerifyError(message: string) {
   const normalized = message.toLowerCase();
@@ -115,8 +123,7 @@ export function OtpVerificationStep({
           onWorkspaceResolved(result.session.workspace);
         }
       } catch (resendError) {
-        const message = resendError instanceof Error ? resendError.message : 'Kod yeniden gönderilemedi.';
-        setError(message);
+        setError(formatResendError(resendError));
       } finally {
         setBusyAction(null);
       }

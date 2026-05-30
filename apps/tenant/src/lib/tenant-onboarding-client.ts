@@ -1116,6 +1116,57 @@ export async function saveTenantOnboardingConsents(
   return (await response.json()) as TenantOnboardingComplianceResult;
 }
 
+export type PhoneCodeDeliveryFailureCode =
+  | 'otp_provider_unavailable'
+  | 'otp_delivery_failed'
+  | 'otp_delivery_not_acknowledged';
+
+const PHONE_CODE_DELIVERY_CODES: ReadonlySet<PhoneCodeDeliveryFailureCode> = new Set<PhoneCodeDeliveryFailureCode>([
+  'otp_provider_unavailable',
+  'otp_delivery_failed',
+  'otp_delivery_not_acknowledged',
+]);
+
+export class PhoneCodeDeliveryError extends Error {
+  readonly code: PhoneCodeDeliveryFailureCode;
+  readonly status: number;
+  constructor(code: PhoneCodeDeliveryFailureCode, status: number, message: string) {
+    super(message);
+    this.name = 'PhoneCodeDeliveryError';
+    this.code = code;
+    this.status = status;
+  }
+}
+
+function isPhoneCodeDeliveryFailureCode(value: unknown): value is PhoneCodeDeliveryFailureCode {
+  return typeof value === 'string' && PHONE_CODE_DELIVERY_CODES.has(value as PhoneCodeDeliveryFailureCode);
+}
+
+async function throwPhoneCodeError(response: Response): Promise<never> {
+  let payload: any = null;
+  try {
+    payload = await response.json();
+  } catch {
+    // No JSON body — fall through to generic error.
+  }
+
+  const rawMessage = Array.isArray(payload?.message)
+    ? payload.message.filter((part: unknown) => typeof part === 'string').join(', ')
+    : typeof payload?.message === 'string'
+      ? payload.message
+      : '';
+
+  if (isPhoneCodeDeliveryFailureCode(payload?.code)) {
+    throw new PhoneCodeDeliveryError(
+      payload.code,
+      response.status,
+      rawMessage || 'Doğrulama kodu şu anda gönderilemiyor.',
+    );
+  }
+
+  throw new Error(rawMessage || 'phone_code_request_failed');
+}
+
 export type TenantPhoneVerificationChallenge = {
   maskedPhoneNumber: string;
   expiresAt: string;
@@ -1139,18 +1190,7 @@ export async function sendTenantOnboardingPhoneCode(
   });
 
   if (!response.ok) {
-    let message = `tenant_onboarding_phone_send_failed_${response.status}`;
-    try {
-      const payload = await response.json();
-      if (Array.isArray(payload?.message) && payload.message.length > 0) {
-        message = payload.message.join(', ');
-      } else if (typeof payload?.message === 'string' && payload.message.length > 0) {
-        message = payload.message;
-      }
-    } catch {
-      // Keep fallback.
-    }
-    throw new Error(message);
+    await throwPhoneCodeError(response);
   }
 
   return (await response.json()) as TenantPhoneVerificationChallenge;
@@ -1168,18 +1208,7 @@ export async function resendTenantOnboardingPhoneCode(
   });
 
   if (!response.ok) {
-    let message = `tenant_onboarding_phone_resend_failed_${response.status}`;
-    try {
-      const payload = await response.json();
-      if (Array.isArray(payload?.message) && payload.message.length > 0) {
-        message = payload.message.join(', ');
-      } else if (typeof payload?.message === 'string' && payload.message.length > 0) {
-        message = payload.message;
-      }
-    } catch {
-      // Keep fallback.
-    }
-    throw new Error(message);
+    await throwPhoneCodeError(response);
   }
 
   return (await response.json()) as TenantPhoneVerificationChallenge;

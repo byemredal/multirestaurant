@@ -607,6 +607,23 @@ export function updateTenantStore(
   });
 }
 
+export type TenantDeliveryZone = {
+  id: string;
+  name: string;
+  postalCodes: string[];
+  radiusKm: number | null;
+  minimumOrderAmount: number | null;
+  deliveryFee: number | null;
+  estimatedDeliveryMinutes: number | null;
+};
+
+export function getTenantStoreById(session: StoredTenantSession, storeId: string) {
+  return request<{ store: { id: string; deliveryZones?: TenantDeliveryZone[] } }>(
+    `/stores/${storeId}`,
+    session,
+  );
+}
+
 export function listTenantMenuCategories(
   session: StoredTenantSession,
   storeId: string,

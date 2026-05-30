@@ -4,6 +4,7 @@ import { useEffect, useState } from 'react';
 import { Button, Checkbox, Input, Select, Textarea } from '@lieferzonen/ui';
 import { usePlatformPack } from '@/lib/platform-pack-context';
 import {
+  getTenantStoreById,
   getTenantStoreDeliveryFeeTiers,
   getTenantStoreOrderingPolicy,
   getTenantStorePaymentMethods,
@@ -13,10 +14,12 @@ import {
   TENANT_PAYMENT_METHODS,
   replaceTenantStoreDeliveryFeeTiers,
   replaceTenantStorePaymentMethods,
+  updateTenantStore,
   updateTenantStoreOrderingPolicy,
   updateTenantStoreReceiptSettings,
   updateTenantStoreSettings,
   updateTenantStoreTaxSettings,
+  type TenantDeliveryZone,
   type TenantPaymentMethodCode,
   type TenantStoreDeliveryFeeTier,
   type TenantStoreOrderingPolicy,
@@ -964,6 +967,341 @@ export default function StoreSettingsPanel({
           </>
         )}
       </SectionCard>
+
+      <DeliveryZonesSection storeId={storeId} session={session} />
     </div>
+  );
+}
+
+type ZoneDraft = {
+  id: string | null;
+  name: string;
+  postalCodesText: string;
+  minimumOrderAmount: string;
+  deliveryFee: string;
+  estimatedDeliveryMinutes: string;
+};
+
+function emptyZoneDraft(): ZoneDraft {
+  return {
+    id: null,
+    name: '',
+    postalCodesText: '',
+    minimumOrderAmount: '',
+    deliveryFee: '',
+    estimatedDeliveryMinutes: '',
+  };
+}
+
+function zoneToDraft(zone: TenantDeliveryZone): ZoneDraft {
+  return {
+    id: zone.id,
+    name: zone.name,
+    postalCodesText: zone.postalCodes.join(', '),
+    minimumOrderAmount: zone.minimumOrderAmount?.toString() ?? '',
+    deliveryFee: zone.deliveryFee?.toString() ?? '',
+    estimatedDeliveryMinutes: zone.estimatedDeliveryMinutes?.toString() ?? '',
+  };
+}
+
+function parsePostalCodes(input: string): string[] {
+  const tokens = input
+    .split(/[\s,;\n\r]+/)
+    .map((token) => token.trim())
+    .filter(Boolean);
+  return Array.from(new Set(tokens));
+}
+
+function asOptionalNumber(value: string): number | null {
+  const trimmed = value.trim();
+  if (!trimmed) return null;
+  const parsed = Number(trimmed);
+  return Number.isFinite(parsed) ? parsed : null;
+}
+
+function DeliveryZonesSection({
+  storeId,
+  session,
+}: {
+  storeId: string;
+  session: StoredTenantSession;
+}) {
+  const pack = usePlatformPack();
+  const countryCode = pack?.country ?? '';
+  const postalHint =
+    countryCode === 'TR'
+      ? '5 haneli posta kodları, ör. 34758, 34000'
+      : countryCode === 'CH'
+        ? '4 haneli posta kodları, ör. 8003, 8004'
+        : 'Posta kodlarını virgül veya yeni satırla ayırın.';
+
+  const [zones, setZones] = useState<TenantDeliveryZone[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState<string | null>(null);
+  const [draft, setDraft] = useState<ZoneDraft | null>(null);
+  const [saving, setSaving] = useState(false);
+  const [saveError, setSaveError] = useState<string | null>(null);
+  const [deletingId, setDeletingId] = useState<string | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    setLoading(true);
+    setLoadError(null);
+    getTenantStoreById(session, storeId)
+      .then((result) => {
+        if (cancelled) return;
+        setZones(result.store.deliveryZones ?? []);
+      })
+      .catch((error: unknown) => {
+        if (cancelled) return;
+        setLoadError(error instanceof Error ? error.message : 'Bölgeler yüklenemedi.');
+      })
+      .finally(() => {
+        if (!cancelled) setLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [session, storeId]);
+
+  function openCreate() {
+    setSaveError(null);
+    setDraft(emptyZoneDraft());
+  }
+
+  function openEdit(zone: TenantDeliveryZone) {
+    setSaveError(null);
+    setDraft(zoneToDraft(zone));
+  }
+
+  function cancelDraft() {
+    setDraft(null);
+    setSaveError(null);
+  }
+
+  async function persistZones(nextZones: Array<TenantDeliveryZone | Omit<TenantDeliveryZone, 'id'>>) {
+    const payload = nextZones.map((zone) => ({
+      name: zone.name,
+      postalCodes: zone.postalCodes,
+      minimumOrderAmount: zone.minimumOrderAmount ?? undefined,
+      deliveryFee: zone.deliveryFee ?? undefined,
+      estimatedDeliveryMinutes: zone.estimatedDeliveryMinutes ?? undefined,
+    }));
+    const result = await updateTenantStore(session, storeId, { deliveryZones: payload });
+    const refreshed = (result.store?.deliveryZones ?? []) as TenantDeliveryZone[];
+    setZones(refreshed);
+  }
+
+  async function saveDraft() {
+    if (!draft) return;
+    if (!draft.name.trim()) {
+      setSaveError('Bölge adı zorunludur.');
+      return;
+    }
+    const postalCodes = parsePostalCodes(draft.postalCodesText);
+    if (postalCodes.length === 0) {
+      setSaveError('En az bir posta kodu girin.');
+      return;
+    }
+    const next: Omit<TenantDeliveryZone, 'id'> = {
+      name: draft.name.trim(),
+      postalCodes,
+      radiusKm: null,
+      minimumOrderAmount: asOptionalNumber(draft.minimumOrderAmount),
+      deliveryFee: asOptionalNumber(draft.deliveryFee),
+      estimatedDeliveryMinutes: asOptionalNumber(draft.estimatedDeliveryMinutes),
+    };
+
+    const nextZones: Array<TenantDeliveryZone | Omit<TenantDeliveryZone, 'id'>> = draft.id
+      ? zones.map((zone) => (zone.id === draft.id ? { ...zone, ...next } : zone))
+      : [...zones, next];
+
+    try {
+      setSaving(true);
+      setSaveError(null);
+      await persistZones(nextZones);
+      setDraft(null);
+    } catch (error) {
+      setSaveError(
+        error instanceof Error
+          ? error.message
+          : 'Bölge kaydedilemedi. Lütfen alanları kontrol edin.',
+      );
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  async function deleteZone(zone: TenantDeliveryZone) {
+    if (typeof window !== 'undefined') {
+      const ok = window.confirm(`"${zone.name}" bölgesini silmek istediğinize emin misiniz?`);
+      if (!ok) return;
+    }
+    try {
+      setDeletingId(zone.id);
+      setSaveError(null);
+      await persistZones(zones.filter((entry) => entry.id !== zone.id));
+      if (draft?.id === zone.id) setDraft(null);
+    } catch (error) {
+      setSaveError(error instanceof Error ? error.message : 'Bölge silinemedi.');
+    } finally {
+      setDeletingId(null);
+    }
+  }
+
+  return (
+    <SectionCard
+      title="Teslimat bölgeleri"
+      description="Aynı teslimat ücreti, süre ve minimum siparişi paylaşan posta kodlarını bölge olarak gruplayın."
+      toolbar={
+        !draft && !loading ? (
+          <Button variant="ghost" onClick={openCreate}>
+            + Bölge Ekle
+          </Button>
+        ) : undefined
+      }
+    >
+      {loading ? (
+        <div className="text-[13px] text-[#78716c]">Yükleniyor...</div>
+      ) : loadError ? (
+        <div className="rounded-[12px] border border-red-200 bg-red-50 px-3 py-2 text-[13px] text-red-700">
+          {loadError}
+        </div>
+      ) : (
+        <>
+          {saveError ? (
+            <div className="rounded-[12px] border border-red-200 bg-red-50 px-3 py-2 text-[13px] text-red-700">
+              {saveError}
+            </div>
+          ) : null}
+
+          {zones.length === 0 && !draft ? (
+            <div className="rounded-[12px] border border-dashed border-[#d6cdb9] bg-[#fbf6ec] px-4 py-6 text-center">
+              <p className="text-[14px] font-semibold text-[#1c1917]">Henüz teslimat bölgesi yok.</p>
+              <p className="mt-1 text-[12.5px] text-[#78716c]">
+                Teslimat sunmak için en az bir bölge ekleyin.
+              </p>
+              <div className="mt-3 flex justify-center">
+                <Button onClick={openCreate}>+ Bölge Ekle</Button>
+              </div>
+            </div>
+          ) : null}
+
+          {zones.length > 0 ? (
+            <div className="grid gap-2">
+              {zones.map((zone) => {
+                const isEditing = draft?.id === zone.id;
+                if (isEditing) return null;
+                return (
+                  <div
+                    key={zone.id}
+                    className="flex flex-wrap items-start justify-between gap-3 rounded-[12px] border border-[#ece2d2] bg-white px-3 py-3"
+                  >
+                    <div className="grid gap-1">
+                      <div className="text-[14px] font-semibold text-[#1c1917]">{zone.name}</div>
+                      <div className="text-[12.5px] text-[#57534e]">
+                        {zone.postalCodes.length > 0
+                          ? zone.postalCodes.join(', ')
+                          : 'Posta kodu yok'}
+                      </div>
+                      <div className="text-[12px] text-[#78716c]">
+                        Min {zone.minimumOrderAmount ?? '—'} · Ücret {zone.deliveryFee ?? '—'} ·{' '}
+                        {zone.estimatedDeliveryMinutes ?? '—'} dk
+                      </div>
+                    </div>
+                    <div className="flex gap-2">
+                      <Button
+                        variant="ghost"
+                        onClick={() => openEdit(zone)}
+                        disabled={Boolean(draft) || deletingId === zone.id}
+                      >
+                        Düzenle
+                      </Button>
+                      <Button
+                        variant="ghost"
+                        onClick={() => void deleteZone(zone)}
+                        disabled={Boolean(draft) || deletingId === zone.id}
+                      >
+                        {deletingId === zone.id ? 'Siliniyor...' : 'Sil'}
+                      </Button>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          ) : null}
+
+          {draft ? (
+            <div className="grid gap-3 rounded-[14px] border border-[#ece2d2] bg-[#fbf6ec] p-3">
+              <div className="grid gap-3 md:grid-cols-2">
+                <Field label="Bölge adı">
+                  <Input
+                    value={draft.name}
+                    onChange={(event) =>
+                      setDraft((current) => (current ? { ...current, name: event.target.value } : current))
+                    }
+                  />
+                </Field>
+                <Field label="Tahmini süre (dk)">
+                  <Input
+                    inputMode="numeric"
+                    value={draft.estimatedDeliveryMinutes}
+                    onChange={(event) =>
+                      setDraft((current) =>
+                        current
+                          ? { ...current, estimatedDeliveryMinutes: event.target.value }
+                          : current,
+                      )
+                    }
+                  />
+                </Field>
+                <Field label="Minimum sipariş">
+                  <Input
+                    inputMode="decimal"
+                    value={draft.minimumOrderAmount}
+                    onChange={(event) =>
+                      setDraft((current) =>
+                        current ? { ...current, minimumOrderAmount: event.target.value } : current,
+                      )
+                    }
+                  />
+                </Field>
+                <Field label="Teslimat ücreti">
+                  <Input
+                    inputMode="decimal"
+                    value={draft.deliveryFee}
+                    onChange={(event) =>
+                      setDraft((current) =>
+                        current ? { ...current, deliveryFee: event.target.value } : current,
+                      )
+                    }
+                  />
+                </Field>
+              </div>
+              <Field label="Posta kodları" hint={postalHint}>
+                <Textarea
+                  rows={2}
+                  value={draft.postalCodesText}
+                  placeholder={postalHint}
+                  onChange={(event) =>
+                    setDraft((current) =>
+                      current ? { ...current, postalCodesText: event.target.value } : current,
+                    )
+                  }
+                />
+              </Field>
+              <div className="flex flex-wrap justify-end gap-2">
+                <Button variant="ghost" onClick={cancelDraft} disabled={saving}>
+                  Vazgeç
+                </Button>
+                <Button onClick={() => void saveDraft()} disabled={saving}>
+                  {saving ? 'Kaydediliyor...' : 'Kaydet'}
+                </Button>
+              </div>
+            </div>
+          ) : null}
+        </>
+      )}
+    </SectionCard>
   );
 }
