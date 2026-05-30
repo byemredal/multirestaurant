@@ -22,12 +22,12 @@ import {
   type UploadTenantOnboardingDocumentInput,
   getTenantOnboardingWorkspaceByStateToken,
   resolveTenantOnboardingSession,
-  TenantOnboardingSessionError,
 } from '@/lib/tenant-onboarding-client';
 import {
   getNextTenantOnboardingStepKey,
   getWorkflowStepForBackendStep,
 } from './onboarding-routing';
+import { mapOnboardingErrorCopy } from './onboarding-error-copy';
 import {
   clearOnboardingStateToken,
   writeOnboardingStateToken,
@@ -228,20 +228,16 @@ export function useTenantOnboardingWorkspace(stateToken?: string, requestedStep?
         replaceWorkspace(keepRouteTokenInWorkspace(nextWorkspace), requestSeq, { rememberToken: false });
       }
     } catch (loadError) {
-      // Soften the raw `tenant_onboarding_session_failed_403` code into a
-      // user-readable message. The backend now allows terminal-status reads,
-      // so a remaining 403 here means the link is genuinely invalid/expired.
-      let message = 'Tenant onboarding state could not be loaded.';
-      if (loadError instanceof TenantOnboardingSessionError) {
-        if (loadError.status === 403) {
-          message = loadError.message && !loadError.message.startsWith('tenant_onboarding_')
-            ? loadError.message
-            : 'Bu başvuru bağlantısı geçersiz veya süresi dolmuş.';
-        } else if (loadError.message) {
-          message = loadError.message;
-        }
-      } else if (loadError instanceof Error) {
-        message = loadError.message;
+      // Soften any raw code (`tenant_onboarding_session_failed_403`,
+      // `Invalid state token.`, …) into user-readable Turkish copy. The backend
+      // now allows terminal-status reads, so a remaining failure here means the
+      // link is genuinely invalid/expired.
+      const { kind, message } = mapOnboardingErrorCopy(loadError);
+      // A structurally dead link must not keep surfacing the "resume your
+      // onboarding" badge on the landing page — drop the stale token so the
+      // next visit starts clean.
+      if (kind === 'invalid' && currentStateToken) {
+        clearOnboardingStateToken();
       }
       setError(message);
     } finally {

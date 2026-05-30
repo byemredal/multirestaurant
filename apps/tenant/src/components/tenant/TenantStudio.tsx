@@ -1158,7 +1158,7 @@ function ShopTab({
               <Field label="Restoran adı">
                 <Input
                   value={storeForm.name}
-                  placeholder="Lieferzonen Zürich"
+                  placeholder="ör. Bistro Vita Zürih"
                   onChange={(event) =>
                     setStoreForm((current) => ({ ...current, name: event.target.value }))
                   }

@@ -1399,6 +1399,19 @@ export class TenantOnboardingService {
     };
   }
 
+  // Public state-token endpoints must never leak a raw `Forbidden` /
+  // `Invalid state token.` string to the partner UI. We classify every
+  // resolve failure (malformed / unknown / stale-salt / wiped-salt) under a
+  // single structured code so the frontend can render a user-friendly
+  // "this link is no longer valid" copy without learning which check failed
+  // (sensitive-info disclosure stays closed).
+  private invalidStateTokenError() {
+    return new ForbiddenException({
+      message: 'Bu başvuru bağlantısı artık geçerli değil.',
+      code: 'onboarding_session_invalid',
+    });
+  }
+
   private async resolveApplicationFromStateToken(
     stateToken: string,
     options?: { allowTerminal?: boolean },
@@ -1408,12 +1421,12 @@ export class TenantOnboardingService {
     try {
       payload = validateStateTokenPayload(CryptoUtil.decryptStateToken(stateToken));
     } catch {
-      throw new ForbiddenException('Invalid state token.');
+      throw this.invalidStateTokenError();
     }
 
     const application = await this.store.findApplicationById(payload.applicationId);
     if (!application || application.tenantAccountId !== payload.tenantAccountId) {
-      throw new ForbiddenException('Invalid state token.');
+      throw this.invalidStateTokenError();
     }
 
     // Closed-status applications intentionally wipe `tokenSalt` so further
@@ -1424,11 +1437,11 @@ export class TenantOnboardingService {
       if (options?.allowTerminal && TERMINAL_CLOSED_STATUSES.has(application.status)) {
         return application;
       }
-      throw new ForbiddenException('Invalid state token.');
+      throw this.invalidStateTokenError();
     }
 
     if (application.tokenSalt !== payload.tokenSalt) {
-      throw new ForbiddenException('Invalid state token.');
+      throw this.invalidStateTokenError();
     }
 
     return application;

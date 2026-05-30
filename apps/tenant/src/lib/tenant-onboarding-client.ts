@@ -593,19 +593,6 @@ export function getTenantOnboardingWorkspace(session: StoredTenantSession) {
   return request<TenantOnboardingWorkspace>('/v2/tenant/onboarding/me', session);
 }
 
-export async function getTenantOnboardingWorkspaceByStateToken(stateToken: string) {
-  const response = await fetch(
-    `${apiBaseUrl}/v2/tenant/onboarding/${encodeURIComponent(stateToken)}/workspace`,
-    { credentials: 'include' },
-  );
-
-  if (!response.ok) {
-    throw new Error(`tenant_onboarding_workspace_failed_${response.status}`);
-  }
-
-  return (await response.json()) as TenantOnboardingWorkspace;
-}
-
 export class TenantOnboardingSessionError extends Error {
   readonly status: number;
   readonly code: string;
@@ -616,6 +603,49 @@ export class TenantOnboardingSessionError extends Error {
     this.status = status;
     this.code = code;
   }
+}
+
+/**
+ * Turns a failed onboarding state-token response into a structured
+ * `TenantOnboardingSessionError`. The backend now attaches a `code`
+ * (e.g. `onboarding_session_invalid`) on public 403s; we prefer it over the
+ * status-derived fallback so the UI can map a user-friendly message instead
+ * of surfacing a raw technical string. Never returns — always throws.
+ */
+async function throwOnboardingSessionError(
+  response: Response,
+  fallbackPrefix: string,
+): Promise<never> {
+  let backendCode: string | undefined;
+  let userMessage: string | undefined;
+  try {
+    const payload = await response.json();
+    if (typeof payload?.code === 'string' && payload.code) {
+      backendCode = payload.code;
+    }
+    if (typeof payload?.message === 'string' && payload.message) {
+      userMessage = payload.message;
+    } else if (Array.isArray(payload?.message) && payload.message.length > 0) {
+      userMessage = payload.message.join(', ');
+    }
+  } catch {
+    // Body is not JSON — keep the status-derived fallback.
+  }
+  const code = backendCode ?? `${fallbackPrefix}_${response.status}`;
+  throw new TenantOnboardingSessionError(response.status, code, userMessage);
+}
+
+export async function getTenantOnboardingWorkspaceByStateToken(stateToken: string) {
+  const response = await fetch(
+    `${apiBaseUrl}/v2/tenant/onboarding/${encodeURIComponent(stateToken)}/workspace`,
+    { credentials: 'include' },
+  );
+
+  if (!response.ok) {
+    await throwOnboardingSessionError(response, 'tenant_onboarding_workspace_failed');
+  }
+
+  return (await response.json()) as TenantOnboardingWorkspace;
 }
 
 export async function resolveTenantOnboardingSession(
@@ -633,19 +663,7 @@ export async function resolveTenantOnboardingSession(
   );
 
   if (!response.ok) {
-    const fallbackCode = `tenant_onboarding_session_failed_${response.status}`;
-    let userMessage: string | undefined;
-    try {
-      const payload = await response.json();
-      if (typeof payload?.message === 'string' && payload.message) {
-        userMessage = payload.message;
-      } else if (Array.isArray(payload?.message) && payload.message.length > 0) {
-        userMessage = payload.message.join(', ');
-      }
-    } catch {
-      // Body is not JSON — keep the status-derived fallback.
-    }
-    throw new TenantOnboardingSessionError(response.status, fallbackCode, userMessage);
+    await throwOnboardingSessionError(response, 'tenant_onboarding_session_failed');
   }
 
   return (await response.json()) as TenantOnboardingResolvedSession;

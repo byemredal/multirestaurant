@@ -919,7 +919,7 @@ export default function StoreSettingsPanel({
               <Textarea
                 rows={2}
                 value={receiptForm.headerText}
-                placeholder="ör. Lieferzonen Store"
+                placeholder="ör. Bistro Vita"
                 onChange={(event) =>
                   setReceiptForm((current) => ({
                     ...current,

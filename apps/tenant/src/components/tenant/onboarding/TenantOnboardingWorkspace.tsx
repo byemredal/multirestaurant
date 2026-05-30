@@ -174,8 +174,18 @@ export default function TenantOnboardingWorkspace({
     const resumeUrl = getTenantOnboardingResumeUrl(workspace);
     if (resumeUrl === '/dashboard' || resumeUrl.endsWith('/submitted')) {
       replaceRoute(resumeUrl);
+      return;
     }
-  }, [replaceRoute, workspace]);
+
+    // Admin requested a revision while the partner waited on the read-only
+    // "submitted" screen (status flipped via polling). Pull them out of the
+    // waiting view and onto the first revision/edit step so they are not
+    // stuck looking at an "inceleniyor" message. Guarding on the submitted
+    // pathname keeps this from trapping the partner once they start editing.
+    if (workspace.application.status === 'revision_required' && pathname.endsWith('/submitted')) {
+      replaceRoute(resumeUrl);
+    }
+  }, [pathname, replaceRoute, workspace]);
 
   useEffect(() => {
     if (!workspace || resolvedSession || canAccessTenantOnboardingStep(workspace, activeStep)) {
@@ -303,9 +313,43 @@ export default function TenantOnboardingWorkspace({
   if (!workspace) {
     return (
       <div className="min-h-screen bg-[#f3f5f8] p-3 sm:p-6 lg:p-10">
-        <div className="mx-auto max-w-[760px] rounded-[8px] border border-danger-200 bg-white p-6 text-[14px] text-danger-600">
-          {error ?? 'Tenant onboarding workspace kullanılamıyor.'}
-        </div>
+        <section className="mx-auto max-w-[560px] overflow-hidden rounded-[8px] border border-[#e6eaf0] bg-white">
+          <header className="flex h-[72px] items-center border-b border-[#e6eaf0] px-6 sm:px-10">
+            <PlatformLogo apiBaseUrl={apiBaseUrl} height={28} />
+          </header>
+          <div className="px-6 py-10 text-center sm:px-10 sm:py-12">
+            <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-full bg-warning-50 text-[22px] font-bold text-warning-700">
+              !
+            </div>
+            <h1 className="mt-5 text-[22px] font-bold text-ink-900">Bağlantı kullanılamıyor</h1>
+            <p className="mx-auto mt-3 max-w-[420px] text-[14px] leading-6 text-ink-600">
+              {error ??
+                'Bu başvuru bağlantısı artık geçerli değil. Yeni başvuru başlatabilir veya destek ekibiyle iletişime geçebilirsiniz.'}
+            </p>
+            <div className="mt-7 flex flex-col items-center justify-center gap-3 sm:flex-row">
+              <button
+                type="button"
+                onClick={() => router.push('/')}
+                className="inline-flex h-11 w-full items-center justify-center rounded-full bg-primary px-7 text-[14px] font-semibold text-white shadow-sm transition hover:bg-primary-700 sm:w-auto"
+              >
+                Yeni başvuru başlat
+              </button>
+              <button
+                type="button"
+                onClick={() => router.push('/')}
+                className="inline-flex h-11 w-full items-center justify-center rounded-full border border-ink-200 px-7 text-[14px] font-semibold text-ink-700 transition hover:border-primary hover:text-primary-700 sm:w-auto"
+              >
+                Tanıtım sayfasına dön
+              </button>
+            </div>
+            <p className="mt-6 text-[12.5px] text-ink-400">
+              Yardım için{' '}
+              <a className="font-semibold text-primary-700 hover:underline" href="mailto:support@lieferzonen.de">
+                support@lieferzonen.de
+              </a>
+            </p>
+          </div>
+        </section>
       </div>
     );
   }
