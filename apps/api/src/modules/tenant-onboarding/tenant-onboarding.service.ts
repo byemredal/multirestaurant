@@ -2637,19 +2637,20 @@ export class TenantOnboardingService {
   }
 
   /**
-   * Build the client-facing document URL. Locally stored files are served
-   * only via the authenticated streaming endpoint — the raw filesystem path
-   * (`fileAsset.publicUrl`) is NEVER returned to clients. Externally hosted
-   * assets keep their absolute URL.
+   * Build the client-facing document URL. Tenant documents are classified
+   * `tenant_private` (MR-DB-HARDENING-01 Slice 3), so they are ALWAYS served via
+   * the authenticated streaming endpoint — the raw asset URL/path
+   * (`fileAsset.publicUrl`) is never returned, even when it is an absolute
+   * https URL. Only an explicitly `public` asset keeps its absolute URL.
    */
   private toAdminDocumentFileUrl(
     documentId: string,
-    asset: Pick<FileAsset, 'publicUrl'> | null | undefined,
+    asset: Pick<FileAsset, 'publicUrl' | 'visibility'> | null | undefined,
   ): string | null {
     if (!asset) {
       return null;
     }
-    if (/^https?:\/\//i.test(asset.publicUrl)) {
+    if (asset.visibility === 'public' && /^https?:\/\//i.test(asset.publicUrl)) {
       return asset.publicUrl;
     }
     return `/admin/tenant-documents/${documentId}/file`;

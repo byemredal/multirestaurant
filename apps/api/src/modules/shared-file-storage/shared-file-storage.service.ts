@@ -32,6 +32,8 @@ export class SharedFileStorageService {
       mimeType: input.mimeType,
       sizeBytes: input.sizeBytes,
       publicUrl: input.publicUrl,
+      // Tenant uploads are sensitive onboarding/KYC documents — always private.
+      visibility: 'tenant_private',
     });
   }
 
