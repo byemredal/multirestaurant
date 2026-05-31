@@ -22,6 +22,7 @@ import { Input } from '@lieferzonen/ui';
 import { Textarea } from '@lieferzonen/ui';
 import { Select } from '@lieferzonen/ui';
 import { Checkbox } from '@lieferzonen/ui';
+import { FieldHint } from '@lieferzonen/ui';
 import { useTenantAuth } from '@/lib/auth/tenant-auth-context';
 import { useTenantStores } from '@/lib/tenant-store-context';
 import {
@@ -381,9 +382,11 @@ function Field({
 }) {
   return (
     <label className="grid gap-2">
-      <FieldLabel>{label}</FieldLabel>
+      <span className="flex items-center gap-1.5">
+        <FieldLabel>{label}</FieldLabel>
+        {hint ? <FieldHint hint={hint} /> : null}
+      </span>
       {children}
-      {hint ? <span className="text-[11.5px] leading-4 text-[#a8a29e]">{hint}</span> : null}
     </label>
   );
 }

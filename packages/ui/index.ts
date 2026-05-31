@@ -20,6 +20,7 @@ export { Rating, type RatingProps } from './rating';
 // ── Feedback & overlays ──────────────────────────────────────────────────
 export { Alert, type AlertProps } from './alert';
 export { Tooltip, type TooltipProps } from './tooltip';
+export { FieldHint, type FieldHintProps } from './field-hint';
 export { Modal, type ModalProps } from './modal';
 
 // ── Navigation & disclosure ──────────────────────────────────────────────

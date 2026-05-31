@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { Button, Checkbox, Input, Select, Textarea } from '@lieferzonen/ui';
+import { Button, Checkbox, FieldHint, Input, Select, Textarea } from '@lieferzonen/ui';
 import { usePlatformPack } from '@/lib/platform-pack-context';
 import {
   getTenantStoreById,
@@ -176,9 +176,11 @@ function Field({
 }) {
   return (
     <label className="grid gap-1.5">
-      <FieldLabel>{label}</FieldLabel>
+      <span className="flex items-center gap-1.5">
+        <FieldLabel>{label}</FieldLabel>
+        {hint ? <FieldHint hint={hint} /> : null}
+      </span>
       {children}
-      {hint ? <span className="text-[11.5px] text-[#a8a29e]">{hint}</span> : null}
     </label>
   );
 }
