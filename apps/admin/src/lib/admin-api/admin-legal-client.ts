@@ -39,6 +39,7 @@ export type AdminLegalDocument = {
 
 export type ListLegalDocumentsParams = {
   countryCode?: string;
+  locale?: string;
   audience?: 'customer' | 'tenant' | 'all';
   includeInactive?: boolean;
 };
@@ -88,6 +89,7 @@ export async function listLegalDocuments(
 ) {
   const query = new URLSearchParams();
   if (params.countryCode) query.set('countryCode', params.countryCode);
+  if (params.locale) query.set('locale', params.locale);
   if (params.audience) query.set('audience', params.audience);
   query.set('includeInactive', String(params.includeInactive ?? true));
   const data = await adminLegalRequest<{ documents: AdminLegalDocument[] }>(

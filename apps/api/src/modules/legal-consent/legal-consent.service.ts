@@ -174,6 +174,25 @@ export class LegalConsentService {
     return policy?.countryCode ?? null;
   }
 
+  /**
+   * Resolve the checkout country AND its install locale together, so the
+   * current-version lookup uses the install locale (e.g. de-CH) instead of the
+   * hardcoded DEFAULT_LOCALE. Returns null when no country can be resolved.
+   */
+  private async resolveCheckoutScope(
+    explicit?: string | null,
+  ): Promise<{ country: string; locale: string } | null> {
+    const policy = await this.installationProfileService.findActiveCountryPolicy();
+    const candidate = explicit?.trim().toUpperCase();
+    if (candidate && /^[A-Z]{2}$/.test(candidate)) {
+      return { country: candidate, locale: policy?.locale ?? DEFAULT_LOCALE };
+    }
+    if (policy) {
+      return { country: policy.countryCode, locale: policy.locale ?? DEFAULT_LOCALE };
+    }
+    return null;
+  }
+
   // ===================================================================
   // 1. SYSTEM TAXONOMY — LegalDocumentType
   // ===================================================================
@@ -251,6 +270,7 @@ export class LegalConsentService {
   async listDocuments(filter?: {
     audience?: PlatformLegalDocumentAudience;
     countryCode?: string;
+    locale?: string;
     includeInactive?: boolean;
   }): Promise<PlatformLegalDocumentWithCurrentVersion[]> {
     const conditions: string[] = [];
@@ -287,7 +307,7 @@ export class LegalConsentService {
     const documentIds = docRows.map((row) => row.id);
     const currentVersionsByDoc = await this.findCurrentVersionsForDocuments(
       documentIds,
-      DEFAULT_LOCALE,
+      filter?.locale ?? DEFAULT_LOCALE,
     );
 
     return docRows.map((row) => ({
@@ -544,13 +564,18 @@ export class LegalConsentService {
     audience: PlatformLegalDocumentAudience,
     locale = DEFAULT_LOCALE,
   ): Promise<PlatformLegalDocumentWithCurrentVersion[]> {
-    return this.listDocuments({ audience, includeInactive: false }).then((docs) =>
-      docs.map((doc) =>
-        doc.currentVersion && doc.currentVersion.locale === locale
-          ? doc
-          : { ...doc, currentVersion: doc.currentVersion },
-      ),
-    );
+    // Scope the public bundle to the active installation country when it can be
+    // resolved (single-country invariant → no behavior change today, correct for
+    // a future multi-country setup). When the country is unknown (pre-setup) we
+    // fall back to no country filter rather than hiding everything. The current
+    // version is resolved at the requested locale.
+    const scope = await this.resolveCheckoutScope();
+    return this.listDocuments({
+      audience,
+      countryCode: scope?.country,
+      locale,
+      includeInactive: false,
+    });
   }
 
   async getLatestByCode(code: string, locale = DEFAULT_LOCALE) {
@@ -757,8 +782,8 @@ export class LegalConsentService {
     placeholderLegalDocuments: string[];
     country: string | null;
   }> {
-    const country = await this.resolveCheckoutCountry(options?.countryCode);
-    if (!country) {
+    const scope = await this.resolveCheckoutScope(options?.countryCode);
+    if (!scope) {
       return {
         legalReady: false,
         missingLegalDocuments: [...REQUIRED_CHECKOUT_DOCUMENT_CODES],
@@ -766,10 +791,12 @@ export class LegalConsentService {
         country: null,
       };
     }
+    const country = scope.country;
 
     const docs = await this.listDocuments({
       audience: 'customer',
       countryCode: country,
+      locale: scope.locale,
       includeInactive: false,
     });
     const guardEnforced = placeholderLegalGuardEnforced();

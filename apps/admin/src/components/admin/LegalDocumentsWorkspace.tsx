@@ -126,16 +126,18 @@ export default function LegalDocumentsWorkspace() {
     const session = await requireAdminSession();
     const [nextTypes, nextDocs] = await Promise.all([
       listLegalDocumentTypes(session),
-      // Country scope: only this installation's customer-facing documents.
+      // Country + locale scope: only this installation's customer-facing
+      // documents, with current versions resolved at the install locale.
       listLegalDocuments(session, {
         audience: 'customer',
         countryCode: country || undefined,
+        locale: defaultLocale,
         includeInactive: true,
       }),
     ]);
     setTypes(nextTypes);
     setDocuments(nextDocs);
-  }, [country]);
+  }, [country, defaultLocale]);
 
   useEffect(() => {
     if (!brandingLoaded) return;
@@ -167,6 +169,24 @@ export default function LegalDocumentsWorkspace() {
     setError(null);
     setDrawer({ kind: 'create' });
   }, [canCreate, types]);
+
+  // Open the create drawer pre-filled for a specific required checkout document
+  // type (e.g. from the readiness card CTA). Falls back to the generic create
+  // drawer when the taxonomy type cannot be resolved.
+  const openCreateForType = useCallback(
+    (typeCode: string, label: string) => {
+      if (!canCreate) return;
+      const type = types.find((t) => t.code === typeCode);
+      const base = buildCreateForm(type?.id ?? types[0]?.id ?? '');
+      const suggestedCode = country
+        ? `${country.toLowerCase()}-${typeCode.replace(/_/g, '-')}`
+        : typeCode.replace(/_/g, '-');
+      setCreateForm({ ...base, code: suggestedCode, title: label });
+      setError(null);
+      setDrawer({ kind: 'create' });
+    },
+    [canCreate, country, types],
+  );
 
   const openPublish = useCallback((doc: AdminLegalDocument) => {
     setPublishForm(buildPublishForm(doc.currentVersion?.locale ?? defaultLocale));
@@ -304,12 +324,12 @@ export default function LegalDocumentsWorkspace() {
   const requiredReadiness = useMemo(
     () =>
       REQUIRED_CHECKOUT_CODES.map((req) => {
-        const doc = documents.find((d) => d.typeCode === req.typeCode && d.isActive);
+        const doc = documents.find((d) => d.typeCode === req.typeCode && d.isActive) ?? null;
         const version = doc?.currentVersion ?? null;
         const placeholder = version
           ? looksLikePlaceholder(version.title, version.body, version.versionLabel)
           : false;
-        return { ...req, published: Boolean(version), placeholder };
+        return { ...req, doc, published: Boolean(version), placeholder };
       }),
     [documents],
   );
@@ -421,7 +441,7 @@ export default function LegalDocumentsWorkspace() {
           <strong>Checkout için gerekli müşteri yasal metinleri{country ? ` (${country} / ${defaultLocale})` : ''}</strong>
           <ul style={{ margin: '8px 0 0', paddingLeft: 0, listStyle: 'none', display: 'grid', gap: 6 }}>
             {requiredReadiness.map((req) => (
-              <li key={req.typeCode} className="admin-row" style={{ gap: 8 }}>
+              <li key={req.typeCode} className="admin-row" style={{ gap: 8, flexWrap: 'wrap' }}>
                 <StatusBadge
                   label={req.placeholder ? 'Taslak içerik' : req.published ? 'Yayında' : 'Eksik'}
                   tone={req.placeholder ? 'warning' : req.published ? 'success' : 'danger'}
@@ -433,6 +453,24 @@ export default function LegalDocumentsWorkspace() {
                     : ''}
                   {req.placeholder ? ' — placeholder/taslak görünüyor, üretimde checkout’u bloklar.' : ''}
                 </span>
+                {!req.doc && canCreate && (
+                  <button
+                    type="button"
+                    className="admin-button admin-button--sm"
+                    onClick={() => openCreateForType(req.typeCode, req.label)}
+                  >
+                    {req.label} oluştur
+                  </button>
+                )}
+                {req.doc && !req.published && (
+                  <button
+                    type="button"
+                    className="admin-button admin-button--sm"
+                    onClick={() => openPublish(req.doc!)}
+                  >
+                    Yeni versiyon yayınla
+                  </button>
+                )}
               </li>
             ))}
           </ul>

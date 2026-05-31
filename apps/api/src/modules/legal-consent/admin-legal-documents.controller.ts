@@ -56,13 +56,16 @@ export class AdminLegalDocumentsController {
     enum: ['customer', 'tenant', 'all'],
   })
   @ApiQuery({ name: 'countryCode', required: false, example: 'TR' })
+  @ApiQuery({ name: 'locale', required: false, example: 'tr' })
   @ApiQuery({ name: 'includeInactive', required: false, type: Boolean })
   async listDocuments(
     @Query('audience') audience?: PlatformLegalDocumentAudience,
     @Query('countryCode') countryCode?: string,
+    @Query('locale') locale?: string,
     @Query('includeInactive') includeInactive?: string,
   ) {
     const normalizedCountry = countryCode?.trim().toUpperCase();
+    const normalizedLocale = locale?.trim();
     return {
       documents: await this.legalConsentService.listDocuments({
         audience,
@@ -70,6 +73,7 @@ export class AdminLegalDocumentsController {
           normalizedCountry && /^[A-Z]{2}$/.test(normalizedCountry)
             ? normalizedCountry
             : undefined,
+        locale: normalizedLocale || undefined,
         includeInactive: includeInactive === 'true',
       }),
     };

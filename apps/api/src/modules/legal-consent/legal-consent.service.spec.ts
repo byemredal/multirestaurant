@@ -738,10 +738,11 @@ describe('LegalConsentService', () => {
     // -----------------------------------------------------------------
     // Country scoping (MR-CUSTOMER-LEGAL-COUNTRY-SCOPING-01).
     // -----------------------------------------------------------------
-    it('scopes the document lookup to the resolved installation country', async () => {
+    it('scopes the document lookup to the resolved installation country + locale', async () => {
       const { service, installationProfileService } = createService();
       (installationProfileService.findActiveCountryPolicy as jest.Mock).mockResolvedValue({
         countryCode: 'TR',
+        locale: 'tr-TR',
       });
       const listSpy = jest.spyOn(service, 'listDocuments').mockResolvedValue([
         docBundle('distance_sales_contract', true),
@@ -753,9 +754,10 @@ describe('LegalConsentService', () => {
       expect(result.legalReady).toBe(true);
       expect(result.country).toBe('TR');
       // A CH document (countryCode='CH') can never satisfy this TR query because
-      // the lookup is filtered by the resolved country.
+      // the lookup is filtered by the resolved country; current versions are
+      // resolved at the install locale, not the hardcoded default.
       expect(listSpy).toHaveBeenCalledWith(
-        expect.objectContaining({ audience: 'customer', countryCode: 'TR' }),
+        expect.objectContaining({ audience: 'customer', countryCode: 'TR', locale: 'tr-TR' }),
       );
     });
 

@@ -1,21 +1,10 @@
-'use client';
+import { redirect } from 'next/navigation';
 
-import AdminSurface from '@/components/admin/AdminSurface';
-import LegalDocumentsWorkspace from '@/components/admin/LegalDocumentsWorkspace';
-import { useAdminLanguage } from '@/lib/i18n/AdminLanguageProvider';
-
-export default function LegalPage() {
-  const { t } = useAdminLanguage();
-
-  return (
-    <AdminSurface
-      title={t('admin.legal.title', 'Legal Documents')}
-      description={t(
-        'admin.legal.description',
-        'Platform yasal dokümanları + immutable versiyon yönetimi.',
-      )}
-    >
-      <LegalDocumentsWorkspace />
-    </AdminSurface>
-  );
+/**
+ * Legacy `/legal` route. The customer legal documents screen now lives under
+ * System > "Müşteri Yasal Metinleri". Redirect so old links never land on a
+ * dead/duplicate screen (MR-CUSTOMER-LEGAL-ADMIN-POLISH-01).
+ */
+export default function LegacyLegalRedirect() {
+  redirect('/system/customer-legal-documents');
 }
