@@ -393,6 +393,11 @@ export default function StoreMenuPage({
   const currency = store.currency ?? 'CHF';
   const cartHasItems = totalItems > 0 && cart.storeId === store.id;
   const activeServiceTypes = (store.serviceTypes ?? []).filter((t) => t.isActive);
+  // Only treat the store as rated when real reviews back the average — never
+  // render a star score from an empty/absent summary.
+  const hasRating = Boolean(
+    store.reviewSummary && store.reviewSummary.totalReviews > 0,
+  );
 
   return (
     <div className="min-h-screen bg-[#f6f6f4]">
@@ -452,16 +457,35 @@ export default function StoreMenuPage({
             </div>
             <div className="mt-1 flex flex-wrap items-center gap-2 text-[13px] text-[#71717a]">
               <span>{store.category}</span>
-              {store.reviewSummary && store.reviewSummary.totalReviews > 0 && (
-                <span className="inline-flex items-center gap-1 rounded-full bg-[#fff8e6] px-2 py-0.5 text-[12px] font-semibold text-[#a36a00]">
+              {/* Rating summary is placeholder-safe: a real average is shown only
+                  when the store actually has reviews (no fabricated score). With
+                  none, a muted "no ratings yet" affordance still jumps to the
+                  reviews tab so the slot never feels empty or fake. */}
+              {hasRating ? (
+                <button
+                  type="button"
+                  onClick={() => setActiveTab('reviews')}
+                  className="inline-flex items-center gap-1 rounded-full bg-[#fff8e6] px-2 py-0.5 text-[12px] font-semibold text-[#a36a00] transition hover:bg-[#ffefc4] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#084799] focus-visible:ring-offset-1"
+                >
                   <svg viewBox="0 0 24 24" className="h-3.5 w-3.5 fill-current" aria-hidden="true">
                     <path d="M12 2.5l2.95 6 6.6.95-4.78 4.65 1.13 6.55L12 17.6l-5.9 3.05 1.13-6.55L2.45 9.45l6.6-.95L12 2.5z" />
                   </svg>
-                  {store.reviewSummary.averageRating?.toFixed(1) ?? '—'}
+                  {store.reviewSummary?.averageRating?.toFixed(1) ?? '—'}
                   <span className="text-[#a36a00]/70">
-                    ({store.reviewSummary.totalReviews})
+                    ({store.reviewSummary?.totalReviews})
                   </span>
-                </span>
+                </button>
+              ) : (
+                <button
+                  type="button"
+                  onClick={() => setActiveTab('reviews')}
+                  className="inline-flex items-center gap-1 rounded-full bg-[#f4f4f5] px-2 py-0.5 text-[12px] font-medium text-[#71717a] transition hover:bg-[#e9e9ec] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#084799] focus-visible:ring-offset-1"
+                >
+                  <svg viewBox="0 0 24 24" className="h-3.5 w-3.5" fill="none" stroke="currentColor" strokeWidth="2" strokeLinejoin="round" aria-hidden="true">
+                    <path d="M12 2.5l2.95 6 6.6.95-4.78 4.65 1.13 6.55L12 17.6l-5.9 3.05 1.13-6.55L2.45 9.45l6.6-.95L12 2.5z" />
+                  </svg>
+                  Henüz değerlendirme yok
+                </button>
               )}
             </div>
 
@@ -1327,18 +1351,44 @@ function ReviewsPanel({
 }
 
 function LoadingSkeleton() {
+  // Mirrors the loaded layout (wide container + desktop content/sidebar grid)
+  // so there is no width/structure jump when the real page swaps in.
   return (
     <div className="min-h-screen bg-[#f6f6f4]">
       <HomeHeader />
-      <div className="mx-auto max-w-[900px] px-5 py-5">
-        <div className="animate-pulse space-y-4">
-          <div className="h-[200px] rounded-[22px] bg-[#e4e4e7]" />
-          <div className="h-7 w-40 rounded-full bg-[#e4e4e7]" />
-          <div className="grid gap-3 sm:grid-cols-2">
-            {[1, 2, 3, 4].map((i) => (
-              <div key={i} className="h-[100px] rounded-[16px] bg-[#e4e4e7]" />
-            ))}
+      <div className="mx-auto max-w-[1180px] px-5 pb-20 lg:px-8">
+        <div className="mt-4 h-5 w-16 animate-pulse rounded-full bg-[#e4e4e7]" />
+        {/* Hero card */}
+        <div className="mt-5 overflow-hidden rounded-[22px] bg-white shadow-[0_2px_12px_rgba(0,0,0,0.06)]">
+          <div className="h-[160px] animate-pulse bg-[#e4e4e7] md:h-[200px]" />
+          <div className="space-y-3 p-5">
+            <div className="h-7 w-1/2 animate-pulse rounded-full bg-[#e4e4e7]" />
+            <div className="flex gap-2">
+              <div className="h-5 w-24 animate-pulse rounded-full bg-[#eaeaea]" />
+              <div className="h-5 w-28 animate-pulse rounded-full bg-[#eaeaea]" />
+            </div>
+            <div className="flex gap-2">
+              <div className="h-7 w-28 animate-pulse rounded-full bg-[#eaeaea]" />
+              <div className="h-7 w-24 animate-pulse rounded-full bg-[#eaeaea]" />
+            </div>
           </div>
+        </div>
+
+        <div className="lg:mt-5 lg:grid lg:grid-cols-[minmax(0,1fr)_320px] lg:items-start lg:gap-7">
+          <div className="min-w-0">
+            <div className="mt-5 h-9 w-44 animate-pulse rounded-full bg-[#e4e4e7]" />
+            <div className="mt-5 grid gap-3 sm:grid-cols-2">
+              {[1, 2, 3, 4, 5, 6].map((i) => (
+                <div
+                  key={i}
+                  className="h-[104px] animate-pulse rounded-[16px] bg-[#e4e4e7]"
+                />
+              ))}
+            </div>
+          </div>
+          <aside className="hidden lg:block lg:sticky lg:top-5">
+            <div className="h-[220px] animate-pulse rounded-[20px] bg-white shadow-[0_2px_12px_rgba(0,0,0,0.06)]" />
+          </aside>
         </div>
       </div>
     </div>
