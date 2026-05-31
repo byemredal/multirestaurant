@@ -10,6 +10,7 @@ import {
   StoreLegalDocumentTranslation,
   StoreReceiptSetting,
   StoreProfileNote,
+  StoreProfileNoteContent,
   StoreProfileNoteTranslation,
   StoreReservationSetting,
   StoreSetting,
@@ -672,7 +673,29 @@ export class StoreSettingsStore {
     };
   }
 
+  /**
+   * Profile notes now live on StoreContentSetting.profileNotesJson (Slice 7C).
+   * Content is the active source; if a store has no content-side notes yet we
+   * fall back to a READ-ONLY read of the legacy StoreProfileNote tables so
+   * pre-migration rows stay visible. No dual-write — all writes go to content.
+   * The returned shape is backward-compatible with the old listProfileNotes.
+   */
   async listProfileNotes(storeId: string, noteType?: StoreProfileNote['noteType']) {
+    const content = await this.findStoreContentSetting(storeId);
+    if (content) {
+      const fromContent = this.mapContentProfileNotes(content, noteType);
+      if (fromContent.length > 0) {
+        return fromContent;
+      }
+    }
+    return this.listLegacyProfileNotes(storeId, noteType);
+  }
+
+  /** Legacy read-only fallback for stores whose notes predate Slice 7C. */
+  private async listLegacyProfileNotes(
+    storeId: string,
+    noteType?: StoreProfileNote['noteType'],
+  ) {
     const rows = await this.databaseService
       .prepare(
         `SELECT * FROM "StoreProfileNote"
@@ -693,6 +716,40 @@ export class StoreSettingsStore {
     );
   }
 
+  /**
+   * Project StoreContentSetting.profileNotesJson into the legacy-compatible
+   * profile-note array shape (stable synthetic ids; timestamps from content).
+   */
+  private mapContentProfileNotes(
+    content: StoreContentSetting,
+    noteType?: StoreProfileNote['noteType'],
+  ) {
+    const json = content.profileNotesJson ?? {};
+    return Object.entries(json)
+      .filter(([type]) => !noteType || type === noteType)
+      .map(([type, entry]) => {
+        const noteId = `${content.storeId}:${type}`;
+        const updatedAt = entry.updatedAt ?? content.updatedAt;
+        return {
+          id: noteId,
+          storeId: content.storeId,
+          noteType: type as StoreProfileNote['noteType'],
+          isPublished: Boolean(entry.isPublished),
+          createdAt: content.createdAt,
+          updatedAt,
+          translations: (entry.translations ?? []).map((translation) => ({
+            id: `${noteId}:${translation.locale}`,
+            noteId,
+            locale: translation.locale,
+            title: translation.title ?? null,
+            body: translation.body,
+            createdAt: content.createdAt,
+            updatedAt,
+          })),
+        };
+      });
+  }
+
   async upsertProfileNote(
     storeId: string,
     noteType: StoreProfileNote['noteType'],
@@ -700,74 +757,45 @@ export class StoreSettingsStore {
       translations: Array<Pick<StoreProfileNoteTranslation, 'locale' | 'title' | 'body'>>;
     },
   ) {
-    const existing = await this.findLatestProfileNote(storeId, noteType);
+    // Ensure the content row exists, then merge this noteType into the JSON bag.
+    await this.getOrCreateStoreContentSetting(storeId);
+    const existing = await this.findStoreContentSetting(storeId);
     const now = new Date().toISOString();
-    const id = existing?.id ?? randomUUID();
 
-    const row = existing
-      ? await this.databaseService
-          .prepare(
-            `UPDATE "StoreProfileNote"
-             SET "isPublished" = $isPublished,
-                 "updatedAt" = $updatedAt
-             WHERE "id" = $id
-             RETURNING *`,
-          )
-          .get<StoreProfileNoteRow>({
-            $id: id,
-            $isPublished: input.isPublished,
-            $updatedAt: now,
-          })
-      : await this.databaseService
-          .prepare(
-            `INSERT INTO "StoreProfileNote" (
-              "id", "storeId", "noteType", "isPublished", "createdAt", "updatedAt"
-            ) VALUES (
-              $id, $storeId, $noteType, $isPublished, $createdAt, $updatedAt
-            )
-            RETURNING *`,
-          )
-          .get<StoreProfileNoteRow>({
-            $id: id,
-            $storeId: storeId,
-            $noteType: noteType,
-            $isPublished: input.isPublished,
-            $createdAt: now,
-            $updatedAt: now,
-          });
+    const nextNotes: Record<string, StoreProfileNoteContent> = {
+      ...(existing?.profileNotesJson ?? {}),
+      [noteType]: {
+        isPublished: input.isPublished,
+        translations: input.translations.map((translation) => ({
+          locale: translation.locale,
+          title: translation.title ?? null,
+          body: translation.body,
+        })),
+        updatedAt: now,
+      },
+    };
+
+    // Targeted update — only touches profileNotesJson, leaving marketing fields.
+    const row = await this.databaseService
+      .prepare(
+        `UPDATE "StoreContentSetting"
+         SET "profileNotesJson" = $profileNotesJson::jsonb,
+             "updatedAt" = $updatedAt
+         WHERE "storeId" = $storeId
+         RETURNING *`,
+      )
+      .get<StoreContentSettingRow>({
+        $storeId: storeId,
+        $profileNotesJson: JSON.stringify(nextNotes),
+        $updatedAt: now,
+      });
 
     if (!row) {
       throw new Error('Failed to upsert profile note.');
     }
 
-    await this.databaseService
-      .prepare(`DELETE FROM "StoreProfileNoteTranslation" WHERE "noteId" = $noteId`)
-      .run({ $noteId: id });
-
-    for (const translation of input.translations) {
-      await this.databaseService
-        .prepare(
-          `INSERT INTO "StoreProfileNoteTranslation" (
-            "id", "noteId", "locale", "title", "body", "createdAt", "updatedAt"
-          ) VALUES (
-            $id, $noteId, $locale, $title, $body, $createdAt, $updatedAt
-          )`,
-        )
-        .run({
-          $id: randomUUID(),
-          $noteId: id,
-          $locale: translation.locale,
-          $title: translation.title ?? null,
-          $body: translation.body,
-          $createdAt: now,
-          $updatedAt: now,
-        });
-    }
-
-    return {
-      ...this.mapStoreProfileNote(row),
-      translations: await this.listProfileNoteTranslations(id),
-    };
+    const [note] = this.mapContentProfileNotes(this.mapStoreContentSetting(row), noteType);
+    return note;
   }
 
   async listSliders(storeId: string) {
@@ -1037,22 +1065,6 @@ export class StoreSettingsStore {
       .then((rows) => rows.map((row) => this.mapStoreLegalDocumentTranslation(row)));
   }
 
-  private findLatestProfileNote(storeId: string, noteType: StoreProfileNote['noteType']) {
-    return this.databaseService
-      .prepare(
-        `SELECT * FROM "StoreProfileNote"
-         WHERE "storeId" = $storeId
-           AND "noteType" = $noteType
-         ORDER BY "updatedAt" DESC
-         LIMIT 1`,
-      )
-      .get<StoreProfileNoteRow>({
-        $storeId: storeId,
-        $noteType: noteType,
-      })
-      .then((row) => (row ? this.mapStoreProfileNote(row) : null));
-  }
-
   private listProfileNoteTranslations(noteId: string) {
     return this.databaseService
       .prepare(
@@ -1202,6 +1214,7 @@ export class StoreSettingsStore {
       socialLinksJson: row.socialLinksJson ?? {},
       marketingHeadline: row.marketingHeadline,
       marketingDescription: row.marketingDescription,
+      profileNotesJson: row.profileNotesJson ?? {},
       createdAt: row.createdAt,
       updatedAt: row.updatedAt,
     };
@@ -1988,6 +2001,7 @@ interface StoreContentSettingRow {
   socialLinksJson: Record<string, unknown> | null;
   marketingHeadline: string | null;
   marketingDescription: string | null;
+  profileNotesJson: Record<string, StoreProfileNoteContent> | null;
   createdAt: string;
   updatedAt: string;
 }

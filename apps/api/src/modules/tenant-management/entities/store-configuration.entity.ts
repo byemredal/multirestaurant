@@ -86,8 +86,25 @@ export interface StoreContentSetting {
   socialLinksJson: Record<string, unknown>;
   marketingHeadline: string | null;
   marketingDescription: string | null;
+  /**
+   * Per-noteType profile copy (MR-DB-HARDENING-01 Slice 7C). Keyed by
+   * ProfileNoteType; replaces the legacy StoreProfileNote(+Translation) tables
+   * as the active write target. Profile notes are content/marketing, not legal.
+   */
+  profileNotesJson: Record<string, StoreProfileNoteContent>;
   createdAt: string;
   updatedAt: string;
+}
+
+/** One profile note's content as stored under StoreContentSetting.profileNotesJson. */
+export interface StoreProfileNoteContent {
+  isPublished: boolean;
+  translations: Array<{
+    locale: string;
+    title: string | null;
+    body: string;
+  }>;
+  updatedAt?: string;
 }
 
 export type StoreSliderType = 'homepage' | 'campaign' | 'seasonal';
