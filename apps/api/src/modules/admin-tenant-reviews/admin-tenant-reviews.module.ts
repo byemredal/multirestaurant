@@ -2,6 +2,7 @@ import { Module } from '@nestjs/common';
 import { AdminRoleGuard } from '../../common/security/guards/admin-role.guard';
 import { AdminAuditLogModule } from '../admin-audit-log/admin-audit-log.module';
 import { AdminAuthModule } from '../admin-auth/admin-auth.module';
+import { LegalConsentModule } from '../legal-consent/legal-consent.module';
 import { MenuModule } from '../menu/menu.module';
 import { TenantOnboardingModule } from '../tenant-onboarding/tenant-onboarding.module';
 import { TenantsModule } from '../tenants/tenants.module';
@@ -23,6 +24,7 @@ import { AdminTenantReviewsService } from './admin-tenant-reviews.service';
     TenantsModule,
     StoresModule,
     StoreSettingsModule,
+    LegalConsentModule,
     MenuModule,
     SharedFileStorageModule,
   ],

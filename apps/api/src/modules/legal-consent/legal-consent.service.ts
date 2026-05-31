@@ -1006,6 +1006,133 @@ export class LegalConsentService {
   }
 
   // ===================================================================
+  // 9b. Store addendum helpers for the legacy StoreLegalDocument migration
+  //     (MR-DB-HARDENING-01 Slice 7D). These are data primitives — ownership
+  //     (store ↔ tenant) is enforced by the admin caller.
+  // ===================================================================
+
+  /**
+   * Resolve the current (non-superseded) platform document version id for a
+   * legal document type code + locale, using the canonical current-version
+   * semantics (supersededAt IS NULL, latest publishedAt). Returns null when no
+   * published parent exists — callers MUST surface an actionable error rather
+   * than invent a parent version.
+   */
+  async resolveCurrentParentVersionId(
+    code: LegalDocumentTypeCode,
+    locale: string = DEFAULT_LOCALE,
+  ): Promise<string | null> {
+    const row = (await this.databaseService
+      .prepare(
+        `SELECT v."id" AS "versionId"
+         FROM "LegalDocumentType" t
+         JOIN "PlatformLegalDocument" d
+           ON d."typeId" = t."id" AND d."isActive" = TRUE
+         JOIN "PlatformLegalDocumentVersion" v
+           ON v."documentId" = d."id"
+          AND v."locale" = $locale
+          AND v."supersededAt" IS NULL
+         WHERE t."code" = $code AND t."isActive" = TRUE
+         ORDER BY v."publishedAt" DESC
+         LIMIT 1`,
+      )
+      .get({ $code: code, $locale: locale })) as
+      | { versionId: string }
+      | undefined;
+    return row?.versionId ?? null;
+  }
+
+  /**
+   * Store addendums joined with their parent document's type code, so admin
+   * consumers can group store-scoped legal text by canonical document type.
+   */
+  async listStoreAddendumsWithTypeCode(
+    storeId: string,
+  ): Promise<Array<StoreTermsAddendum & { typeCode: LegalDocumentTypeCode | null }>> {
+    const rows = (await this.databaseService
+      .prepare(
+        `SELECT a.*, t."code" AS "typeCode"
+         FROM "StoreTermsAddendum" a
+         JOIN "PlatformLegalDocumentVersion" v ON v."id" = a."parentDocumentVersionId"
+         JOIN "PlatformLegalDocument" d ON d."id" = v."documentId"
+         JOIN "LegalDocumentType" t ON t."id" = d."typeId"
+         WHERE a."storeId" = $storeId
+         ORDER BY a."createdAt" DESC`,
+      )
+      .all({ $storeId: storeId })) as unknown as Array<
+      StoreTermsAddendumRow & { typeCode: LegalDocumentTypeCode | null }
+    >;
+    return rows.map((row) => ({
+      ...this.mapAddendum(row),
+      typeCode: row.typeCode ?? null,
+    }));
+  }
+
+  /**
+   * Upsert a store addendum keyed on (storeId, parentDocumentVersionId, locale):
+   * updates the matching row if present, otherwise inserts. This prevents
+   * duplicate addenda on repeated admin edits without a new DB unique constraint.
+   */
+  async upsertStoreAddendumForParent(
+    storeId: string,
+    input: {
+      parentDocumentVersionId: string;
+      locale: string;
+      title: string;
+      body: string;
+      isActive: boolean;
+    },
+  ): Promise<StoreTermsAddendum> {
+    const existing = (await this.databaseService
+      .prepare(
+        `SELECT "id" FROM "StoreTermsAddendum"
+         WHERE "storeId" = $storeId
+           AND "parentDocumentVersionId" = $parentVersionId
+           AND "locale" = $locale
+         LIMIT 1`,
+      )
+      .get({
+        $storeId: storeId,
+        $parentVersionId: input.parentDocumentVersionId,
+        $locale: input.locale,
+      })) as { id: string } | undefined;
+
+    const row = existing
+      ? ((await this.databaseService
+          .prepare(
+            `UPDATE "StoreTermsAddendum"
+               SET "title" = $title, "body" = $body,
+                   "isActive" = $isActive, "updatedAt" = NOW()
+               WHERE "id" = $id
+               RETURNING *`,
+          )
+          .get({
+            $id: existing.id,
+            $title: input.title,
+            $body: input.body,
+            $isActive: input.isActive,
+          })) as unknown as StoreTermsAddendumRow)
+      : ((await this.databaseService
+          .prepare(
+            `INSERT INTO "StoreTermsAddendum"
+               ("storeId", "parentDocumentVersionId", "title", "body",
+                "locale", "isActive")
+             VALUES ($storeId, $parentVersionId, $title, $body, $locale, $isActive)
+             RETURNING *`,
+          )
+          .get({
+            $storeId: storeId,
+            $parentVersionId: input.parentDocumentVersionId,
+            $title: input.title,
+            $body: input.body,
+            $locale: input.locale,
+            $isActive: input.isActive,
+          })) as unknown as StoreTermsAddendumRow);
+
+    return this.mapAddendum(row);
+  }
+
+  // ===================================================================
   // Helpers
   // ===================================================================
 

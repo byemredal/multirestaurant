@@ -7,6 +7,8 @@ import { TenantAccountsStore } from '../tenants/tenants.store';
 import { StoreSettingsService } from '../store-settings/store-settings.service';
 import { StoresService } from '../stores/stores.service';
 import { SharedFileStorageService } from '../shared-file-storage/shared-file-storage.service';
+import { LegalConsentService } from '../legal-consent/legal-consent.service';
+import { LegalDocumentTypeCode } from '../legal-consent/entities/legal-document-type.entity';
 import { CreateStoreSliderDto } from '../store-settings/dto/create-store-slider.dto';
 import { CreateStoreSliderItemDto } from '../store-settings/dto/create-store-slider-item.dto';
 import { UpdateStoreDeliveryFeeSettingDto } from '../store-settings/dto/update-store-delivery-fee-setting.dto';
@@ -27,6 +29,51 @@ import {
   UpdateComplianceDocumentRequirementDto,
 } from './dto/compliance-catalog.dto';
 
+type LegacyStoreLegalDocumentType =
+  | 'terms_and_conditions'
+  | 'privacy_notice'
+  | 'distance_sales';
+
+/**
+ * MR-DB-HARDENING-01 Slice 7D — narrow mapping from the legacy store legal
+ * documentType to the canonical LegalDocumentType code that owns the parent
+ * PlatformLegalDocumentVersion a StoreTermsAddendum must reference.
+ */
+const LEGACY_DOC_TYPE_TO_CODE: Record<LegacyStoreLegalDocumentType, LegalDocumentTypeCode> = {
+  terms_and_conditions: 'terms_of_service',
+  privacy_notice: 'privacy_policy',
+  distance_sales: 'distance_sales_contract',
+};
+
+const CODE_TO_LEGACY_DOC_TYPE: Partial<
+  Record<LegalDocumentTypeCode, LegacyStoreLegalDocumentType>
+> = {
+  terms_of_service: 'terms_and_conditions',
+  privacy_policy: 'privacy_notice',
+  distance_sales_contract: 'distance_sales',
+};
+
+/** Backward-compatible store legal document shape returned to the admin review. */
+export interface AdminStoreLegalDocumentView {
+  id: string;
+  storeId: string;
+  documentType: string;
+  versionLabel: string;
+  isPublished: boolean;
+  effectiveFrom: string | null;
+  createdAt: string | Date;
+  updatedAt: string | Date;
+  translations: Array<{
+    id: string;
+    documentId: string;
+    locale: string;
+    title: string | null;
+    body: string;
+    createdAt: string | Date;
+    updatedAt: string | Date;
+  }>;
+}
+
 @Injectable()
 export class AdminTenantReviewsService {
   constructor(
@@ -38,6 +85,7 @@ export class AdminTenantReviewsService {
     private readonly menuService: MenuService,
     private readonly storeSettingsService: StoreSettingsService,
     private readonly fileStorageService: SharedFileStorageService,
+    private readonly legalConsentService: LegalConsentService,
   ) {}
 
   listApplications(query: ListTenantApplicationsDto) {
@@ -130,7 +178,10 @@ export class AdminTenantReviewsService {
           reservationSettings,
           receiptSettings,
           contentSettings: contentBundle.contentSettings,
-          legalDocuments: contentBundle.legalDocuments,
+          legalDocuments: await this.buildStoreLegalDocumentsView(
+            store.id,
+            contentBundle.legalDocuments,
+          ),
           profileNotes: contentBundle.profileNotes,
           sliders,
           menuCategories,
@@ -254,19 +305,102 @@ export class AdminTenantReviewsService {
     return updated;
   }
 
+  /**
+   * Build the admin-review `legalDocuments` view from canonical
+   * StoreTermsAddendum rows (grouped by document type), falling back to the
+   * legacy StoreLegalDocument read only when the store has no canonical
+   * addenda yet (pre-migration visibility, removed in 7E). MR-DB-HARDENING-01
+   * Slice 7D.
+   */
+  private async buildStoreLegalDocumentsView(
+    storeId: string,
+    legacyFallback: AdminStoreLegalDocumentView[],
+  ): Promise<AdminStoreLegalDocumentView[]> {
+    const addendums =
+      await this.legalConsentService.listStoreAddendumsWithTypeCode(storeId);
+    const supported = addendums.filter(
+      (addendum) => addendum.typeCode && CODE_TO_LEGACY_DOC_TYPE[addendum.typeCode],
+    );
+
+    if (supported.length === 0) {
+      return legacyFallback;
+    }
+
+    const grouped = new Map<LegacyStoreLegalDocumentType, typeof supported>();
+    for (const addendum of supported) {
+      const documentType = CODE_TO_LEGACY_DOC_TYPE[addendum.typeCode!]!;
+      const list = grouped.get(documentType) ?? [];
+      list.push(addendum);
+      grouped.set(documentType, list);
+    }
+
+    return Array.from(grouped.entries()).map(([documentType, items]) => {
+      const documentId = `${storeId}:${documentType}`;
+      return {
+        id: documentId,
+        storeId,
+        documentType,
+        versionLabel: 'v1',
+        isPublished: items.some((item) => item.isActive),
+        effectiveFrom: null,
+        createdAt: items[items.length - 1]?.createdAt ?? new Date(),
+        updatedAt: items[0]?.updatedAt ?? new Date(),
+        translations: items.map((item) => ({
+          id: item.id,
+          documentId,
+          locale: item.locale,
+          title: item.title,
+          body: item.body,
+          createdAt: item.createdAt,
+          updatedAt: item.updatedAt,
+        })),
+      };
+    });
+  }
+
   async updateTenantStoreLegalDocument(
     tenantId: string,
     storeId: string,
-    documentType: 'terms_and_conditions' | 'privacy_notice' | 'distance_sales',
+    documentType: LegacyStoreLegalDocumentType,
     adminId: string,
     dto: UpdateStoreLegalDocumentDto,
-  ) {
-    const updated = await this.storeSettingsService.upsertStoreLegalDocument(
-      storeId,
-      tenantId,
-      documentType,
-      dto,
-    );
+  ): Promise<AdminStoreLegalDocumentView> {
+    // Preserve the prior store ↔ tenant ownership guard (was enforced by the
+    // store-settings write path we no longer call).
+    const owned = await this.storesService.findOwnedStore(storeId, tenantId);
+    if (!owned) {
+      throw new NotFoundException('Store could not be found for this tenant.');
+    }
+
+    const code = LEGACY_DOC_TYPE_TO_CODE[documentType];
+    const isActive = dto.isPublished ?? true;
+    const documentId = `${storeId}:${documentType}`;
+
+    // Write one canonical addendum per provided locale, each anchored to the
+    // current published platform version for that locale. No legacy write.
+    const written: Awaited<
+      ReturnType<LegalConsentService['upsertStoreAddendumForParent']>
+    >[] = [];
+    for (const translation of dto.translations) {
+      const locale = translation.locale.trim();
+      const parentVersionId =
+        await this.legalConsentService.resolveCurrentParentVersionId(code, locale);
+      if (!parentVersionId) {
+        throw new BadRequestException({
+          code: 'store_legal_parent_document_missing',
+          message: `Mağaza yasal metni için yayınlanmış platform belgesi bulunamadı (tip: ${code}, dil: ${locale}). Önce ilgili platform belgesinin güncel sürümünü yayınlayın.`,
+        });
+      }
+      written.push(
+        await this.legalConsentService.upsertStoreAddendumForParent(storeId, {
+          parentDocumentVersionId: parentVersionId,
+          locale,
+          title: translation.title.trim(),
+          body: translation.body.trim(),
+          isActive,
+        }),
+      );
+    }
 
     await this.auditLogService.log({
       actorType: 'admin',
@@ -275,10 +409,28 @@ export class AdminTenantReviewsService {
       entityType: 'store',
       entityId: storeId,
       tenantAccountId: tenantId,
-      metadata: { documentType, versionLabel: dto.versionLabel ?? null },
+      metadata: { documentType, parentCode: code, versionLabel: dto.versionLabel ?? null },
     });
 
-    return updated;
+    return {
+      id: documentId,
+      storeId,
+      documentType,
+      versionLabel: dto.versionLabel?.trim() || 'v1',
+      isPublished: isActive,
+      effectiveFrom: dto.effectiveFrom ?? null,
+      createdAt: written[0]?.createdAt ?? new Date(),
+      updatedAt: written[0]?.updatedAt ?? new Date(),
+      translations: written.map((addendum) => ({
+        id: addendum.id,
+        documentId,
+        locale: addendum.locale,
+        title: addendum.title,
+        body: addendum.body,
+        createdAt: addendum.createdAt,
+        updatedAt: addendum.updatedAt,
+      })),
+    };
   }
 
   async updateTenantStoreProfileNote(
