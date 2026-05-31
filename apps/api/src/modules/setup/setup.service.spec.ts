@@ -56,4 +56,15 @@ describe('SetupService legal placeholder production gate', () => {
     await service.initialize(dto);
     expect(setupStore.initialize).toHaveBeenCalledTimes(1);
   });
+
+  it('no longer passes a legacy legalDocuments payload to setup initialization (Slice 7B)', async () => {
+    process.env.NODE_ENV = 'development';
+    const { service, setupStore } = buildService();
+
+    await service.initialize(dto);
+
+    expect(setupStore.initialize).toHaveBeenCalledWith(
+      expect.not.objectContaining({ legalDocuments: expect.anything() }),
+    );
+  });
 });

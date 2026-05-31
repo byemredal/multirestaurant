@@ -14,13 +14,6 @@ export interface PlatformSetupRow {
   initializedAt: string;
 }
 
-export interface InitializeLegalDocument {
-  type: string;
-  version: string;
-  countryCode: string;
-  content: string;
-}
-
 export interface InitializeInput {
   adminId: string;
   adminEmail: string;
@@ -36,7 +29,6 @@ export interface InitializeInput {
   defaultTimezone: string;
   /** CountryPack version pinned into InstallationProfile at setup time. */
   packVersion: string;
-  legalDocuments: InitializeLegalDocument[];
 }
 
 const SUPER_ADMIN_ROLE = 'super_admin';
@@ -65,8 +57,13 @@ export class SetupStore {
 
   /**
    * Creates the super admin account, the single PlatformSetup row and the
-   * baseline legal documents in one transaction. If any step fails the whole
+   * InstallationProfile in one transaction. If any step fails the whole
    * bootstrap is rolled back, so the platform never enters a partial state.
+   *
+   * NOTE (MR-DB-HARDENING-01 Slice 7B): this no longer seeds the legacy
+   * "LegalDocument" table. That write was dead (no runtime reader); canonical
+   * platform legal docs are managed via the admin legal-document API. See
+   * docs/architecture/legacy-legal-profile-migration.md.
    */
   async initialize(input: InitializeInput): Promise<void> {
     const now = new Date().toISOString();
@@ -116,24 +113,6 @@ export class SetupStore {
           $initializedByAdminId: input.adminId,
           $initializedAt: now,
         });
-
-      const legalStatement = this.databaseService.prepare(
-        `INSERT INTO "LegalDocument" (
-           "type", "version", "countryCode", "content", "createdAt"
-         ) VALUES (
-           $type, $version, $countryCode, $content, $createdAt
-         )`,
-      );
-
-      for (const document of input.legalDocuments) {
-        await legalStatement.run({
-          $type: document.type,
-          $version: document.version,
-          $countryCode: document.countryCode,
-          $content: document.content,
-          $createdAt: now,
-        });
-      }
 
       // InstallationProfile pins which CountryPack this deployment runs.
       // Written in the same transaction as PlatformSetup so the two views

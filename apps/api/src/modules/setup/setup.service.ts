@@ -5,11 +5,7 @@ import { getCountryPack, resolveCountryDefaults } from '@lieferzonen/config';
 import { PasswordService } from '../../common/security/password.service';
 import { InitializePlatformDto } from './dto/initialize-platform.dto';
 import { InstallationProfileService } from './installation-profile.service';
-import {
-  DEFAULT_LEGAL_DOCUMENTS,
-  SUPPORTED_SETUP_COUNTRIES,
-  SystemState,
-} from './setup.constants';
+import { SUPPORTED_SETUP_COUNTRIES, SystemState } from './setup.constants';
 import { SetupStore } from './setup.store';
 import { SystemStateService } from './system-state.service';
 
@@ -183,25 +179,11 @@ export class SetupService {
         });
       }
 
-      // Baseline legal documents — pack-provided placeholders take precedence
-      // over the generic constants so the seeded text is at least in the
-      // pack's primary locale. Both bodies are explicitly marked placeholder.
-      const packLegalDocs = pack.legalDocuments.map((document) => ({
-        type: document.typeCode,
-        version: document.versionLabel,
-        countryCode: primaryCountry,
-        content: `${document.placeholderTitle}\n\n${document.placeholderBody}`,
-      }));
-      const legalDocuments =
-        packLegalDocs.length > 0
-          ? packLegalDocs
-          : DEFAULT_LEGAL_DOCUMENTS.map((document) => ({
-              type: document.type,
-              version: document.version,
-              countryCode: primaryCountry,
-              content: document.content,
-            }));
-
+      // NOTE (MR-DB-HARDENING-01 Slice 7B): the legacy "LegalDocument" seed was
+      // removed — it was a dead write with no runtime reader. The CountryPack
+      // legalDocuments config is still used above as the production
+      // placeholder-content guard and for onboarding/UI defaults. Canonical
+      // platform legal docs are managed via the admin legal-document API.
       await this.setupStore.initialize({
         adminId: randomUUID(),
         adminEmail: dto.adminEmail.trim().toLowerCase(),
@@ -216,7 +198,6 @@ export class SetupService {
         defaultCurrency: countryDefaults.defaultCurrency,
         defaultTimezone: countryDefaults.defaultTimezone,
         packVersion: pack.packVersion,
-        legalDocuments,
       });
     } catch (error) {
       // Safe fallback: never leave the system stuck in INITIALIZING.
