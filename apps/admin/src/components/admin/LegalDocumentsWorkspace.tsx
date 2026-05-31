@@ -1,24 +1,64 @@
 'use client';
 
-import { useEffect, useMemo, useState } from 'react';
+import { type FormEvent, useCallback, useEffect, useMemo, useState } from 'react';
+import {
+  DataTable,
+  Drawer,
+  EmptyState,
+  SkeletonTable,
+  StatusBadge,
+  type Column,
+} from '@/components/ui';
+import { Icon } from '@/lib/icons';
+import { useBranding } from '@/lib/branding/BrandingProvider';
 import { requireAdminSession } from '@/lib/admin-api/require-admin-session';
 import {
+  AdminLegalError,
   createLegalDocument,
   listDocumentVersions,
   listLegalDocumentTypes,
   listLegalDocuments,
   publishDocumentVersion,
-  supersedeVersion,
   updateLegalDocument,
   type AdminLegalDocument,
   type AdminLegalDocumentType,
   type AdminLegalDocumentVersion,
 } from '@/lib/admin-api/admin-legal-client';
 
+// Required customer checkout documents (mirrors backend
+// REQUIRED_CHECKOUT_DOCUMENT_CODES). Global for now — country-specific policy
+// is tracked as tech debt and intentionally NOT changed in this slice.
+const REQUIRED_CHECKOUT_CODES: Array<{ typeCode: string; label: string }> = [
+  { typeCode: 'distance_sales_contract', label: 'Mesafeli Satış Sözleşmesi' },
+  { typeCode: 'pre_information_form', label: 'Ön Bilgilendirme Formu' },
+];
+
+// Client-side hint only — the authoritative placeholder guard lives in the API
+// (publishVersion / getCheckoutLegalReadiness). This just warns the admin early.
+const PLACEHOLDER_HINT = /placeholder|lorem ipsum|taslak|\bdraft\b|test document|\bexample\b|örnek metin|üretime geçmeden önce|\bTODO\b|\bFIXME\b|\bdummy\b|\bsample\b/i;
+
+function looksLikePlaceholder(...values: Array<string | null | undefined>): boolean {
+  const haystack = values.filter(Boolean).join('  ');
+  return haystack.length > 0 && PLACEHOLDER_HINT.test(haystack);
+}
+
+type DrawerState =
+  | { kind: 'create' }
+  | { kind: 'publish'; doc: AdminLegalDocument }
+  | { kind: 'view'; doc: AdminLegalDocument }
+  | null;
+
 type CreateForm = {
   typeId: string;
   code: string;
   audience: 'customer' | 'tenant' | 'all';
+  isRequired: boolean;
+  isActive: boolean;
+  createFirstVersion: boolean;
+  versionLabel: string;
+  title: string;
+  body: string;
+  bodyFormat: 'markdown' | 'html' | 'plain_text';
 };
 
 type PublishForm = {
@@ -26,598 +66,671 @@ type PublishForm = {
   locale: string;
   title: string;
   body: string;
+  bodyFormat: 'markdown' | 'html' | 'plain_text';
+  effectiveFrom: string;
 };
 
-const emptyPublishForm: PublishForm = {
-  versionLabel: '',
-  locale: 'tr',
-  title: '',
-  body: '',
-};
-
-export default function LegalDocumentsWorkspace() {
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
-  const [types, setTypes] = useState<AdminLegalDocumentType[]>([]);
-  const [documents, setDocuments] = useState<AdminLegalDocument[]>([]);
-  const [busy, setBusy] = useState(false);
-  const [createForm, setCreateForm] = useState<CreateForm>({
-    typeId: '',
+function buildCreateForm(typeId: string): CreateForm {
+  return {
+    typeId,
     code: '',
     audience: 'customer',
-  });
-  const [selectedDocId, setSelectedDocId] = useState<string | null>(null);
+    isRequired: true,
+    isActive: true,
+    createFirstVersion: true,
+    versionLabel: '',
+    title: '',
+    body: '',
+    bodyFormat: 'markdown',
+  };
+}
+
+function buildPublishForm(locale: string): PublishForm {
+  return {
+    versionLabel: '',
+    locale,
+    title: '',
+    body: '',
+    bodyFormat: 'markdown',
+    effectiveFrom: '',
+  };
+}
+
+const PLACEHOLDER_UI_MESSAGE =
+  'Bu metin taslak/placeholder içerik gibi görünüyor. Üretimde yayınlanamaz. Lütfen gerçek hukuki metni girin.';
+
+export default function LegalDocumentsWorkspace() {
+  const branding = useBranding();
+  const country = branding?.defaultCountry?.trim().toUpperCase() ?? '';
+  const defaultLocale = branding?.defaultLanguage?.trim() || 'tr';
+  const brandingLoaded = branding !== null;
+  const canCreate = Boolean(country);
+
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [types, setTypes] = useState<AdminLegalDocumentType[]>([]);
+  const [documents, setDocuments] = useState<AdminLegalDocument[]>([]);
+
+  const [statusFilter, setStatusFilter] = useState<'active' | 'all'>('all');
+  const [requiredOnly, setRequiredOnly] = useState(false);
+  const [search, setSearch] = useState('');
+
+  const [drawer, setDrawer] = useState<DrawerState>(null);
+  const [createForm, setCreateForm] = useState<CreateForm>(buildCreateForm(''));
+  const [publishForm, setPublishForm] = useState<PublishForm>(buildPublishForm(defaultLocale));
   const [versions, setVersions] = useState<AdminLegalDocumentVersion[]>([]);
   const [versionsLoading, setVersionsLoading] = useState(false);
-  const [publishForm, setPublishForm] = useState<PublishForm>(emptyPublishForm);
-  const [supersedeCurrent, setSupersedeCurrent] = useState(true);
 
-  const refresh = async () => {
+  const reload = useCallback(async () => {
     const session = await requireAdminSession();
-    const [t, d] = await Promise.all([
+    const [nextTypes, nextDocs] = await Promise.all([
       listLegalDocumentTypes(session),
-      listLegalDocuments(session),
+      // Country scope: only this installation's customer-facing documents.
+      listLegalDocuments(session, {
+        audience: 'customer',
+        countryCode: country || undefined,
+        includeInactive: true,
+      }),
     ]);
-    setTypes(t);
-    setDocuments(d);
-    if (t.length > 0 && !createForm.typeId) {
-      setCreateForm((prev) => ({ ...prev, typeId: t[0]!.id }));
-    }
-  };
+    setTypes(nextTypes);
+    setDocuments(nextDocs);
+  }, [country]);
 
   useEffect(() => {
-    (async () => {
+    if (!brandingLoaded) return;
+    let active = true;
+    void (async () => {
       try {
         setLoading(true);
         setError(null);
-        await refresh();
-      } catch (e) {
-        setError(e instanceof Error ? e.message : 'Veriler yüklenemedi.');
+        await reload();
+      } catch (caught) {
+        if (active) setError(caught instanceof Error ? caught.message : 'Veriler yüklenemedi.');
       } finally {
-        setLoading(false);
+        if (active) setLoading(false);
       }
     })();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+    return () => {
+      active = false;
+    };
+  }, [brandingLoaded, reload]);
+
+  const closeDrawer = useCallback(() => {
+    setDrawer(null);
+    setVersions([]);
   }, []);
 
-  useEffect(() => {
-    if (!selectedDocId) {
-      setVersions([]);
-      return;
+  const openCreate = useCallback(() => {
+    if (!canCreate) return;
+    setCreateForm(buildCreateForm(types[0]?.id ?? ''));
+    setError(null);
+    setDrawer({ kind: 'create' });
+  }, [canCreate, types]);
+
+  const openPublish = useCallback((doc: AdminLegalDocument) => {
+    setPublishForm(buildPublishForm(doc.currentVersion?.locale ?? defaultLocale));
+    setError(null);
+    setDrawer({ kind: 'publish', doc });
+  }, [defaultLocale]);
+
+  const openView = useCallback(async (doc: AdminLegalDocument) => {
+    setError(null);
+    setDrawer({ kind: 'view', doc });
+    try {
+      setVersionsLoading(true);
+      const session = await requireAdminSession();
+      setVersions(await listDocumentVersions(session, doc.id));
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : 'Sürümler yüklenemedi.');
+    } finally {
+      setVersionsLoading(false);
     }
-    (async () => {
+  }, []);
+
+  const toggleActive = useCallback(
+    async (doc: AdminLegalDocument) => {
       try {
-        setVersionsLoading(true);
+        setBusy(true);
+        setError(null);
         const session = await requireAdminSession();
-        const list = await listDocumentVersions(session, selectedDocId);
-        setVersions(list);
-      } catch (e) {
-        setError(e instanceof Error ? e.message : 'Sürümler yüklenemedi.');
+        await updateLegalDocument(session, doc.id, { isActive: !doc.isActive });
+        await reload();
+      } catch (caught) {
+        setError(caught instanceof Error ? caught.message : 'Doküman güncellenemedi.');
       } finally {
-        setVersionsLoading(false);
+        setBusy(false);
       }
-    })();
-  }, [selectedDocId]);
-
-  const handleCreate = async () => {
-    if (!createForm.typeId || !createForm.code.trim()) {
-      setError('Type ve code zorunlu.');
-      return;
-    }
-    try {
-      setBusy(true);
-      setError(null);
-      const session = await requireAdminSession();
-      await createLegalDocument(session, {
-        typeId: createForm.typeId,
-        code: createForm.code.trim(),
-        audience: createForm.audience,
-      });
-      setCreateForm((prev) => ({ ...prev, code: '' }));
-      await refresh();
-    } catch (e) {
-      setError(e instanceof Error ? e.message : 'Doküman oluşturulamadı.');
-    } finally {
-      setBusy(false);
-    }
-  };
-
-  const handlePublish = async () => {
-    if (!selectedDocId) return;
-    if (
-      !publishForm.versionLabel.trim() ||
-      !publishForm.title.trim() ||
-      !publishForm.body.trim()
-    ) {
-      setError('Version label, title ve body zorunlu.');
-      return;
-    }
-    try {
-      setBusy(true);
-      setError(null);
-      const session = await requireAdminSession();
-      await publishDocumentVersion(session, selectedDocId, {
-        versionLabel: publishForm.versionLabel.trim(),
-        locale: publishForm.locale.trim() || 'tr',
-        title: publishForm.title.trim(),
-        body: publishForm.body,
-        bodyFormat: 'markdown',
-        supersedeCurrent,
-      });
-      setPublishForm(emptyPublishForm);
-      const session2 = await requireAdminSession();
-      const v = await listDocumentVersions(session2, selectedDocId);
-      setVersions(v);
-      await refresh();
-    } catch (e) {
-      setError(e instanceof Error ? e.message : 'Sürüm yayınlanamadı.');
-    } finally {
-      setBusy(false);
-    }
-  };
-
-  const handleToggleActive = async (doc: AdminLegalDocument) => {
-    try {
-      setBusy(true);
-      setError(null);
-      const session = await requireAdminSession();
-      await updateLegalDocument(session, doc.id, { isActive: !doc.isActive });
-      await refresh();
-    } catch (e) {
-      setError(e instanceof Error ? e.message : 'Doküman güncellenemedi.');
-    } finally {
-      setBusy(false);
-    }
-  };
-
-  const handleSupersede = async (versionId: string) => {
-    if (!selectedDocId) return;
-    if (!window.confirm('Bu sürümü supersede etmek istediğinize emin misiniz?')) return;
-    try {
-      setBusy(true);
-      setError(null);
-      const session = await requireAdminSession();
-      await supersedeVersion(session, versionId);
-      const v = await listDocumentVersions(session, selectedDocId);
-      setVersions(v);
-      await refresh();
-    } catch (e) {
-      setError(e instanceof Error ? e.message : 'Supersede başarısız.');
-    } finally {
-      setBusy(false);
-    }
-  };
-
-  const selectedDoc = useMemo(
-    () => documents.find((d) => d.id === selectedDocId) ?? null,
-    [documents, selectedDocId],
+    },
+    [reload],
   );
 
-  const requiredCheckoutDocs = useMemo(() => {
-    const required: { typeCode: string; label: string }[] = [
-      { typeCode: 'distance_sales_contract', label: 'Mesafeli satış sözleşmesi' },
-      { typeCode: 'pre_information_form', label: 'Ön bilgilendirme formu' },
-    ];
-    return required.map((req) => {
-      const doc = documents.find(
-        (d) => d.typeCode === req.typeCode && d.isActive,
-      );
-      return { ...req, published: Boolean(doc?.currentVersion) };
-    });
-  }, [documents]);
-  const allRequiredPublished = requiredCheckoutDocs.every((d) => d.published);
+  const resolveError = (caught: unknown): string => {
+    if (caught instanceof AdminLegalError && caught.code === 'legal_document_placeholder_content') {
+      return PLACEHOLDER_UI_MESSAGE;
+    }
+    return caught instanceof Error ? caught.message : 'İşlem tamamlanamadı.';
+  };
 
-  if (loading) {
-    return <p style={{ color: '#71717a' }}>Yükleniyor…</p>;
-  }
+  const submitCreate = useCallback(
+    async (event: FormEvent) => {
+      event.preventDefault();
+      if (!createForm.typeId || !createForm.code.trim()) {
+        setError('Belge tipi ve code zorunludur.');
+        return;
+      }
+      try {
+        setBusy(true);
+        setError(null);
+        const session = await requireAdminSession();
+        const created = await createLegalDocument(session, {
+          typeId: createForm.typeId,
+          code: createForm.code.trim(),
+          countryCode: country,
+          audience: createForm.audience,
+          isRequired: createForm.isRequired,
+          isActive: createForm.isActive,
+        });
+        // Optionally publish the first version in the same flow.
+        if (
+          createForm.createFirstVersion &&
+          createForm.versionLabel.trim() &&
+          createForm.title.trim() &&
+          createForm.body.trim()
+        ) {
+          await publishDocumentVersion(session, created.id, {
+            versionLabel: createForm.versionLabel.trim(),
+            locale: defaultLocale,
+            title: createForm.title.trim(),
+            body: createForm.body,
+            bodyFormat: createForm.bodyFormat,
+          });
+        }
+        await reload();
+        closeDrawer();
+      } catch (caught) {
+        setError(resolveError(caught));
+      } finally {
+        setBusy(false);
+      }
+    },
+    [closeDrawer, country, createForm, defaultLocale, reload],
+  );
+
+  const submitPublish = useCallback(
+    async (event: FormEvent) => {
+      event.preventDefault();
+      if (drawer?.kind !== 'publish') return;
+      if (!publishForm.versionLabel.trim() || !publishForm.title.trim() || !publishForm.body.trim()) {
+        setError('Version label, başlık ve metin zorunludur.');
+        return;
+      }
+      try {
+        setBusy(true);
+        setError(null);
+        const session = await requireAdminSession();
+        await publishDocumentVersion(session, drawer.doc.id, {
+          versionLabel: publishForm.versionLabel.trim(),
+          locale: publishForm.locale.trim() || defaultLocale,
+          title: publishForm.title.trim(),
+          body: publishForm.body,
+          bodyFormat: publishForm.bodyFormat,
+          effectiveFrom: publishForm.effectiveFrom || undefined,
+        });
+        await reload();
+        closeDrawer();
+      } catch (caught) {
+        setError(resolveError(caught));
+      } finally {
+        setBusy(false);
+      }
+    },
+    [closeDrawer, defaultLocale, drawer, publishForm, reload],
+  );
+
+  const filtered = useMemo(() => {
+    const term = search.trim().toLowerCase();
+    return documents.filter((doc) => {
+      if (statusFilter === 'active' && !doc.isActive) return false;
+      if (requiredOnly && !doc.isRequired) return false;
+      if (term) {
+        const hay = `${doc.code} ${doc.typeCode ?? ''} ${doc.currentVersion?.title ?? ''}`.toLowerCase();
+        if (!hay.includes(term)) return false;
+      }
+      return true;
+    });
+  }, [documents, requiredOnly, search, statusFilter]);
+
+  const requiredReadiness = useMemo(
+    () =>
+      REQUIRED_CHECKOUT_CODES.map((req) => {
+        const doc = documents.find((d) => d.typeCode === req.typeCode && d.isActive);
+        const version = doc?.currentVersion ?? null;
+        const placeholder = version
+          ? looksLikePlaceholder(version.title, version.body, version.versionLabel)
+          : false;
+        return { ...req, published: Boolean(version), placeholder };
+      }),
+    [documents],
+  );
+  const allReady = requiredReadiness.every((r) => r.published && !r.placeholder);
+
+  const columns: Column<AdminLegalDocument>[] = useMemo(
+    () => [
+      {
+        key: 'name',
+        header: 'Belge',
+        render: (row) => (
+          <div>
+            <div className="admin-table__primary">{row.currentVersion?.title ?? row.typeCode ?? row.code}</div>
+            <div className="admin-table__sub">{row.typeCode ?? '—'}</div>
+          </div>
+        ),
+      },
+      { key: 'code', header: 'Code', render: (row) => <code>{row.code}</code> },
+      { key: 'country', header: 'Ülke', render: (row) => row.countryCode ?? '—' },
+      { key: 'locale', header: 'Dil', render: (row) => row.currentVersion?.locale ?? '—' },
+      { key: 'audience', header: 'Audience', render: (row) => row.audience },
+      { key: 'required', header: 'Required', render: (row) => (row.isRequired ? 'Evet' : 'Hayır') },
+      {
+        key: 'active',
+        header: 'Aktif',
+        render: (row) => (
+          <StatusBadge label={row.isActive ? 'Aktif' : 'Pasif'} tone={row.isActive ? 'success' : 'neutral'} />
+        ),
+      },
+      {
+        key: 'version',
+        header: 'Current version',
+        render: (row) =>
+          row.currentVersion ? (
+            <code>{row.currentVersion.versionLabel}</code>
+          ) : (
+            <span className="admin-table__sub">yayın yok</span>
+          ),
+      },
+      {
+        key: 'publishedAt',
+        header: 'Published',
+        render: (row) =>
+          row.currentVersion ? new Date(row.currentVersion.publishedAt).toLocaleDateString('tr-TR') : '—',
+      },
+      {
+        key: 'placeholder',
+        header: 'Placeholder',
+        render: (row) =>
+          row.currentVersion &&
+          looksLikePlaceholder(row.currentVersion.title, row.currentVersion.body, row.currentVersion.versionLabel) ? (
+            <StatusBadge label="Taslak?" tone="warning" />
+          ) : (
+            <span className="admin-table__sub">—</span>
+          ),
+      },
+      {
+        key: 'checkout',
+        header: 'Checkout',
+        render: (row) =>
+          REQUIRED_CHECKOUT_CODES.some((r) => r.typeCode === row.typeCode) ? (
+            <StatusBadge label="Zorunlu" tone="accent" />
+          ) : (
+            <span className="admin-table__sub">—</span>
+          ),
+      },
+      {
+        key: 'actions',
+        header: 'İşlemler',
+        align: 'right',
+        render: (row) => (
+          <div className="admin-row" style={{ gap: 6, justifyContent: 'flex-end' }} onClick={(e) => e.stopPropagation()}>
+            <button className="admin-icon-button" type="button" title="Görüntüle" aria-label="Görüntüle" onClick={() => void openView(row)}>
+              <Icon.external width={16} height={16} />
+            </button>
+            <button className="admin-icon-button" type="button" title="Yeni versiyon yayınla" aria-label="Yeni versiyon yayınla" onClick={() => openPublish(row)}>
+              <Icon.plus width={16} height={16} />
+            </button>
+            <button
+              className="admin-icon-button"
+              type="button"
+              disabled={busy}
+              title={row.isActive ? 'Pasifleştir' : 'Aktifleştir'}
+              aria-label={row.isActive ? 'Pasifleştir' : 'Aktifleştir'}
+              onClick={() => void toggleActive(row)}
+            >
+              <Icon.power width={16} height={16} />
+            </button>
+          </div>
+        ),
+      },
+    ],
+    [busy, openPublish, openView, toggleActive],
+  );
+
+  const editingDoc = drawer && drawer.kind !== 'create' ? drawer.doc : null;
 
   return (
-    <div style={{ display: 'grid', gap: 24 }}>
-      {error && (
-        <div
-          style={{
-            padding: 12,
-            borderRadius: 12,
-            background: '#fef2f2',
-            color: '#b91c1c',
-            fontSize: 13,
-          }}
-        >
-          {error}
+    <div className="admin-stack">
+      {/* Checkout readiness card */}
+      <div
+        className="admin-card"
+        style={{
+          borderColor: allReady ? '#bbf7d0' : '#fde68a',
+          background: allReady ? '#f0fdf4' : '#fffbeb',
+        }}
+      >
+        <div className="admin-card__body">
+          <strong>Checkout için gerekli müşteri yasal metinleri{country ? ` (${country} / ${defaultLocale})` : ''}</strong>
+          <ul style={{ margin: '8px 0 0', paddingLeft: 0, listStyle: 'none', display: 'grid', gap: 6 }}>
+            {requiredReadiness.map((req) => (
+              <li key={req.typeCode} className="admin-row" style={{ gap: 8 }}>
+                <StatusBadge
+                  label={req.placeholder ? 'Taslak içerik' : req.published ? 'Yayında' : 'Eksik'}
+                  tone={req.placeholder ? 'warning' : req.published ? 'success' : 'danger'}
+                />
+                <span>
+                  {req.label} <code>({req.typeCode})</code>
+                  {!req.published && country
+                    ? ` — ${country} / ${defaultLocale} için yayınlanmamış.`
+                    : ''}
+                  {req.placeholder ? ' — placeholder/taslak görünüyor, üretimde checkout’u bloklar.' : ''}
+                </span>
+              </li>
+            ))}
+          </ul>
+        </div>
+      </div>
+
+      {!brandingLoaded && <div className="admin-state">Platform ülke/dil bilgisi yükleniyor...</div>}
+      {brandingLoaded && !canCreate && (
+        <div className="admin-card" style={{ borderColor: '#e2b6b6', background: '#fdf2f2' }}>
+          <div className="admin-card__body">
+            Aktif kurulum profili (ülke) okunamadı. Yeni yasal metin oluşturmak için platform kurulumunun
+            tamamlanmış olması gerekir.
+          </div>
         </div>
       )}
+      {error && <div className="admin-state">{error}</div>}
 
-      {/* Checkout required-docs status */}
-      <section
-        style={{
-          padding: 20,
-          borderRadius: 16,
-          background: allRequiredPublished ? '#f0fdf4' : '#fffbeb',
-          border: `1px solid ${allRequiredPublished ? '#bbf7d0' : '#fde68a'}`,
-        }}
-      >
-        <h3 style={{ marginTop: 0, marginBottom: 8, fontSize: 16 }}>
-          Checkout için gerekli yasal belgeler
-        </h3>
-        {!allRequiredPublished && (
-          <p style={{ margin: '0 0 12px', fontSize: 13, color: '#92400e' }}>
-            Mesafeli satış sözleşmesi ve ön bilgilendirme formu yayınlanmalı.
-          </p>
-        )}
-        <ul style={{ margin: 0, paddingLeft: 0, listStyle: 'none', display: 'grid', gap: 8 }}>
-          {requiredCheckoutDocs.map((doc) => (
-            <li
-              key={doc.typeCode}
-              style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 13 }}
-            >
-              <span
-                style={{
-                  padding: '2px 8px',
-                  borderRadius: 999,
-                  fontSize: 11,
-                  fontWeight: 600,
-                  color: doc.published ? '#166534' : '#b91c1c',
-                  background: doc.published ? '#dcfce7' : '#fee2e2',
-                }}
-              >
-                {doc.published ? 'Yayında' : 'Eksik – yayınlanmalı'}
-              </span>
-              <span>
-                {doc.label} <code style={{ color: '#71717a' }}>({doc.typeCode})</code>
-              </span>
-            </li>
-          ))}
-        </ul>
-      </section>
-
-      {/* Create new document */}
-      <section
-        style={{
-          padding: 20,
-          borderRadius: 16,
-          background: '#fff',
-          border: '1px solid #e4e4e7',
-        }}
-      >
-        <h3 style={{ marginTop: 0, marginBottom: 12, fontSize: 16 }}>
-          Yeni Platform Legal Document
-        </h3>
-        <div
-          style={{
-            display: 'grid',
-            gridTemplateColumns: '1fr 1fr 1fr auto',
-            gap: 12,
-            alignItems: 'end',
-          }}
+      {/* Filters + create */}
+      <div className="admin-row" style={{ justifyContent: 'space-between', flexWrap: 'wrap', gap: 12 }}>
+        <div className="admin-row" style={{ gap: 10, flexWrap: 'wrap' }}>
+          <span className="admin-tag" title="Tek ülkeli platform — ülke kurulum profilinden gelir">
+            Ülke: {country || '—'}
+          </span>
+          <select
+            className="admin-input"
+            style={{ width: 'auto' }}
+            value={statusFilter}
+            onChange={(e) => setStatusFilter(e.target.value as 'active' | 'all')}
+          >
+            <option value="all">Tüm durumlar</option>
+            <option value="active">Sadece aktif</option>
+          </select>
+          <label className="admin-row" style={{ gap: 6 }}>
+            <input type="checkbox" checked={requiredOnly} onChange={(e) => setRequiredOnly(e.target.checked)} />
+            <span>Sadece zorunlu</span>
+          </label>
+          <input
+            className="admin-input"
+            style={{ width: 220 }}
+            placeholder="Ara (code, tip, başlık)"
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+          />
+        </div>
+        <button
+          type="button"
+          className="admin-button admin-button--primary"
+          disabled={!canCreate || busy}
+          onClick={openCreate}
+          title={!canCreate ? 'Platform kurulum profili gerekli' : undefined}
         >
-          <label style={{ display: 'grid', gap: 4, fontSize: 12 }}>
-            <span style={{ color: '#71717a' }}>Type</span>
+          <Icon.plus width={16} height={16} />
+          Yeni Yasal Metin
+        </button>
+      </div>
+
+      {loading ? (
+        <SkeletonTable rows={6} />
+      ) : filtered.length === 0 ? (
+        <EmptyState
+          icon="shield"
+          title="Bu ülke/dil için müşteri yasal metni yok."
+          description={country ? `${country} için henüz bir müşteri yasal metni tanımlanmadı.` : undefined}
+          action={
+            canCreate ? (
+              <button type="button" className="admin-button admin-button--primary" onClick={openCreate}>
+                İlk yasal metni oluştur
+              </button>
+            ) : undefined
+          }
+        />
+      ) : (
+        <DataTable
+          columns={columns}
+          rows={filtered}
+          rowKey={(row) => row.id}
+          onRowClick={(row) => void openView(row)}
+          footer={<span>{filtered.length} yasal metin</span>}
+        />
+      )}
+
+      {/* Create drawer */}
+      <Drawer
+        open={drawer?.kind === 'create'}
+        onClose={closeDrawer}
+        title="Yeni Yasal Metin"
+        subtitle={country ? `${country} / ${defaultLocale}` : undefined}
+        footer={
+          <>
+            <button type="submit" form="legal-create-form" className="admin-button admin-button--primary" disabled={busy}>
+              {busy ? 'Kaydediliyor...' : 'Oluştur'}
+            </button>
+            <button type="button" className="admin-button" disabled={busy} onClick={closeDrawer}>
+              İptal
+            </button>
+          </>
+        }
+      >
+        <form id="legal-create-form" className="admin-stack" onSubmit={submitCreate} style={{ gap: 12 }}>
+          <Field label="Belge tipi">
             <select
+              className="admin-input"
               value={createForm.typeId}
-              onChange={(e) =>
-                setCreateForm((prev) => ({ ...prev, typeId: e.target.value }))
-              }
-              style={{ padding: 8, borderRadius: 8, border: '1px solid #e4e4e7' }}
+              onChange={(e) => setCreateForm((f) => ({ ...f, typeId: e.target.value }))}
+              required
             >
+              <option value="" disabled>
+                Seçin
+              </option>
               {types.map((t) => (
                 <option key={t.id} value={t.id}>
                   {t.displayName} ({t.code})
                 </option>
               ))}
             </select>
-          </label>
-          <label style={{ display: 'grid', gap: 4, fontSize: 12 }}>
-            <span style={{ color: '#71717a' }}>Code</span>
+          </Field>
+          <Field label="Code (benzersiz)">
             <input
+              className="admin-input"
+              placeholder="tr-distance-sales-contract"
               value={createForm.code}
-              placeholder="platform-terms-of-service"
-              onChange={(e) =>
-                setCreateForm((prev) => ({ ...prev, code: e.target.value }))
-              }
-              style={{ padding: 8, borderRadius: 8, border: '1px solid #e4e4e7' }}
+              onChange={(e) => setCreateForm((f) => ({ ...f, code: e.target.value }))}
+              required
             />
-          </label>
-          <label style={{ display: 'grid', gap: 4, fontSize: 12 }}>
-            <span style={{ color: '#71717a' }}>Audience</span>
+          </Field>
+          <Field label="Audience">
             <select
+              className="admin-input"
               value={createForm.audience}
-              onChange={(e) =>
-                setCreateForm((prev) => ({
-                  ...prev,
-                  audience: e.target.value as CreateForm['audience'],
-                }))
-              }
-              style={{ padding: 8, borderRadius: 8, border: '1px solid #e4e4e7' }}
+              onChange={(e) => setCreateForm((f) => ({ ...f, audience: e.target.value as CreateForm['audience'] }))}
             >
               <option value="customer">customer</option>
               <option value="tenant">tenant</option>
               <option value="all">all</option>
             </select>
-          </label>
-          <button
-            onClick={handleCreate}
-            disabled={busy}
-            style={{
-              padding: '8px 16px',
-              borderRadius: 8,
-              background: '#084799',
-              color: '#fff',
-              fontSize: 13,
-              fontWeight: 600,
-              border: 'none',
-              cursor: busy ? 'not-allowed' : 'pointer',
-              opacity: busy ? 0.5 : 1,
-            }}
-          >
-            Oluştur
-          </button>
-        </div>
-      </section>
-
-      {/* Documents list + version manager */}
-      <section
-        style={{
-          padding: 20,
-          borderRadius: 16,
-          background: '#fff',
-          border: '1px solid #e4e4e7',
-        }}
-      >
-        <h3 style={{ marginTop: 0, marginBottom: 12, fontSize: 16 }}>
-          Documents ({documents.length})
-        </h3>
-        <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
-          <thead>
-            <tr style={{ textAlign: 'left', color: '#71717a' }}>
-              <th style={{ padding: 8 }}>Code</th>
-              <th style={{ padding: 8 }}>Type</th>
-              <th style={{ padding: 8 }}>Audience</th>
-              <th style={{ padding: 8 }}>Required</th>
-              <th style={{ padding: 8 }}>Current Version</th>
-              <th style={{ padding: 8 }}>Active</th>
-              <th style={{ padding: 8 }} />
-            </tr>
-          </thead>
-          <tbody>
-            {documents.map((doc) => (
-              <tr
-                key={doc.id}
-                style={{
-                  borderTop: '1px solid #f4f4f5',
-                  background: selectedDocId === doc.id ? '#eef4fb' : 'transparent',
-                }}
-              >
-                <td style={{ padding: 8, fontFamily: 'monospace' }}>{doc.code}</td>
-                <td style={{ padding: 8 }}>{doc.typeCode}</td>
-                <td style={{ padding: 8 }}>{doc.audience}</td>
-                <td style={{ padding: 8 }}>{doc.isRequired ? '✓' : '—'}</td>
-                <td style={{ padding: 8, fontFamily: 'monospace', fontSize: 12 }}>
-                  {doc.currentVersion?.versionLabel ?? '— (yayın yok)'}
-                </td>
-                <td style={{ padding: 8 }}>
-                  <button
-                    onClick={() => handleToggleActive(doc)}
-                    disabled={busy}
-                    style={{
-                      padding: '3px 8px',
-                      borderRadius: 6,
-                      border: '1px solid #084799',
-                      background: doc.isActive ? '#084799' : '#fff',
-                      color: doc.isActive ? '#fff' : '#084799',
-                      fontSize: 11,
-                      cursor: busy ? 'not-allowed' : 'pointer',
-                    }}
-                  >
-                    {doc.isActive ? 'Aktif' : 'Pasif'}
-                  </button>
-                </td>
-                <td style={{ padding: 8, textAlign: 'right' }}>
-                  <button
-                    onClick={() =>
-                      setSelectedDocId(selectedDocId === doc.id ? null : doc.id)
-                    }
-                    style={{
-                      padding: '4px 10px',
-                      borderRadius: 6,
-                      border: '1px solid #084799',
-                      background: '#fff',
-                      color: '#084799',
-                      fontSize: 12,
-                      cursor: 'pointer',
-                    }}
-                  >
-                    {selectedDocId === doc.id ? 'Kapat' : 'Sürümler'}
-                  </button>
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </section>
-
-      {/* Selected doc: versions + publish form */}
-      {selectedDoc && (
-        <section
-          style={{
-            padding: 20,
-            borderRadius: 16,
-            background: '#fff',
-            border: '1px solid #e4e4e7',
-          }}
-        >
-          <h3 style={{ marginTop: 0, marginBottom: 4, fontSize: 16 }}>
-            Sürümler — {selectedDoc.code}
-          </h3>
-          <p style={{ marginTop: 0, color: '#71717a', fontSize: 12 }}>
-            {selectedDoc.typeCode} · {selectedDoc.audience}
-          </p>
-
-          <div
-            style={{
-              padding: 12,
-              borderRadius: 12,
-              background: '#f9fafb',
-              margin: '12px 0',
-            }}
-          >
-            <h4 style={{ marginTop: 0, marginBottom: 8, fontSize: 14 }}>
-              Yeni sürüm yayınla
-            </h4>
-            <div style={{ display: 'grid', gap: 8 }}>
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
-                <input
-                  placeholder="Version label (ör. 2026-05-14-v1)"
-                  value={publishForm.versionLabel}
-                  onChange={(e) =>
-                    setPublishForm((prev) => ({ ...prev, versionLabel: e.target.value }))
-                  }
-                  style={{
-                    padding: 8,
-                    borderRadius: 8,
-                    border: '1px solid #e4e4e7',
-                    fontSize: 13,
-                  }}
-                />
-                <input
-                  placeholder="Locale (tr)"
-                  value={publishForm.locale}
-                  onChange={(e) =>
-                    setPublishForm((prev) => ({ ...prev, locale: e.target.value }))
-                  }
-                  style={{
-                    padding: 8,
-                    borderRadius: 8,
-                    border: '1px solid #e4e4e7',
-                    fontSize: 13,
-                  }}
-                />
-              </div>
-              <input
-                placeholder="Başlık"
-                value={publishForm.title}
-                onChange={(e) =>
-                  setPublishForm((prev) => ({ ...prev, title: e.target.value }))
-                }
-                style={{
-                  padding: 8,
-                  borderRadius: 8,
-                  border: '1px solid #e4e4e7',
-                  fontSize: 13,
-                }}
-              />
-              <textarea
-                placeholder="Body (markdown)"
-                value={publishForm.body}
-                onChange={(e) =>
-                  setPublishForm((prev) => ({ ...prev, body: e.target.value }))
-                }
-                rows={10}
-                style={{
-                  padding: 8,
-                  borderRadius: 8,
-                  border: '1px solid #e4e4e7',
-                  fontSize: 13,
-                  fontFamily: 'monospace',
-                }}
-              />
-              <label
-                style={{
-                  display: 'flex',
-                  gap: 6,
-                  alignItems: 'center',
-                  fontSize: 12,
-                  color: '#3f3f46',
-                }}
-              >
-                <input
-                  type="checkbox"
-                  checked={supersedeCurrent}
-                  onChange={(e) => setSupersedeCurrent(e.target.checked)}
-                />
-                Mevcut aktif sürümü supersede et
-              </label>
-              <button
-                onClick={handlePublish}
-                disabled={busy}
-                style={{
-                  padding: '8px 16px',
-                  borderRadius: 8,
-                  background: '#084799',
-                  color: '#fff',
-                  fontSize: 13,
-                  fontWeight: 600,
-                  border: 'none',
-                  cursor: busy ? 'not-allowed' : 'pointer',
-                  opacity: busy ? 0.5 : 1,
-                  width: 'fit-content',
-                }}
-              >
-                Yayınla
-              </button>
-            </div>
+          </Field>
+          <div className="admin-row">
+            <label className="admin-row" style={{ gap: 8 }}>
+              <input type="checkbox" checked={createForm.isRequired} onChange={(e) => setCreateForm((f) => ({ ...f, isRequired: e.target.checked }))} />
+              <span>Zorunlu</span>
+            </label>
+            <label className="admin-row" style={{ gap: 8 }}>
+              <input type="checkbox" checked={createForm.isActive} onChange={(e) => setCreateForm((f) => ({ ...f, isActive: e.target.checked }))} />
+              <span>Aktif</span>
+            </label>
           </div>
 
-          <h4 style={{ marginTop: 16, marginBottom: 8, fontSize: 14 }}>
-            Sürüm geçmişi ({versions.length})
-          </h4>
-          {versionsLoading ? (
-            <p style={{ color: '#71717a', fontSize: 13 }}>Yükleniyor…</p>
-          ) : versions.length === 0 ? (
-            <p style={{ color: '#71717a', fontSize: 13 }}>Henüz sürüm yok.</p>
-          ) : (
-            <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12 }}>
-              <thead>
-                <tr style={{ textAlign: 'left', color: '#71717a' }}>
-                  <th style={{ padding: 6 }}>Label</th>
-                  <th style={{ padding: 6 }}>Locale</th>
-                  <th style={{ padding: 6 }}>Title</th>
-                  <th style={{ padding: 6 }}>Published</th>
-                  <th style={{ padding: 6 }}>Superseded</th>
-                  <th style={{ padding: 6 }} />
-                </tr>
-              </thead>
-              <tbody>
-                {versions.map((v) => (
-                  <tr key={v.id} style={{ borderTop: '1px solid #f4f4f5' }}>
-                    <td style={{ padding: 6, fontFamily: 'monospace' }}>
-                      {v.versionLabel}
-                    </td>
-                    <td style={{ padding: 6 }}>{v.locale}</td>
-                    <td style={{ padding: 6 }}>{v.title}</td>
-                    <td style={{ padding: 6 }}>
-                      {new Date(v.publishedAt).toLocaleString('tr-TR')}
-                    </td>
-                    <td style={{ padding: 6 }}>
-                      {v.supersededAt
-                        ? new Date(v.supersededAt).toLocaleString('tr-TR')
-                        : 'aktif'}
-                    </td>
-                    <td style={{ padding: 6, textAlign: 'right' }}>
-                      {!v.supersededAt && (
-                        <button
-                          onClick={() => handleSupersede(v.id)}
-                          disabled={busy}
-                          style={{
-                            padding: '3px 8px',
-                            borderRadius: 6,
-                            border: '1px solid #b91c1c',
-                            background: '#fff',
-                            color: '#b91c1c',
-                            fontSize: 11,
-                            cursor: busy ? 'not-allowed' : 'pointer',
-                          }}
-                        >
-                          Supersede
-                        </button>
-                      )}
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
+          <label className="admin-row" style={{ gap: 8 }}>
+            <input type="checkbox" checked={createForm.createFirstVersion} onChange={(e) => setCreateForm((f) => ({ ...f, createFirstVersion: e.target.checked }))} />
+            <span>İlk versiyonu da yayınla</span>
+          </label>
+
+          {createForm.createFirstVersion && (
+            <>
+              <Field label="Version label">
+                <input className="admin-input" placeholder="2026-06-01-v1" value={createForm.versionLabel} onChange={(e) => setCreateForm((f) => ({ ...f, versionLabel: e.target.value }))} />
+              </Field>
+              <Field label="Başlık">
+                <input className="admin-input" value={createForm.title} onChange={(e) => setCreateForm((f) => ({ ...f, title: e.target.value }))} />
+              </Field>
+              <Field label="Metin (body)">
+                <textarea className="admin-textarea" rows={8} value={createForm.body} onChange={(e) => setCreateForm((f) => ({ ...f, body: e.target.value }))} />
+              </Field>
+              {looksLikePlaceholder(createForm.title, createForm.body, createForm.versionLabel) && (
+                <div className="admin-card" style={{ borderColor: '#f0ca73', background: '#fff9ed' }}>
+                  <div className="admin-card__body">{PLACEHOLDER_UI_MESSAGE}</div>
+                </div>
+              )}
+            </>
           )}
-        </section>
-      )}
+        </form>
+      </Drawer>
+
+      {/* Publish drawer */}
+      <Drawer
+        open={drawer?.kind === 'publish'}
+        onClose={closeDrawer}
+        title="Yeni Versiyon Yayınla"
+        subtitle={editingDoc?.code}
+        footer={
+          <>
+            <button type="submit" form="legal-publish-form" className="admin-button admin-button--primary" disabled={busy}>
+              {busy ? 'Yayınlanıyor...' : 'Yayınla'}
+            </button>
+            <button type="button" className="admin-button" disabled={busy} onClick={closeDrawer}>
+              İptal
+            </button>
+          </>
+        }
+      >
+        <form id="legal-publish-form" className="admin-stack" onSubmit={submitPublish} style={{ gap: 12 }}>
+          <Field label="Version label">
+            <input className="admin-input" placeholder="2026-06-01-v1" value={publishForm.versionLabel} onChange={(e) => setPublishForm((f) => ({ ...f, versionLabel: e.target.value }))} required />
+          </Field>
+          <Field label="Dil (locale)">
+            <input className="admin-input" value={publishForm.locale} onChange={(e) => setPublishForm((f) => ({ ...f, locale: e.target.value }))} required />
+          </Field>
+          <Field label="Başlık">
+            <input className="admin-input" value={publishForm.title} onChange={(e) => setPublishForm((f) => ({ ...f, title: e.target.value }))} required />
+          </Field>
+          <Field label="Metin (body)">
+            <textarea className="admin-textarea" rows={10} value={publishForm.body} onChange={(e) => setPublishForm((f) => ({ ...f, body: e.target.value }))} required />
+          </Field>
+          <Field label="Yürürlük tarihi (opsiyonel)">
+            <input className="admin-input" type="date" value={publishForm.effectiveFrom} onChange={(e) => setPublishForm((f) => ({ ...f, effectiveFrom: e.target.value }))} />
+          </Field>
+          {looksLikePlaceholder(publishForm.title, publishForm.body, publishForm.versionLabel) && (
+            <div className="admin-card" style={{ borderColor: '#f0ca73', background: '#fff9ed' }}>
+              <div className="admin-card__body">{PLACEHOLDER_UI_MESSAGE}</div>
+            </div>
+          )}
+        </form>
+      </Drawer>
+
+      {/* View drawer */}
+      <Drawer
+        open={drawer?.kind === 'view'}
+        onClose={closeDrawer}
+        title={editingDoc?.currentVersion?.title ?? editingDoc?.code ?? 'Yasal metin'}
+        subtitle={editingDoc ? `${editingDoc.countryCode ?? '—'} · ${editingDoc.typeCode ?? '—'} · ${editingDoc.audience}` : undefined}
+        footer={
+          editingDoc ? (
+            <button type="button" className="admin-button admin-button--primary" onClick={() => openPublish(editingDoc)}>
+              Yeni versiyon yayınla
+            </button>
+          ) : undefined
+        }
+      >
+        {editingDoc && (
+          <div className="admin-stack" style={{ gap: 12 }}>
+            {REQUIRED_CHECKOUT_CODES.some((r) => r.typeCode === editingDoc.typeCode) && (
+              <StatusBadge label="Checkout için zorunlu belge" tone="accent" />
+            )}
+            {editingDoc.currentVersion ? (
+              <>
+                <div className="admin-kv-grid">
+                  <Kv label="Current version">{editingDoc.currentVersion.versionLabel}</Kv>
+                  <Kv label="Dil">{editingDoc.currentVersion.locale}</Kv>
+                  <Kv label="Yayın">{new Date(editingDoc.currentVersion.publishedAt).toLocaleString('tr-TR')}</Kv>
+                  <Kv label="Format">{editingDoc.currentVersion.bodyFormat}</Kv>
+                </div>
+                {looksLikePlaceholder(editingDoc.currentVersion.title, editingDoc.currentVersion.body) && (
+                  <div className="admin-card" style={{ borderColor: '#f0ca73', background: '#fff9ed' }}>
+                    <div className="admin-card__body">{PLACEHOLDER_UI_MESSAGE}</div>
+                  </div>
+                )}
+                <Field label="İçerik">
+                  <textarea className="admin-textarea" rows={12} readOnly value={editingDoc.currentVersion.body} />
+                </Field>
+              </>
+            ) : (
+              <div className="admin-state">Bu belgenin yayınlanmış güncel versiyonu yok.</div>
+            )}
+            <div>
+              <div className="admin-field__label" style={{ marginBottom: 6 }}>
+                Versiyon geçmişi
+              </div>
+              {versionsLoading ? (
+                <div className="admin-state">Yükleniyor...</div>
+              ) : versions.length === 0 ? (
+                <div className="admin-state">Henüz versiyon yok.</div>
+              ) : (
+                <div className="admin-list">
+                  {versions.map((v) => (
+                    <div key={v.id} className="admin-list-row">
+                      <div>
+                        <div className="admin-list-row__title">
+                          <code>{v.versionLabel}</code> · {v.locale}
+                        </div>
+                        <div className="admin-list-row__meta">{v.title}</div>
+                      </div>
+                      <StatusBadge label={v.supersededAt ? 'Superseded' : 'Aktif'} tone={v.supersededAt ? 'neutral' : 'success'} />
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          </div>
+        )}
+      </Drawer>
+    </div>
+  );
+}
+
+function Field({ label, children }: { label: string; children: React.ReactNode }) {
+  return (
+    <label className="admin-field">
+      <span className="admin-field__label">{label}</span>
+      {children}
+    </label>
+  );
+}
+
+function Kv({ label, children }: { label: string; children: React.ReactNode }) {
+  return (
+    <div>
+      <div className="admin-kv__label">{label}</div>
+      <div className="admin-kv__value">{children}</div>
     </div>
   );
 }

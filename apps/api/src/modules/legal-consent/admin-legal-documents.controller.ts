@@ -55,14 +55,21 @@ export class AdminLegalDocumentsController {
     required: false,
     enum: ['customer', 'tenant', 'all'],
   })
+  @ApiQuery({ name: 'countryCode', required: false, example: 'TR' })
   @ApiQuery({ name: 'includeInactive', required: false, type: Boolean })
   async listDocuments(
     @Query('audience') audience?: PlatformLegalDocumentAudience,
+    @Query('countryCode') countryCode?: string,
     @Query('includeInactive') includeInactive?: string,
   ) {
+    const normalizedCountry = countryCode?.trim().toUpperCase();
     return {
       documents: await this.legalConsentService.listDocuments({
         audience,
+        countryCode:
+          normalizedCountry && /^[A-Z]{2}$/.test(normalizedCountry)
+            ? normalizedCountry
+            : undefined,
         includeInactive: includeInactive === 'true',
       }),
     };

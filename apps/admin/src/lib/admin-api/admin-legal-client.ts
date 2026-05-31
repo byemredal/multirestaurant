@@ -30,11 +30,28 @@ export type AdminLegalDocument = {
   typeId: string;
   typeCode: string | null;
   code: string;
+  countryCode: string | null;
   audience: 'customer' | 'tenant' | 'all';
   isRequired: boolean;
   isActive: boolean;
   currentVersion: AdminLegalDocumentVersion | null;
 };
+
+export type ListLegalDocumentsParams = {
+  countryCode?: string;
+  audience?: 'customer' | 'tenant' | 'all';
+  includeInactive?: boolean;
+};
+
+/** Error carrying the backend's machine-readable `code` (e.g. the placeholder guard). */
+export class AdminLegalError extends Error {
+  code: string | null;
+  constructor(message: string, code: string | null) {
+    super(message);
+    this.name = 'AdminLegalError';
+    this.code = code;
+  }
+}
 
 async function adminLegalRequest<T>(
   _session: StoredAdminSession,
@@ -45,12 +62,12 @@ async function adminLegalRequest<T>(
 
   if (!response.ok) {
     const payload = await parseJsonResponse(response);
-    const message =
+    const record =
       payload && typeof payload === 'object' && !Array.isArray(payload)
-        ? ((payload as { message?: string }).message ??
-          `admin_legal_request_failed_${response.status}`)
-        : `admin_legal_request_failed_${response.status}`;
-    throw new Error(message);
+        ? (payload as { message?: string; code?: string })
+        : null;
+    const message = record?.message ?? `admin_legal_request_failed_${response.status}`;
+    throw new AdminLegalError(message, record?.code ?? null);
   }
 
   const data = await parseJsonResponse(response);
@@ -65,10 +82,17 @@ export async function listLegalDocumentTypes(session: StoredAdminSession) {
   return data.documentTypes;
 }
 
-export async function listLegalDocuments(session: StoredAdminSession) {
+export async function listLegalDocuments(
+  session: StoredAdminSession,
+  params: ListLegalDocumentsParams = {},
+) {
+  const query = new URLSearchParams();
+  if (params.countryCode) query.set('countryCode', params.countryCode);
+  if (params.audience) query.set('audience', params.audience);
+  query.set('includeInactive', String(params.includeInactive ?? true));
   const data = await adminLegalRequest<{ documents: AdminLegalDocument[] }>(
     session,
-    '/admin/legal/documents?includeInactive=true',
+    `/admin/legal/documents?${query.toString()}`,
   );
   return data.documents;
 }
@@ -78,6 +102,7 @@ export async function createLegalDocument(
   body: {
     typeId: string;
     code: string;
+    countryCode?: string;
     audience: 'customer' | 'tenant' | 'all';
     isRequired?: boolean;
     isActive?: boolean;
@@ -125,6 +150,7 @@ export async function publishDocumentVersion(
     title: string;
     body: string;
     bodyFormat?: 'markdown' | 'html' | 'plain_text';
+    effectiveFrom?: string;
     supersedeCurrent?: boolean;
   },
 ) {

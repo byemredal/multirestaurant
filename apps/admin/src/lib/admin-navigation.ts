@@ -357,6 +357,13 @@ export const adminNavSections: AdminNavSection[] = [
         matches: startsWith('/system/compliance-catalog'),
       },
       {
+        id: 'customer-legal-documents',
+        label: 'Müşteri Yasal Metinleri',
+        href: '/system/customer-legal-documents',
+        icon: 'checklist',
+        matches: startsWith('/system/customer-legal-documents'),
+      },
+      {
         id: 'geo-provider',
         label: 'Adres Arama Sağlayıcısı',
         href: '/system/geo-provider',
@@ -398,6 +405,7 @@ export const liveNavItemIds = new Set<string>([
   'store-list',
   'orders',
   'compliance-catalog',
+  'customer-legal-documents',
 ]);
 
 export function isLiveNavItem(item: AdminNavItem): boolean {
