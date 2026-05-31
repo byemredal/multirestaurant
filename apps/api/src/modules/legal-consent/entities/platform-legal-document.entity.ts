@@ -16,6 +16,14 @@ export interface PlatformLegalDocument {
   typeId: string;
   typeCode: LegalDocumentTypeCode | null;
   code: string;
+  /**
+   * ISO-3166-1 alpha-2 scope for this document. Two countries may share the
+   * same `typeCode` (e.g. both have a `distance_sales_contract`) while being
+   * distinct legal documents with independent version histories. Nullable for
+   * legacy rows created before MR-CUSTOMER-LEGAL-COUNTRY-SCOPING-01 / on a
+   * pre-setup DB; the checkout gate treats a null scope as not-ready.
+   */
+  countryCode: string | null;
   audience: PlatformLegalDocumentAudience;
   isRequired: boolean;
   isActive: boolean;

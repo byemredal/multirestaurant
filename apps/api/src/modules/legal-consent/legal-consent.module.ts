@@ -1,5 +1,6 @@
 import { Module } from '@nestjs/common';
 import { AdminAuditLogModule } from '../admin-audit-log/admin-audit-log.module';
+import { SetupModule } from '../setup/setup.module';
 import { StoresModule } from '../stores/stores.module';
 import { LegalConsentService } from './legal-consent.service';
 import { PublicLegalDocumentsController } from './public-legal-documents.controller';
@@ -14,7 +15,7 @@ import {
 } from './tenant-legal.controller';
 
 @Module({
-  imports: [AdminAuditLogModule, StoresModule],
+  imports: [AdminAuditLogModule, StoresModule, SetupModule],
   controllers: [
     PublicLegalDocumentsController,
     AdminLegalDocumentsController,

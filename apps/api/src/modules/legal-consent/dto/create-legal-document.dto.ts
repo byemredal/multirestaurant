@@ -32,6 +32,18 @@ export class CreateLegalDocumentDto {
   })
   code!: string;
 
+  @ApiPropertyOptional({
+    description:
+      'ISO-3166-1 alpha-2 country scope. Defaults to the active installation ' +
+      'country when omitted. Two countries may share the same typeCode as ' +
+      'distinct documents.',
+    example: 'TR',
+  })
+  @IsOptional()
+  @IsString()
+  @Matches(/^[A-Za-z]{2}$/, { message: 'countryCode must be a 2-letter ISO code.' })
+  countryCode?: string;
+
   @ApiProperty({ enum: PLATFORM_LEGAL_DOCUMENT_AUDIENCES, example: 'customer' })
   @IsIn(PLATFORM_LEGAL_DOCUMENT_AUDIENCES)
   audience!: PlatformLegalDocumentAudience;

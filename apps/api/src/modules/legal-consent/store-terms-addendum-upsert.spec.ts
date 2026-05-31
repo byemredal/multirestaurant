@@ -64,10 +64,15 @@ describe('LegalConsentService.createStoreAddendum keyed-upsert', () => {
         .mockResolvedValue(opts.owned === false ? null : { id: storeId }),
     } as any;
 
+    const installationProfileService = {
+      findActiveCountryPolicy: jest.fn().mockResolvedValue({ countryCode: 'TR' }),
+    } as any;
+
     const service = new LegalConsentService(
       databaseService,
       auditLogService,
       storesService,
+      installationProfileService,
     );
     return { service, sqls, storesService };
   }

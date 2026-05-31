@@ -31,11 +31,17 @@ describe('LegalConsentService', () => {
     const databaseService = { prepare, transaction } as unknown as any;
     const auditLogService = { log: jest.fn().mockResolvedValue(undefined) } as unknown as any;
     const storesService = { findOwnedStore: jest.fn() } as unknown as any;
+    // Single-country platform: the active installation country is the
+    // authoritative checkout-legal scope. Default to TR for the suite.
+    const installationProfileService = {
+      findActiveCountryPolicy: jest.fn().mockResolvedValue({ countryCode: 'TR' }),
+    } as unknown as any;
 
     const service = new LegalConsentService(
       databaseService,
       auditLogService,
       storesService,
+      installationProfileService,
     );
 
     function nextPreparedMatching(fragment: string): PreparedMock {
@@ -51,6 +57,7 @@ describe('LegalConsentService', () => {
       databaseService,
       auditLogService,
       storesService,
+      installationProfileService,
       prepare,
       prepareCalls,
       nextPreparedMatching,
@@ -220,8 +227,18 @@ describe('LegalConsentService', () => {
       const existingLookup = { get: jest.fn().mockResolvedValue(undefined) };
       const versionLookup = {
         all: jest.fn().mockResolvedValue([
-          { id: validDto.distanceSalesContractVersionId, code: 'distance_sales_contract' },
-          { id: validDto.preInformationFormVersionId, code: 'pre_information_form' },
+          {
+            id: validDto.distanceSalesContractVersionId,
+            code: 'distance_sales_contract',
+            supersededAt: null,
+            countryCode: 'TR',
+          },
+          {
+            id: validDto.preInformationFormVersionId,
+            code: 'pre_information_form',
+            supersededAt: null,
+            countryCode: 'TR',
+          },
         ]),
       };
       const insert = { get: jest.fn().mockResolvedValue(insertedRow) };
@@ -308,6 +325,45 @@ describe('LegalConsentService', () => {
             id: validDto.preInformationFormVersionId,
             code: 'pre_information_form',
             supersededAt: null,
+          },
+        ]),
+      };
+
+      (prepare as jest.Mock)
+        .mockImplementationOnce(() => orderLookup as any)
+        .mockImplementationOnce(() => existingLookup as any)
+        .mockImplementationOnce(() => versionLookup as any);
+
+      await expect(
+        service.createOrderLegalAcceptance('customer-1', validDto, context),
+      ).rejects.toBeInstanceOf(BadRequestException);
+    });
+
+    it('rejects version ids that belong to a different country', async () => {
+      const { service, prepare } = createService();
+      // Active install country is TR (createService default), but the accepted
+      // versions belong to CH documents → must be refused.
+      const orderLookup = {
+        get: jest.fn().mockResolvedValue({
+          id: 'order-1',
+          customerAccountId: 'customer-1',
+          status: 'pending_payment',
+        }),
+      };
+      const existingLookup = { get: jest.fn().mockResolvedValue(undefined) };
+      const versionLookup = {
+        all: jest.fn().mockResolvedValue([
+          {
+            id: validDto.distanceSalesContractVersionId,
+            code: 'distance_sales_contract',
+            supersededAt: null,
+            countryCode: 'CH',
+          },
+          {
+            id: validDto.preInformationFormVersionId,
+            code: 'pre_information_form',
+            supersededAt: null,
+            countryCode: 'CH',
           },
         ]),
       };
@@ -469,6 +525,7 @@ describe('LegalConsentService', () => {
           typeId: 't-1',
           typeCode: 'terms_of_service',
           code: 'platform-terms',
+          countryCode: 'TR',
           audience: 'customer',
           isRequired: true,
           isActive: true,
@@ -510,6 +567,7 @@ describe('LegalConsentService', () => {
           typeId: 't-1',
           typeCode: 'terms_of_service',
           code: 'platform-terms',
+          countryCode: 'TR',
           audience: 'customer',
           isRequired: true,
           isActive: true,
@@ -551,6 +609,7 @@ describe('LegalConsentService', () => {
           typeId: 't-2',
           typeCode: 'cookie_policy',
           code: 'platform-cookies',
+          countryCode: 'TR',
           audience: 'customer',
           isRequired: false,
           isActive: true,
@@ -677,6 +736,47 @@ describe('LegalConsentService', () => {
     });
 
     // -----------------------------------------------------------------
+    // Country scoping (MR-CUSTOMER-LEGAL-COUNTRY-SCOPING-01).
+    // -----------------------------------------------------------------
+    it('scopes the document lookup to the resolved installation country', async () => {
+      const { service, installationProfileService } = createService();
+      (installationProfileService.findActiveCountryPolicy as jest.Mock).mockResolvedValue({
+        countryCode: 'TR',
+      });
+      const listSpy = jest.spyOn(service, 'listDocuments').mockResolvedValue([
+        docBundle('distance_sales_contract', true),
+        docBundle('pre_information_form', true),
+      ]);
+
+      const result = await service.getCheckoutLegalReadiness();
+
+      expect(result.legalReady).toBe(true);
+      expect(result.country).toBe('TR');
+      // A CH document (countryCode='CH') can never satisfy this TR query because
+      // the lookup is filtered by the resolved country.
+      expect(listSpy).toHaveBeenCalledWith(
+        expect.objectContaining({ audience: 'customer', countryCode: 'TR' }),
+      );
+    });
+
+    it('returns not-ready without a silent default when country cannot be resolved', async () => {
+      const { service, installationProfileService } = createService();
+      (installationProfileService.findActiveCountryPolicy as jest.Mock).mockResolvedValue(null);
+      const listSpy = jest.spyOn(service, 'listDocuments');
+
+      const result = await service.getCheckoutLegalReadiness();
+
+      expect(result.legalReady).toBe(false);
+      expect(result.country).toBeNull();
+      expect(result.missingLegalDocuments).toEqual([
+        'distance_sales_contract',
+        'pre_information_form',
+      ]);
+      // No country → we never even query documents (no CH/TR guess).
+      expect(listSpy).not.toHaveBeenCalled();
+    });
+
+    // -----------------------------------------------------------------
     // Placeholder content guard (MR-CHECKOUT-LEGAL-PLACEHOLDER-GUARD-01).
     // Enforced only in production; toggled via NODE_ENV here.
     // -----------------------------------------------------------------
@@ -791,6 +891,7 @@ describe('LegalConsentService', () => {
             typeId: 'type-1',
             typeCode: 'distance_sales_contract',
             code: 'platform-distance',
+            countryCode: 'TR',
             audience: 'customer',
             isRequired: true,
             isActive: true,

@@ -8,6 +8,7 @@ import {
 } from '@nestjs/common';
 import { DatabaseService } from '../../database/database.service';
 import { AdminAuditLogService } from '../admin-audit-log/admin-audit-log.service';
+import { InstallationProfileService } from '../setup/installation-profile.service';
 import { StoresService } from '../stores/stores.service';
 import {
   ConsentAction,
@@ -67,6 +68,7 @@ interface PlatformLegalDocumentRow {
   typeId: string;
   typeCode: LegalDocumentTypeCode | null;
   code: string;
+  countryCode: string | null;
   audience: PlatformLegalDocumentAudience;
   isRequired: boolean;
   isActive: boolean;
@@ -151,7 +153,26 @@ export class LegalConsentService {
     private readonly databaseService: DatabaseService,
     private readonly auditLogService: AdminAuditLogService,
     private readonly storesService: StoresService,
+    private readonly installationProfileService: InstallationProfileService,
   ) {}
+
+  /**
+   * Resolve the authoritative country for checkout-legal selection.
+   *   1. explicit override (validated) — reserved for a future multi-country /
+   *      store-scoped caller; on today's single-country platform every store's
+   *      country already equals the install country (StoresService enforces it).
+   *   2. active InstallationProfile country.
+   *   3. null — caller MUST treat this as "not ready" rather than guessing a
+   *      default. We never silently fall back to CH/de-CH or TR/tr-TR.
+   */
+  private async resolveCheckoutCountry(explicit?: string | null): Promise<string | null> {
+    const candidate = explicit?.trim().toUpperCase();
+    if (candidate && /^[A-Z]{2}$/.test(candidate)) {
+      return candidate;
+    }
+    const policy = await this.installationProfileService.findActiveCountryPolicy();
+    return policy?.countryCode ?? null;
+  }
 
   // ===================================================================
   // 1. SYSTEM TAXONOMY — LegalDocumentType
@@ -187,16 +208,29 @@ export class LegalConsentService {
       throw new ConflictException(`A document with code "${dto.code}" already exists.`);
     }
 
+    // Country scope defaults to the active installation country when the admin
+    // does not specify one. We refuse to invent a country: if neither is
+    // available the document cannot be country-scoped and must be rejected.
+    const countryCode = await this.resolveCheckoutCountry(dto.countryCode);
+    if (!countryCode) {
+      throw new BadRequestException({
+        code: 'legal_country_unresolved',
+        message:
+          'Yasal belge ülkesi çözümlenemedi. Kurulum tamamlanmadan ülke bazlı belge oluşturulamaz.',
+      });
+    }
+
     const row = (await this.databaseService
       .prepare(
         `INSERT INTO "PlatformLegalDocument"
-           ("typeId", "code", "audience", "isRequired", "isActive")
-         VALUES ($typeId, $code, $audience, $isRequired, $isActive)
+           ("typeId", "code", "countryCode", "audience", "isRequired", "isActive")
+         VALUES ($typeId, $code, $countryCode, $audience, $isRequired, $isActive)
          RETURNING *`,
       )
       .get({
         $typeId: dto.typeId,
         $code: dto.code,
+        $countryCode: countryCode,
         $audience: dto.audience,
         $isRequired: dto.isRequired ?? true,
         $isActive: dto.isActive ?? true,
@@ -216,6 +250,7 @@ export class LegalConsentService {
 
   async listDocuments(filter?: {
     audience?: PlatformLegalDocumentAudience;
+    countryCode?: string;
     includeInactive?: boolean;
   }): Promise<PlatformLegalDocumentWithCurrentVersion[]> {
     const conditions: string[] = [];
@@ -224,6 +259,10 @@ export class LegalConsentService {
     if (filter?.audience) {
       conditions.push(`d."audience" IN ($audience, 'all')`);
       params.$audience = filter.audience;
+    }
+    if (filter?.countryCode) {
+      conditions.push(`d."countryCode" = $countryCode`);
+      params.$countryCode = filter.countryCode;
     }
     if (!filter?.includeInactive) {
       conditions.push(`d."isActive" = TRUE`);
@@ -704,14 +743,33 @@ export class LegalConsentService {
    * proceed. `placeholderLegalDocuments` is returned for admin/debug diagnostics;
    * `missingLegalDocuments` keeps its "codes not usable for checkout" meaning so
    * existing consumers need no change.
+   *
+   * Documents are scoped to the resolved checkout country (MR-CUSTOMER-LEGAL-
+   * COUNTRY-SCOPING-01): a CH document can never satisfy a TR checkout. When the
+   * country cannot be resolved we return not-ready with every required code
+   * missing rather than guessing a default.
    */
-  async getCheckoutLegalReadiness(): Promise<{
+  async getCheckoutLegalReadiness(options?: {
+    countryCode?: string | null;
+  }): Promise<{
     legalReady: boolean;
     missingLegalDocuments: string[];
     placeholderLegalDocuments: string[];
+    country: string | null;
   }> {
+    const country = await this.resolveCheckoutCountry(options?.countryCode);
+    if (!country) {
+      return {
+        legalReady: false,
+        missingLegalDocuments: [...REQUIRED_CHECKOUT_DOCUMENT_CODES],
+        placeholderLegalDocuments: [],
+        country: null,
+      };
+    }
+
     const docs = await this.listDocuments({
       audience: 'customer',
+      countryCode: country,
       includeInactive: false,
     });
     const guardEnforced = placeholderLegalGuardEnforced();
@@ -739,6 +797,7 @@ export class LegalConsentService {
       legalReady: notReady.length === 0,
       missingLegalDocuments: notReady,
       placeholderLegalDocuments: placeholder,
+      country,
     };
   }
 
@@ -773,7 +832,7 @@ export class LegalConsentService {
 
     const requiredVersions = (await this.databaseService
       .prepare(
-        `SELECT v."id", v."supersededAt", d."code"
+        `SELECT v."id", v."supersededAt", d."code", d."countryCode"
          FROM "PlatformLegalDocumentVersion" v
          INNER JOIN "PlatformLegalDocument" d ON d."id" = v."documentId"
          WHERE v."id" = ANY($ids::uuid[])`,
@@ -784,6 +843,7 @@ export class LegalConsentService {
       id: string;
       supersededAt: string | Date | null;
       code: LegalDocumentTypeCode;
+      countryCode: string | null;
     }>;
     if (requiredVersions.length !== 2) {
       throw new BadRequestException('Provided legal version ids are invalid.');
@@ -811,6 +871,22 @@ export class LegalConsentService {
         code: 'legal_document_version_not_current',
         message:
           'Kabul edilen yasal metin güncel sürüm değil. Lütfen sayfayı yenileyip güncel sözleşmeyi onaylayın.',
+      });
+    }
+
+    // Both accepted versions must belong to the resolved checkout country
+    // (MR-CUSTOMER-LEGAL-COUNTRY-SCOPING-01): a manipulated client cannot pin an
+    // order to another country's legal text.
+    const country = await this.resolveCheckoutCountry();
+    if (
+      !country ||
+      distanceVersion.countryCode !== country ||
+      preInfoVersion.countryCode !== country
+    ) {
+      throw new BadRequestException({
+        code: 'legal_document_country_mismatch',
+        message:
+          'Kabul edilen yasal metin bu ülkenin checkout belgeleriyle eşleşmiyor.',
       });
     }
 
@@ -1304,6 +1380,7 @@ export class LegalConsentService {
       typeId: row.typeId,
       typeCode: row.typeCode ?? null,
       code: row.code,
+      countryCode: row.countryCode ?? null,
       audience: row.audience,
       isRequired: Boolean(row.isRequired),
       isActive: Boolean(row.isActive),
