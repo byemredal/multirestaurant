@@ -937,33 +937,28 @@ export class LegalConsentService {
       throw new BadRequestException('parentDocumentVersionId is unknown.');
     }
 
-    const row = (await this.databaseService
-      .prepare(
-        `INSERT INTO "StoreTermsAddendum"
-           ("storeId", "parentDocumentVersionId", "title", "body",
-            "locale", "isActive")
-         VALUES ($storeId, $parentVersionId, $title, $body, $locale, $isActive)
-         RETURNING *`,
-      )
-      .get({
-        $storeId: storeId,
-        $parentVersionId: dto.parentDocumentVersionId,
-        $title: dto.title,
-        $body: dto.body,
-        $locale: dto.locale ?? DEFAULT_LOCALE,
-        $isActive: dto.isActive ?? true,
-      })) as unknown as StoreTermsAddendumRow;
+    // Keyed-upsert on (storeId, parentDocumentVersionId, locale) instead of a
+    // plain INSERT, so repeated tenant saves update the existing addendum rather
+    // than creating duplicates. This makes the table safe for a future
+    // UNIQUE(storeId, parentDocumentVersionId, locale) (MR-DB-HARDENING-01 7E-c).
+    const addendum = await this.upsertStoreAddendumForParent(storeId, {
+      parentDocumentVersionId: dto.parentDocumentVersionId,
+      locale: dto.locale ?? DEFAULT_LOCALE,
+      title: dto.title,
+      body: dto.body,
+      isActive: dto.isActive ?? true,
+    });
 
     await this.auditLogService.log({
       actorType: 'tenant',
       actorId: ownerTenantId,
       action: 'store_terms_addendum_created',
       entityType: 'store_terms_addendum',
-      entityId: row.id,
+      entityId: addendum.id,
       metadata: { storeId, parentDocumentVersionId: dto.parentDocumentVersionId },
     });
 
-    return this.mapAddendum(row);
+    return addendum;
   }
 
   async deactivateStoreAddendum(
