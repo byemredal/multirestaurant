@@ -21,6 +21,11 @@ import {
 import { bootstrapAuthSession } from '@/lib/auth-client';
 import { apiClient } from '@/lib/api/api-client';
 import { apiBaseUrl } from '@/lib/config';
+import {
+  CART_STORAGE_KEY,
+  clearPersistedCart,
+  shouldClearCartForAuthTransition,
+} from './cart-storage';
 
 /**
  * Single source of truth for the customer's auth state inside the cart tree.
@@ -30,7 +35,7 @@ import { apiBaseUrl } from '@/lib/config';
 export type AuthStatus = 'loading' | 'authenticated' | 'anonymous';
 
 const BASE_URL = apiBaseUrl;
-const STORAGE_KEY = 'lieferzonen:cart:v1';
+const STORAGE_KEY = CART_STORAGE_KEY;
 
 // ─── Domain types ─────────────────────────────────────────────────────────────
 
@@ -286,6 +291,12 @@ export function CartProvider({ children }: { children: ReactNode }) {
   const cartRef = useRef(cart);
   cartRef.current = cart;
 
+  // Tracks the last resolved auth state so the reconcile listener can detect an
+  // authenticated → anonymous transition (logout / session expiry) and tear the
+  // cart down. Without this, a bare `anonymous` read can't be told apart from a
+  // guest who never logged in (whose guest cart must survive).
+  const wasAuthenticatedRef = useRef(false);
+
   const loadGuestCart = useCallback(() => {
     try {
       const raw = localStorage.getItem(STORAGE_KEY);
@@ -306,6 +317,7 @@ export function CartProvider({ children }: { children: ReactNode }) {
     const session = readAuthSession();
 
     if (!session) {
+      wasAuthenticatedRef.current = false;
       setAuthStatus('anonymous');
       loadGuestCart();
       setHydrated(true);
@@ -315,6 +327,7 @@ export function CartProvider({ children }: { children: ReactNode }) {
     // Optimistic: a stored session means authenticated (mirrors HomeHeader) so
     // checkout never flashes the login wall while we validate in the
     // background. Only a definitive refresh failure flips us to anonymous.
+    wasAuthenticatedRef.current = true;
     setAuthStatus('authenticated');
     setIsSyncing(true);
 
@@ -354,9 +367,27 @@ export function CartProvider({ children }: { children: ReactNode }) {
   }, [loadGuestCart]);
 
   // ── Keep auth state in sync with login/logout (same-tab) and cross-tab. ─────
+  // This is the single chokepoint every logout path flows through: manual
+  // logout, session expiry (triggerWebAuthExpiry) and cross-tab logout all end
+  // in clearAuthSession(), which fires AUTH_CHANGED_EVENT (same-tab) and the
+  // native `storage` event (other tabs). On an authenticated → anonymous
+  // transition we drop the authenticated cart from memory AND remove the
+  // persisted guest snapshot, so a stale cart cannot survive a reload or leak
+  // into the next guest/auth session (audit #28).
   useEffect(() => {
     const reconcile = () => {
-      setAuthStatus(readAuthSession() ? 'authenticated' : 'anonymous');
+      const isAuthenticatedNow = Boolean(readAuthSession());
+      setAuthStatus(isAuthenticatedNow ? 'authenticated' : 'anonymous');
+      if (
+        shouldClearCartForAuthTransition(
+          wasAuthenticatedRef.current,
+          isAuthenticatedNow,
+        )
+      ) {
+        dispatch({ type: 'CLEAR' });
+        clearPersistedCart();
+      }
+      wasAuthenticatedRef.current = isAuthenticatedNow;
     };
     const onStorage = (event: StorageEvent) => {
       if (event.key !== null && event.key !== AUTH_SESSION_STORAGE_KEY) return;
@@ -547,7 +578,7 @@ export function CartProvider({ children }: { children: ReactNode }) {
     const session = readAuthSession();
     if (!session) {
       dispatch({ type: 'CLEAR' });
-      localStorage.removeItem(STORAGE_KEY);
+      clearPersistedCart();
       return;
     }
 
