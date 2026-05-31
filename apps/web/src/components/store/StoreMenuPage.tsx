@@ -40,6 +40,10 @@ type Store = {
   description: string | null;
   imageUrl: string | null;
   status: string;
+  // Operational order-acceptance switch (MR-DB-HARDENING-01 Slice 1B). When
+  // false the store stays listable but is not orderable. Optional for backward
+  // compatibility with older API responses (treated as accepting when absent).
+  acceptingOrders?: boolean;
   supportsDelivery: boolean;
   supportsCollection: boolean;
   deliveryFee: number | null;
@@ -194,6 +198,8 @@ export default function StoreMenuPage({
   const [conflictItem, setConflictItem] = useState<MenuItem | null>(null);
   const [activeTab, setActiveTab] = useState<'menu' | 'reviews'>('menu');
   const [infoOpen, setInfoOpen] = useState(false);
+  // Bumped by the error-state "Tekrar dene" button to re-trigger the load.
+  const [reloadKey, setReloadKey] = useState(0);
 
   // Align the browsing mode with what this store actually offers. Only steers
   // while the cart is empty so a customer's in-progress choice is never
@@ -285,7 +291,7 @@ export default function StoreMenuPage({
 
     void load();
     return () => controller.abort();
-  }, [storeId]);
+  }, [storeId, reloadKey]);
 
   const itemsByCategory = categories
     .map((cat) => ({
@@ -355,15 +361,35 @@ export default function StoreMenuPage({
               {error ?? 'Store bulunamadı.'}
             </p>
             <p className="mt-2 text-[14px] text-[#71717a]">
-              Ana sayfaya dönüp tekrar deneyin.
+              Bağlantınızı kontrol edip tekrar deneyebilirsiniz.
             </p>
+            <div className="mt-5 flex items-center justify-center gap-2.5">
+              <button
+                onClick={() => setReloadKey((key) => key + 1)}
+                className="rounded-[12px] bg-[#084799] px-5 py-2.5 text-[14px] font-semibold text-white transition hover:bg-[#063d85] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#084799] focus-visible:ring-offset-2"
+              >
+                Tekrar dene
+              </button>
+              <button
+                onClick={() => router.push('/')}
+                className="rounded-[12px] border border-[#e4e4e7] px-5 py-2.5 text-[14px] font-semibold text-[#18181b] transition hover:bg-[#f4f4f5]"
+              >
+                Ana sayfa
+              </button>
+            </div>
           </div>
         </div>
       </div>
     );
   }
 
-  const isOrderable = store.status === 'active';
+  // A store is orderable only when it is published (status active) AND currently
+  // accepting orders. acceptingOrders may be absent on older API responses, so
+  // only an explicit `false` blocks ordering.
+  const isOrderable =
+    store.status === 'active' && store.acceptingOrders !== false;
+  const notAcceptingOrders =
+    store.status === 'active' && store.acceptingOrders === false;
   const currency = store.currency ?? 'CHF';
   const cartHasItems = totalItems > 0 && cart.storeId === store.id;
   const activeServiceTypes = (store.serviceTypes ?? []).filter((t) => t.isActive);
@@ -491,6 +517,29 @@ export default function StoreMenuPage({
             </div>
           </div>
         </section>
+
+        {/* Store not currently accepting orders — listable but not orderable. */}
+        {notAcceptingOrders && (
+          <div
+            role="status"
+            className="mt-5 flex items-start gap-3 rounded-[16px] border border-[#fbbf24]/40 bg-[#fffbeb] px-4 py-3.5"
+          >
+            <span className="mt-0.5 flex h-5 w-5 flex-shrink-0 items-center justify-center rounded-full bg-[#fbbf24]/20 text-[#92400e]">
+              <svg viewBox="0 0 24 24" className="h-3.5 w-3.5" fill="none" stroke="currentColor" strokeWidth="2.5" aria-hidden="true">
+                <circle cx="12" cy="12" r="9" />
+                <path d="M12 7v5M12 16h.01" strokeLinecap="round" />
+              </svg>
+            </span>
+            <div>
+              <p className="text-[14px] font-semibold text-[#92400e]">
+                Bu restoran şu anda sipariş almıyor
+              </p>
+              <p className="mt-0.5 text-[13px] leading-5 text-[#b45309]">
+                Menüye göz atabilirsiniz; sipariş kabulü tekrar açıldığında ürün ekleyebilirsiniz.
+              </p>
+            </div>
+          </div>
+        )}
 
         {/* Desktop: menu/content on the left, sticky order sidebar on the right. */}
         <div className="lg:mt-5 lg:grid lg:grid-cols-[minmax(0,1fr)_320px] lg:items-start lg:gap-7">
@@ -741,6 +790,10 @@ export default function StoreMenuPage({
                       {subtotal.toFixed(2)} {currency}
                     </span>
                   </button>
+                ) : notAcceptingOrders ? (
+                  <p className="text-[13px] leading-5 text-[#b45309]">
+                    Bu restoran şu anda sipariş almıyor. Daha sonra tekrar deneyin.
+                  </p>
                 ) : (
                   <p className="text-[13px] leading-5 text-[#71717a]">
                     Menüden ürün ekleyerek siparişinizi oluşturun.
