@@ -35,6 +35,10 @@ import {
   PlatformLegalDocumentVersion,
   PlatformLegalDocumentWithCurrentVersion,
 } from './entities/platform-legal-document.entity';
+import {
+  containsPlaceholderLegalContent,
+  placeholderLegalGuardEnforced,
+} from './legal-placeholder.util';
 import { CreateLegalDocumentDto } from './dto/create-legal-document.dto';
 import { PublishDocumentVersionDto } from './dto/publish-document-version.dto';
 import { UpdateLegalDocumentDto } from './dto/update-legal-document.dto';
@@ -364,6 +368,21 @@ export class LegalConsentService {
       );
     }
 
+    // Defence-in-depth: refuse to publish placeholder/draft content in
+    // production so the checkout-readiness gate is never fed unreviewed legal
+    // text in the first place (MR-CHECKOUT-LEGAL-PLACEHOLDER-GUARD-01). This
+    // complements — does not replace — the readiness-time guard.
+    if (
+      placeholderLegalGuardEnforced() &&
+      containsPlaceholderLegalContent(dto.title, dto.body, dto.versionLabel)
+    ) {
+      throw new BadRequestException({
+        code: 'legal_document_placeholder_content',
+        message:
+          'Yasal metin üretime hazır görünmüyor. Placeholder/taslak içerik yayınlanamaz.',
+      });
+    }
+
     const bodyFormat: PlatformLegalDocumentBodyFormat =
       dto.bodyFormat && PLATFORM_LEGAL_DOCUMENT_BODY_FORMATS.includes(dto.bodyFormat)
         ? dto.bodyFormat
@@ -674,24 +693,53 @@ export class LegalConsentService {
   /**
    * Platform-level checkout legal readiness: are the required customer
    * checkout documents (distance-sales contract + pre-information form)
-   * published with a current version? This is distinct from
-   * requiresReConsent() — it checks whether the platform has configured the
-   * documents at all, not whether a given subject has accepted them.
+   * published with a current version AND free of placeholder/draft content?
+   * This is distinct from requiresReConsent() — it checks whether the platform
+   * has configured production-ready documents, not whether a given subject has
+   * accepted them.
+   *
+   * A required document that exists but still carries placeholder/taslak/draft
+   * content is treated as NOT ready in production (MR-CHECKOUT-LEGAL-PLACEHOLDER
+   * -GUARD-01) so an unreviewed legal version can never silently let checkout
+   * proceed. `placeholderLegalDocuments` is returned for admin/debug diagnostics;
+   * `missingLegalDocuments` keeps its "codes not usable for checkout" meaning so
+   * existing consumers need no change.
    */
   async getCheckoutLegalReadiness(): Promise<{
     legalReady: boolean;
     missingLegalDocuments: string[];
+    placeholderLegalDocuments: string[];
   }> {
     const docs = await this.listDocuments({
       audience: 'customer',
       includeInactive: false,
     });
+    const guardEnforced = placeholderLegalGuardEnforced();
     const missing: string[] = [];
+    const placeholder: string[] = [];
     for (const code of REQUIRED_CHECKOUT_DOCUMENT_CODES) {
       const doc = docs.find((d) => d.typeCode === code);
-      if (!doc?.currentVersion) missing.push(code);
+      if (!doc?.currentVersion) {
+        missing.push(code);
+        continue;
+      }
+      if (
+        guardEnforced &&
+        containsPlaceholderLegalContent(
+          doc.currentVersion.title,
+          doc.currentVersion.body,
+          doc.currentVersion.versionLabel,
+        )
+      ) {
+        placeholder.push(code);
+      }
     }
-    return { legalReady: missing.length === 0, missingLegalDocuments: missing };
+    const notReady = [...missing, ...placeholder];
+    return {
+      legalReady: notReady.length === 0,
+      missingLegalDocuments: notReady,
+      placeholderLegalDocuments: placeholder,
+    };
   }
 
   // ===================================================================
@@ -723,18 +771,47 @@ export class LegalConsentService {
       throw new ConflictException('Order legal acceptance already exists for this order.');
     }
 
-    const requiredVersions = await this.databaseService
+    const requiredVersions = (await this.databaseService
       .prepare(
-        `SELECT v."id", d."code"
+        `SELECT v."id", v."supersededAt", d."code"
          FROM "PlatformLegalDocumentVersion" v
          INNER JOIN "PlatformLegalDocument" d ON d."id" = v."documentId"
          WHERE v."id" = ANY($ids::uuid[])`,
       )
       .all({
         $ids: [dto.distanceSalesContractVersionId, dto.preInformationFormVersionId],
-      });
+      })) as unknown as Array<{
+      id: string;
+      supersededAt: string | Date | null;
+      code: LegalDocumentTypeCode;
+    }>;
     if (requiredVersions.length !== 2) {
       throw new BadRequestException('Provided legal version ids are invalid.');
+    }
+
+    // The provided ids must point at the RIGHT document types AND must still be
+    // current (non-superseded). Without this, a client could replay a stale /
+    // superseded version id and pin an order to legal text no longer in force
+    // (MR-CHECKOUT-LEGAL-PLACEHOLDER-GUARD-01, audit J#8).
+    const byId = new Map(requiredVersions.map((row) => [row.id, row]));
+    const distanceVersion = byId.get(dto.distanceSalesContractVersionId);
+    const preInfoVersion = byId.get(dto.preInformationFormVersionId);
+    if (
+      !distanceVersion ||
+      distanceVersion.code !== 'distance_sales_contract' ||
+      !preInfoVersion ||
+      preInfoVersion.code !== 'pre_information_form'
+    ) {
+      throw new BadRequestException(
+        'Provided legal version ids do not match the required checkout documents.',
+      );
+    }
+    if (distanceVersion.supersededAt || preInfoVersion.supersededAt) {
+      throw new BadRequestException({
+        code: 'legal_document_version_not_current',
+        message:
+          'Kabul edilen yasal metin güncel sürüm değil. Lütfen sayfayı yenileyip güncel sözleşmeyi onaylayın.',
+      });
     }
 
     const row = (await this.databaseService

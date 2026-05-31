@@ -251,6 +251,76 @@ describe('LegalConsentService', () => {
         }),
       );
     });
+
+    it('rejects a superseded (non-current) version id', async () => {
+      const { service, prepare } = createService();
+      const orderLookup = {
+        get: jest.fn().mockResolvedValue({
+          id: 'order-1',
+          customerAccountId: 'customer-1',
+          status: 'pending_payment',
+        }),
+      };
+      const existingLookup = { get: jest.fn().mockResolvedValue(undefined) };
+      const versionLookup = {
+        all: jest.fn().mockResolvedValue([
+          {
+            id: validDto.distanceSalesContractVersionId,
+            code: 'distance_sales_contract',
+            supersededAt: '2026-05-01T00:00:00.000Z',
+          },
+          {
+            id: validDto.preInformationFormVersionId,
+            code: 'pre_information_form',
+            supersededAt: null,
+          },
+        ]),
+      };
+
+      (prepare as jest.Mock)
+        .mockImplementationOnce(() => orderLookup as any)
+        .mockImplementationOnce(() => existingLookup as any)
+        .mockImplementationOnce(() => versionLookup as any);
+
+      await expect(
+        service.createOrderLegalAcceptance('customer-1', validDto, context),
+      ).rejects.toBeInstanceOf(BadRequestException);
+    });
+
+    it('rejects version ids that map to the wrong document type', async () => {
+      const { service, prepare } = createService();
+      const orderLookup = {
+        get: jest.fn().mockResolvedValue({
+          id: 'order-1',
+          customerAccountId: 'customer-1',
+          status: 'pending_payment',
+        }),
+      };
+      const existingLookup = { get: jest.fn().mockResolvedValue(undefined) };
+      const versionLookup = {
+        all: jest.fn().mockResolvedValue([
+          {
+            id: validDto.distanceSalesContractVersionId,
+            code: 'privacy_policy',
+            supersededAt: null,
+          },
+          {
+            id: validDto.preInformationFormVersionId,
+            code: 'pre_information_form',
+            supersededAt: null,
+          },
+        ]),
+      };
+
+      (prepare as jest.Mock)
+        .mockImplementationOnce(() => orderLookup as any)
+        .mockImplementationOnce(() => existingLookup as any)
+        .mockImplementationOnce(() => versionLookup as any);
+
+      await expect(
+        service.createOrderLegalAcceptance('customer-1', validDto, context),
+      ).rejects.toBeInstanceOf(BadRequestException);
+    });
   });
 
   // ===================================================================
@@ -604,6 +674,186 @@ describe('LegalConsentService', () => {
 
       expect(result.legalReady).toBe(false);
       expect(result.missingLegalDocuments).toEqual(['distance_sales_contract']);
+    });
+
+    // -----------------------------------------------------------------
+    // Placeholder content guard (MR-CHECKOUT-LEGAL-PLACEHOLDER-GUARD-01).
+    // Enforced only in production; toggled via NODE_ENV here.
+    // -----------------------------------------------------------------
+    describe('placeholder content guard (production)', () => {
+      const originalEnv = { ...process.env };
+
+      afterEach(() => {
+        for (const key of Object.keys(process.env)) {
+          if (!(key in originalEnv)) delete process.env[key];
+        }
+        Object.assign(process.env, originalEnv);
+      });
+
+      function placeholderBundle(typeCode: string): any {
+        const bundle = docBundle(typeCode, true);
+        bundle.currentVersion.title = `${typeCode} (taslak)`;
+        bundle.currentVersion.body = 'Lorem ipsum — üretime geçmeden önce doğrulayın.';
+        return bundle;
+      }
+
+      it('marks a required doc with placeholder content as NOT ready in production', async () => {
+        process.env.NODE_ENV = 'production';
+        delete process.env.ALLOW_PLACEHOLDER_LEGAL_CONTENT;
+        const { service } = createService();
+        jest.spyOn(service, 'listDocuments').mockResolvedValue([
+          placeholderBundle('distance_sales_contract'),
+          docBundle('pre_information_form', true),
+        ]);
+
+        const result = await service.getCheckoutLegalReadiness();
+
+        expect(result.legalReady).toBe(false);
+        expect(result.placeholderLegalDocuments).toEqual(['distance_sales_contract']);
+        expect(result.missingLegalDocuments).toContain('distance_sales_contract');
+      });
+
+      it('flags pre_information_form placeholder content too', async () => {
+        process.env.NODE_ENV = 'production';
+        delete process.env.ALLOW_PLACEHOLDER_LEGAL_CONTENT;
+        const { service } = createService();
+        jest.spyOn(service, 'listDocuments').mockResolvedValue([
+          docBundle('distance_sales_contract', true),
+          placeholderBundle('pre_information_form'),
+        ]);
+
+        const result = await service.getCheckoutLegalReadiness();
+
+        expect(result.legalReady).toBe(false);
+        expect(result.placeholderLegalDocuments).toEqual(['pre_information_form']);
+      });
+
+      it('stays ready in production when content is clean', async () => {
+        process.env.NODE_ENV = 'production';
+        delete process.env.ALLOW_PLACEHOLDER_LEGAL_CONTENT;
+        const { service } = createService();
+        jest.spyOn(service, 'listDocuments').mockResolvedValue([
+          docBundle('distance_sales_contract', true),
+          docBundle('pre_information_form', true),
+        ]);
+
+        const result = await service.getCheckoutLegalReadiness();
+
+        expect(result.legalReady).toBe(true);
+        expect(result.placeholderLegalDocuments).toEqual([]);
+      });
+
+      it('does not block placeholder content outside production (dev/test parity)', async () => {
+        process.env.NODE_ENV = 'development';
+        delete process.env.ALLOW_PLACEHOLDER_LEGAL_CONTENT;
+        const { service } = createService();
+        jest.spyOn(service, 'listDocuments').mockResolvedValue([
+          placeholderBundle('distance_sales_contract'),
+          placeholderBundle('pre_information_form'),
+        ]);
+
+        const result = await service.getCheckoutLegalReadiness();
+
+        expect(result.legalReady).toBe(true);
+        expect(result.placeholderLegalDocuments).toEqual([]);
+      });
+    });
+  });
+
+  // ===================================================================
+  // publishVersion — production placeholder publish guard
+  // ===================================================================
+
+  describe('publishVersion placeholder guard', () => {
+    const originalEnv = { ...process.env };
+
+    afterEach(() => {
+      for (const key of Object.keys(process.env)) {
+        if (!(key in originalEnv)) delete process.env[key];
+      }
+      Object.assign(process.env, originalEnv);
+    });
+
+    const placeholderDto = {
+      versionLabel: 'v1',
+      locale: 'tr',
+      title: 'Mesafeli Satış Sözleşmesi (taslak)',
+      body: 'Lorem ipsum — hukuk ekibi tarafından doğrulanmalıdır.',
+    } as any;
+
+    function mockDocFound(prepare: jest.Mock) {
+      // 1) findDocumentById → return a document header
+      // 2) labelClash lookup → no clash
+      prepare
+        .mockImplementationOnce(() => ({
+          get: jest.fn().mockResolvedValue({
+            id: 'doc-1',
+            typeId: 'type-1',
+            typeCode: 'distance_sales_contract',
+            code: 'platform-distance',
+            audience: 'customer',
+            isRequired: true,
+            isActive: true,
+            createdAt: new Date(),
+            updatedAt: new Date(),
+          }),
+          all: jest.fn(),
+          run: jest.fn(),
+        }))
+        .mockImplementationOnce(() => ({
+          get: jest.fn().mockResolvedValue(undefined),
+          all: jest.fn(),
+          run: jest.fn(),
+        }));
+    }
+
+    it('blocks publishing placeholder content in production', async () => {
+      process.env.NODE_ENV = 'production';
+      delete process.env.ALLOW_PLACEHOLDER_LEGAL_CONTENT;
+      const { service, prepare, databaseService } = createService();
+      mockDocFound(prepare as jest.Mock);
+
+      await expect(
+        service.publishVersion('doc-1', placeholderDto, 'admin-1'),
+      ).rejects.toBeInstanceOf(BadRequestException);
+      // Guard fires before the insert transaction runs.
+      expect(databaseService.transaction).not.toHaveBeenCalled();
+    });
+
+    it('allows placeholder content in production when ALLOW flag is set (bypass)', async () => {
+      process.env.NODE_ENV = 'production';
+      process.env.ALLOW_PLACEHOLDER_LEGAL_CONTENT = 'true';
+      const { service, prepare } = createService();
+      mockDocFound(prepare as jest.Mock);
+      // findCurrentVersion (supersede lookup) + insert
+      (prepare as jest.Mock)
+        .mockImplementationOnce(() => ({
+          get: jest.fn().mockResolvedValue(undefined),
+          all: jest.fn(),
+          run: jest.fn(),
+        }))
+        .mockImplementationOnce(() => ({
+          get: jest.fn().mockResolvedValue({
+            id: 'ver-new',
+            documentId: 'doc-1',
+            versionLabel: 'v1',
+            locale: 'tr',
+            title: placeholderDto.title,
+            body: placeholderDto.body,
+            bodyFormat: 'markdown',
+            contentHashSha256: 'h',
+            effectiveFrom: new Date(),
+            publishedAt: new Date(),
+            supersededAt: null,
+            createdByAdminId: 'admin-1',
+            createdAt: new Date(),
+          }),
+          all: jest.fn(),
+          run: jest.fn(),
+        }));
+
+      const result = await service.publishVersion('doc-1', placeholderDto, 'admin-1');
+      expect(result.id).toBe('ver-new');
     });
   });
 });

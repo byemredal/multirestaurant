@@ -229,25 +229,59 @@ describe('OrdersService mutation response shaping', () => {
       })),
     };
 
+    const legalConsentService = {
+      ensureAcceptanceForConfirmation: jest.fn().mockResolvedValue(undefined),
+      // Mirrors LegalConsentService.getCheckoutLegalReadiness(); default to
+      // "ready" so createFromActiveCart passes the platform legal gate here.
+      getCheckoutLegalReadiness: jest.fn().mockResolvedValue({
+        legalReady: true,
+        missingLegalDocuments: [],
+        placeholderLegalDocuments: [],
+      }),
+    };
+
     const service = new OrdersService(
       databaseService as any,
       {} as any,
       loyaltyStore as any,
       {} as any,
-      {
-        ensureAcceptanceForConfirmation: jest.fn().mockResolvedValue(undefined),
-        // Mirrors LegalConsentService.getCheckoutLegalReadiness(); default to
-        // "ready" so createFromActiveCart passes the platform legal gate here.
-        getCheckoutLegalReadiness: jest
-          .fn()
-          .mockResolvedValue({ legalReady: true, missingLegalDocuments: [] }),
-      } as any,
+      legalConsentService as any,
       {} as any,
     );
     const serviceInternal = service as any;
 
-    return { service, serviceInternal, databaseService, loyaltyStore, run };
+    return { service, serviceInternal, databaseService, loyaltyStore, run, legalConsentService };
   }
+
+  it('blocks createFromActiveCart when checkout legal documents are not ready (placeholder/missing)', async () => {
+    const { service, serviceInternal, legalConsentService } = createService();
+
+    jest
+      .spyOn(serviceInternal, 'expireStalePendingPaymentOrdersForCustomer')
+      .mockResolvedValue(undefined);
+    jest.spyOn(serviceInternal, 'findCartByCustomerForUpdate').mockResolvedValue({
+      id: 'cart-1',
+      customerAccountId: 'customer-1',
+      storeId: 'store-1',
+      subtotalAmount: 18,
+      totalAmount: 18,
+      currencyId: null,
+      currencySnapshot: 'CHF',
+      createdAt: new Date('2026-04-11T00:00:00.000Z'),
+      updatedAt: new Date('2026-04-11T00:00:00.000Z'),
+    });
+    // Simulate a required document that exists but carries placeholder content:
+    // the readiness gate reports it as not-ready, so the order must be refused.
+    legalConsentService.getCheckoutLegalReadiness.mockResolvedValue({
+      legalReady: false,
+      missingLegalDocuments: ['distance_sales_contract'],
+      placeholderLegalDocuments: ['distance_sales_contract'],
+    });
+
+    await expect(service.createFromActiveCart('customer-1')).rejects.toMatchObject({
+      response: { code: 'legal_documents_missing' },
+    });
+  });
 
   it('returns customer-shaped order detail after createFromActiveCart', async () => {
     const { service, serviceInternal } = createService();
