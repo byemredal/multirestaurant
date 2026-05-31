@@ -153,6 +153,10 @@ export class AccessTokenGuard implements CanActivate {
       throw new UnauthorizedException('Authenticated account is inactive or missing.');
     }
 
+    // CANONICAL admin role source = AdminAccount.role (MR-DB-HARDENING-01 Slice 6).
+    // Do NOT read AdminMembership.role here for authorization — it is an unused
+    // placeholder for a future scoped RBAC design. See
+    // docs/architecture/admin-role-source-of-truth.md.
     request.user = {
       id: admin.id,
       email: admin.email,
