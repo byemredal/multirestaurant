@@ -574,9 +574,50 @@ export class StoreSettingsService {
       );
     }
 
-    return {
-      serviceTypes: await this.store.replaceServiceTypes(storeId, normalized),
-    };
+    const serviceTypes = await this.store.replaceServiceTypes(storeId, normalized);
+
+    // Drift guard (MR-DB-HARDENING-01 Slice 5): the direct StoreServiceType
+    // assignment flow must not leave the ordering policy contradicting reality.
+    // Checkout validates the chosen service type against StoreServiceType (cart
+    // readiness) AND against StoreOrderingPolicy.acceptsDelivery/acceptsPickup
+    // (order placement); if they disagree a customer can pass readiness and then
+    // be rejected at order time. Write the policy's delivery/pickup booleans back
+    // to match the canonical assignments. dine_in is deliberately not mirrored.
+    await this.syncOrderingPolicyFromServiceTypes(storeId, serviceTypes);
+
+    return { serviceTypes };
+  }
+
+  /**
+   * Align StoreOrderingPolicy.acceptsDelivery/acceptsPickup with the canonical
+   * StoreServiceType assignments. Store-level write (no service-type re-sync) so
+   * it cannot loop with syncServiceTypesFromOrderingPolicy.
+   */
+  private async syncOrderingPolicyFromServiceTypes(
+    storeId: string,
+    serviceTypes: Array<{ code: string; isActive: boolean }>,
+  ): Promise<void> {
+    const deliveryActive = serviceTypes.some(
+      (entry) => entry.code === 'delivery' && entry.isActive,
+    );
+    const pickupActive = serviceTypes.some(
+      (entry) => entry.code === 'pickup' && entry.isActive,
+    );
+
+    const policy = await this.store.getOrCreateOrderingPolicy(storeId);
+    if (
+      policy.acceptsDelivery === deliveryActive &&
+      policy.acceptsPickup === pickupActive
+    ) {
+      return;
+    }
+
+    await this.store.upsertOrderingPolicy(storeId, {
+      minOrderAmount: policy.minOrderAmount,
+      acceptsDelivery: deliveryActive,
+      acceptsPickup: pickupActive,
+      currencyCode: policy.currencyCode,
+    });
   }
 
   // ── Commerce: ordering policy ──────────────────────────────────────────────

@@ -1,7 +1,13 @@
-import { ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
+import {
+  BadRequestException,
+  ForbiddenException,
+  Injectable,
+  NotFoundException,
+} from '@nestjs/common';
 import { randomUUID } from 'crypto';
 import { DatabaseService } from '../../database/database.service';
 import { StoresService } from '../stores/stores.service';
+import { InstallationProfileService } from '../setup/installation-profile.service';
 import { CreateMenuCategoryDto } from './dto/create-menu-category.dto';
 import { CreateMenuItemDto } from './dto/create-menu-item.dto';
 import { CreateMenuOptionGroupDto } from './dto/create-menu-option-group.dto';
@@ -20,7 +26,41 @@ export class MenuService {
   constructor(
     private readonly databaseService: DatabaseService,
     private readonly storesService: StoresService,
+    private readonly installationProfile: InstallationProfileService,
   ) {}
+
+  /**
+   * Drift guard (MR-DB-HARDENING-01 Slice 5): a menu item's currency must match
+   * the active platform currency (single-country / single-currency platform).
+   * Rejecting at write time stops mixed-currency menus that would otherwise only
+   * surface as a `currency_mismatch` failure at checkout. The existing cart/order
+   * single-currency guard stays as the final safety net. No-op pre-setup (no
+   * active CountryPack yet) so seeding/bootstrap is unaffected.
+   */
+  private async assertMenuItemCurrencyMatchesPlatform(
+    currencyId: string,
+  ): Promise<void> {
+    const policy = await this.installationProfile.findActiveCountryPolicy();
+    if (!policy) {
+      return;
+    }
+    const currency = (await this.databaseService
+      .prepare(`SELECT "code" FROM "Currency" WHERE "id" = $id LIMIT 1`)
+      .get({ $id: currencyId })) as { code: string } | undefined;
+
+    if (!currency) {
+      throw new BadRequestException({
+        code: 'menu_item_currency_invalid',
+        message: 'Seçilen para birimi geçersiz.',
+      });
+    }
+    if (currency.code.toUpperCase() !== policy.currencyCode.toUpperCase()) {
+      throw new BadRequestException({
+        code: 'menu_item_currency_mismatch',
+        message: `Menü ürünü para birimi platform para birimiyle (${policy.currencyCode}) eşleşmeli.`,
+      });
+    }
+  }
 
   async createCategory(
     storeId: string,
@@ -129,6 +169,8 @@ export class MenuService {
       await this.findStoreCategoryOrThrow(storeId, dto.categoryId);
     }
 
+    await this.assertMenuItemCurrencyMatchesPlatform(dto.currencyId);
+
     const now = new Date();
     const item: MenuItem = {
       id: randomUUID(),
@@ -189,6 +231,11 @@ export class MenuService {
 
     if (dto.categoryId) {
       await this.findStoreCategoryOrThrow(storeId, dto.categoryId);
+    }
+
+    // Only validate when the caller is actually changing the currency.
+    if (dto.currencyId !== undefined && dto.currencyId !== item.currencyId) {
+      await this.assertMenuItemCurrencyMatchesPlatform(dto.currencyId);
     }
 
     const updatedAt = new Date();
