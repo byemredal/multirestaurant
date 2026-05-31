@@ -61,6 +61,8 @@ export type IconName =
   | 'dots'
   | 'arrowUp'
   | 'arrowDown'
+  | 'edit'
+  | 'power'
   | 'sun';
 
 type IconProps = SVGProps<SVGSVGElement>;
@@ -375,6 +377,18 @@ export const Icon: Record<IconName, (p: IconProps) => ReactElement> = {
   check: (p) => (
     <Svg {...p}>
       <path d="m4 10.5 4 4 8-9" />
+    </Svg>
+  ),
+  edit: (p) => (
+    <Svg {...p}>
+      <path d="M4 16h3l8-8-3-3-8 8v3Z" />
+      <path d="m11.5 5.5 3 3" />
+    </Svg>
+  ),
+  power: (p) => (
+    <Svg {...p}>
+      <path d="M10 3v6" />
+      <path d="M6 5.5a6 6 0 1 0 8 0" />
     </Svg>
   ),
   external: (p) => (

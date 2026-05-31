@@ -6,8 +6,8 @@ import ComplianceCatalogWorkspace from '@/components/admin/ComplianceCatalogWork
 export default function ComplianceCatalogPage() {
   return (
     <AdminSurface
-      title="Onboarding compliance kataloğu"
-      description="Ülke ve dil bazında belge yönlendirmelerini ve sürümlü onay metni kaynaklarını yönetin."
+      title="Partner Başvuru Uyumu"
+      description="Partner başvurularında istenecek belgeleri ve başvuru onay kutularını ülke/dil bazında yönetin. Bu ekran müşteri checkout yasal metinlerini yönetmez."
     >
       <ComplianceCatalogWorkspace />
     </AdminSurface>

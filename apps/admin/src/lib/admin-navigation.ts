@@ -351,7 +351,7 @@ export const adminNavSections: AdminNavSection[] = [
       },
       {
         id: 'compliance-catalog',
-        label: 'Onboarding Compliance Kataloğu',
+        label: 'Partner Başvuru Uyumu',
         href: '/system/compliance-catalog',
         icon: 'shield',
         matches: startsWith('/system/compliance-catalog'),
