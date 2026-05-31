@@ -41,6 +41,12 @@ describe('OrdersService payment-outcome handling', () => {
     };
     const legalConsentService = overrides.legalConsentService ?? {
       ensureAcceptanceForConfirmation: jest.fn().mockResolvedValue(undefined),
+      // Mirrors LegalConsentService.getCheckoutLegalReadiness() — checkout's
+      // platform legal gate. Default to "ready" so flows that are not exercising
+      // the gate (e.g. order-detail shaping) pass through it.
+      getCheckoutLegalReadiness: jest
+        .fn()
+        .mockResolvedValue({ legalReady: true, missingLegalDocuments: [] }),
     };
 
     const service = new OrdersService(
@@ -215,6 +221,11 @@ describe('OrdersService mutation response shaping', () => {
       transaction: jest.fn(async (callback) => callback()),
       prepare: jest.fn(() => ({
         run,
+        // createFromActiveCart reads the customer phone snapshot via .get and may
+        // probe collections via .all; safe empty defaults keep this unit test on
+        // the in-memory path (DB persistence is asserted via the spied getOrder).
+        get: jest.fn().mockResolvedValue(undefined),
+        all: jest.fn().mockResolvedValue([]),
       })),
     };
 
@@ -223,7 +234,14 @@ describe('OrdersService mutation response shaping', () => {
       {} as any,
       loyaltyStore as any,
       {} as any,
-      { ensureAcceptanceForConfirmation: jest.fn().mockResolvedValue(undefined) } as any,
+      {
+        ensureAcceptanceForConfirmation: jest.fn().mockResolvedValue(undefined),
+        // Mirrors LegalConsentService.getCheckoutLegalReadiness(); default to
+        // "ready" so createFromActiveCart passes the platform legal gate here.
+        getCheckoutLegalReadiness: jest
+          .fn()
+          .mockResolvedValue({ legalReady: true, missingLegalDocuments: [] }),
+      } as any,
       {} as any,
     );
     const serviceInternal = service as any;
