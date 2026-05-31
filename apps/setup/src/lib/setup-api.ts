@@ -63,10 +63,15 @@ export interface SetupPreflight {
   ready: boolean;
   initialized: boolean;
   systemState: SystemStateValue;
+  setupState?: SystemStateValue;
+  hasPlatformSetup?: boolean;
   hasSuperAdmin: boolean;
   bootstrapKeyConfigured: boolean;
+  bootstrapConfigured?: boolean;
   countryPacksAvailable: boolean;
+  countryPackReady?: boolean;
   conflicts: string[];
+  blockingIssues?: Array<{ code: string; message: string }>;
 }
 
 export async function getSetupPreflight(): Promise<SetupPreflight> {
@@ -85,14 +90,37 @@ export async function getSetupPreflight(): Promise<SetupPreflight> {
   }
 
   const body = (await readJson(response)) as Partial<SetupPreflight> | null;
+  const blockingIssueCodes = Array.isArray(body?.blockingIssues)
+    ? body.blockingIssues
+        .map((issue) => issue?.code)
+        .filter((code): code is string => typeof code === 'string')
+    : [];
+  const conflicts = Array.isArray(body?.conflicts)
+    ? body.conflicts
+    : blockingIssueCodes;
+  const systemState = body?.systemState ?? body?.setupState ?? 'UNINITIALIZED';
+  const bootstrapKeyConfigured = Boolean(
+    body?.bootstrapKeyConfigured ?? body?.bootstrapConfigured,
+  );
+  const countryPacksAvailable = Boolean(
+    body?.countryPacksAvailable ?? body?.countryPackReady,
+  );
+
   return {
     ready: Boolean(body?.ready),
-    initialized: Boolean(body?.initialized),
-    systemState: body?.systemState ?? 'UNINITIALIZED',
+    initialized: Boolean(body?.initialized ?? body?.hasPlatformSetup),
+    systemState,
+    setupState: systemState,
+    hasPlatformSetup: Boolean(body?.hasPlatformSetup ?? body?.initialized),
     hasSuperAdmin: Boolean(body?.hasSuperAdmin),
-    bootstrapKeyConfigured: Boolean(body?.bootstrapKeyConfigured),
-    countryPacksAvailable: Boolean(body?.countryPacksAvailable),
-    conflicts: Array.isArray(body?.conflicts) ? body!.conflicts : [],
+    bootstrapKeyConfigured,
+    bootstrapConfigured: bootstrapKeyConfigured,
+    countryPacksAvailable,
+    countryPackReady: countryPacksAvailable,
+    conflicts,
+    blockingIssues: Array.isArray(body?.blockingIssues)
+      ? body.blockingIssues
+      : conflicts.map((code) => ({ code, message: code })),
   };
 }
 
@@ -179,10 +207,10 @@ export async function initializePlatform(
   if (response.status === 409) {
     throw new SetupApiError(
       message.includes('in progress')
-        ? 'initialization_in_progress'
+        ? 'setup_in_progress'
         : message.includes('super admin')
-          ? 'super_admin_exists'
-          : 'already_initialized',
+          ? 'super_admin_exists_before_setup'
+          : 'platform_already_initialized',
     );
   }
   if (response.status === 400) {

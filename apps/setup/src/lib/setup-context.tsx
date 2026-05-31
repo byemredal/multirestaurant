@@ -86,11 +86,16 @@ function clearStoredDraft(): void {
   }
 }
 
-function readStoredDraft(): PersistedDraft | null {
+type DraftReadResult =
+  | { status: 'missing'; draft: null }
+  | { status: 'restored'; draft: PersistedDraft }
+  | { status: 'discarded'; draft: null };
+
+function readStoredDraft(): DraftReadResult {
   try {
-    if (typeof window === 'undefined') return null;
+    if (typeof window === 'undefined') return { status: 'missing', draft: null };
     const raw = window.localStorage.getItem(DRAFT_STORAGE_KEY);
-    if (!raw) return null;
+    if (!raw) return { status: 'missing', draft: null };
 
     const parsed = JSON.parse(raw) as StoredEnvelope;
     const fresh =
@@ -102,22 +107,25 @@ function readStoredDraft(): PersistedDraft | null {
       typeof parsed.draft === 'object';
     if (!fresh) {
       clearStoredDraft();
-      return null;
+      return { status: 'discarded', draft: null };
     }
 
     const d = parsed.draft;
     return {
-      platformName: String(d.platformName ?? ''),
-      supportEmail: String(d.supportEmail ?? ''),
-      logoUrl: String(d.logoUrl ?? ''),
-      logoFileName: String(d.logoFileName ?? ''),
-      primaryCountry: String(d.primaryCountry ?? '') || EMPTY_DRAFT.primaryCountry,
-      adminEmail: String(d.adminEmail ?? ''),
+      status: 'restored',
+      draft: {
+        platformName: String(d.platformName ?? ''),
+        supportEmail: String(d.supportEmail ?? ''),
+        logoUrl: String(d.logoUrl ?? ''),
+        logoFileName: String(d.logoFileName ?? ''),
+        primaryCountry: String(d.primaryCountry ?? '') || EMPTY_DRAFT.primaryCountry,
+        adminEmail: String(d.adminEmail ?? ''),
+      },
     };
   } catch {
     // Corrupt/unparseable draft must never break the wizard.
     clearStoredDraft();
-    return null;
+    return { status: 'discarded', draft: null };
   }
 }
 
@@ -141,6 +149,10 @@ interface SetupContextValue {
   reset: () => void;
   /** True once the persisted draft has been read on the client. */
   hydrated: boolean;
+  /** A valid non-secret draft was restored from localStorage. */
+  draftRestored: boolean;
+  /** A stale/corrupt draft was removed while hydrating. */
+  draftDiscarded: boolean;
 }
 
 const SetupContext = createContext<SetupContextValue | null>(null);
@@ -148,14 +160,19 @@ const SetupContext = createContext<SetupContextValue | null>(null);
 export function SetupProvider({ children }: { children: ReactNode }) {
   const [draft, setDraft] = useState<SetupDraft>(EMPTY_DRAFT);
   const [hydrated, setHydrated] = useState(false);
+  const [draftRestored, setDraftRestored] = useState(false);
+  const [draftDiscarded, setDraftDiscarded] = useState(false);
   // Avoid persisting before the stored draft has been merged in — otherwise an
   // early write could clobber a saved draft with the empty initial state.
   const canPersist = useRef(false);
 
   useEffect(() => {
     const stored = readStoredDraft();
-    if (stored) {
-      setDraft((current) => ({ ...current, ...stored }));
+    if (stored.status === 'restored') {
+      setDraft((current) => ({ ...current, ...stored.draft }));
+      setDraftRestored(true);
+    } else if (stored.status === 'discarded') {
+      setDraftDiscarded(true);
     }
     canPersist.current = true;
     setHydrated(true);
@@ -174,11 +191,13 @@ export function SetupProvider({ children }: { children: ReactNode }) {
   const reset = useCallback(() => {
     clearStoredDraft();
     setDraft(EMPTY_DRAFT);
+    setDraftRestored(false);
+    setDraftDiscarded(false);
   }, []);
 
   const value = useMemo<SetupContextValue>(
-    () => ({ draft, update, reset, hydrated }),
-    [draft, update, reset, hydrated],
+    () => ({ draft, update, reset, hydrated, draftRestored, draftDiscarded }),
+    [draft, update, reset, hydrated, draftRestored, draftDiscarded],
   );
 
   return <SetupContext.Provider value={value}>{children}</SetupContext.Provider>;

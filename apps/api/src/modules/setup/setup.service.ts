@@ -33,14 +33,24 @@ export interface SetupPreflight {
   /** A PlatformSetup row already exists. */
   initialized: boolean;
   systemState: SystemState;
+  /** Alias for clients that describe readiness as a setup state. */
+  setupState: SystemState;
+  /** Explicit PlatformSetup row presence for clearer diagnostics. */
+  hasPlatformSetup: boolean;
   /** A super_admin already exists (e.g. created by a seed). */
   hasSuperAdmin: boolean;
   /** The server has a BOOTSTRAP_KEY configured (value never exposed). */
   bootstrapKeyConfigured: boolean;
+  /** Alias for clients using concise preflight naming. */
+  bootstrapConfigured: boolean;
   /** At least one supported CountryPack loads. */
   countryPacksAvailable: boolean;
+  /** Alias for clients using concise preflight naming. */
+  countryPackReady: boolean;
   /** Stable conflict codes the UI can branch on. */
   conflicts: string[];
+  /** Stable conflict codes with safe user-facing messages. */
+  blockingIssues: Array<{ code: string; message: string }>;
 }
 
 function hasUsableCountryPacks(): boolean {
@@ -64,6 +74,23 @@ function isUniqueViolation(error: unknown): boolean {
     'code' in error &&
     (error as { code?: unknown }).code === '23505'
   );
+}
+
+function preflightMessage(code: string): string {
+  switch (code) {
+    case 'platform_already_initialized':
+      return 'Platform already initialized.';
+    case 'setup_in_progress':
+      return 'Platform setup is already in progress.';
+    case 'super_admin_exists_before_setup':
+      return 'A super admin account exists before platform setup completed.';
+    case 'bootstrap_key_missing':
+      return 'BOOTSTRAP_KEY is not configured on the server.';
+    case 'country_pack_conflict':
+      return 'No supported country pack could be loaded.';
+    default:
+      return 'Setup preflight is blocked.';
+  }
 }
 
 @Injectable()
@@ -95,31 +122,39 @@ export class SetupService {
 
     const conflicts: string[] = [];
     if (initialized || state === SystemState.READY) {
-      conflicts.push('already_initialized');
+      conflicts.push('platform_already_initialized');
     } else if (state === SystemState.INITIALIZING) {
-      conflicts.push('initialization_in_progress');
+      conflicts.push('setup_in_progress');
     }
     // A super admin without a PlatformSetup row means a seed/demo run created
     // it — the wizard would otherwise fail at the final step looking like a
     // bootstrap-key error.
     if (!initialized && hasSuperAdmin) {
-      conflicts.push('super_admin_exists');
+      conflicts.push('super_admin_exists_before_setup');
     }
     if (!bootstrapKeyConfigured) {
       conflicts.push('bootstrap_key_missing');
     }
     if (!countryPacksAvailable) {
-      conflicts.push('no_country_packs');
+      conflicts.push('country_pack_conflict');
     }
 
     return {
       ready: conflicts.length === 0,
       initialized,
       systemState: state,
+      setupState: state,
+      hasPlatformSetup: initialized,
       hasSuperAdmin,
       bootstrapKeyConfigured,
+      bootstrapConfigured: bootstrapKeyConfigured,
       countryPacksAvailable,
+      countryPackReady: countryPacksAvailable,
       conflicts,
+      blockingIssues: conflicts.map((code) => ({
+        code,
+        message: preflightMessage(code),
+      })),
     };
   }
 

@@ -1,4 +1,5 @@
 import { ServiceUnavailableException } from '@nestjs/common';
+import { SystemState } from './setup.constants';
 import { SetupService } from './setup.service';
 
 describe('SetupService legal placeholder production gate', () => {
@@ -20,18 +21,22 @@ describe('SetupService legal placeholder production gate', () => {
       initialize: jest.fn().mockResolvedValue(undefined),
     };
     const state = {
+      getState: jest.fn().mockResolvedValue({ state: SystemState.UNINITIALIZED }),
       beginInitialization: jest.fn().mockResolvedValue(undefined),
       failInitialization: jest.fn().mockResolvedValue(undefined),
       completeInitialization: jest.fn().mockResolvedValue(undefined),
+    };
+    const configService = {
+      get: jest.fn().mockReturnValue('test-bootstrap-key'),
     };
     const service = new SetupService(
       setupStore as any,
       state as any,
       { hash: jest.fn().mockResolvedValue('hash') } as any,
       { invalidate: jest.fn() } as any,
-      { get: jest.fn().mockReturnValue('test-bootstrap-key') } as any,
+      configService as any,
     );
-    return { service, setupStore };
+    return { service, setupStore, state, configService };
   }
 
   afterAll(() => {
@@ -77,5 +82,76 @@ describe('SetupService legal placeholder production gate', () => {
     expect(setupStore.initialize).toHaveBeenCalledWith(
       expect.not.objectContaining({ legalDocuments: expect.anything() }),
     );
+  });
+
+  it('reports a ready preflight when setup can start', async () => {
+    const { service } = buildService();
+
+    await expect(service.getPreflight()).resolves.toMatchObject({
+      ready: true,
+      initialized: false,
+      systemState: SystemState.UNINITIALIZED,
+      setupState: SystemState.UNINITIALIZED,
+      hasPlatformSetup: false,
+      hasSuperAdmin: false,
+      bootstrapKeyConfigured: true,
+      bootstrapConfigured: true,
+      countryPacksAvailable: true,
+      countryPackReady: true,
+      conflicts: [],
+      blockingIssues: [],
+    });
+  });
+
+  it('reports a super admin conflict before platform setup', async () => {
+    const { service, setupStore } = buildService();
+    setupStore.hasSuperAdmin.mockResolvedValue(true);
+
+    await expect(service.getPreflight()).resolves.toMatchObject({
+      ready: false,
+      initialized: false,
+      conflicts: ['super_admin_exists_before_setup'],
+      blockingIssues: [
+        expect.objectContaining({ code: 'super_admin_exists_before_setup' }),
+      ],
+    });
+  });
+
+  it('reports an initialized platform conflict', async () => {
+    const { service, setupStore, state } = buildService();
+    setupStore.getPlatformSetup.mockResolvedValue({
+      platformName: 'Platform',
+      supportEmail: 'support@example.com',
+      logoUrl: null,
+      primaryCountry: 'CH',
+      initializedAt: '2026-05-31T00:00:00.000Z',
+    });
+    state.getState.mockResolvedValue({ state: SystemState.READY });
+
+    await expect(service.getPreflight()).resolves.toMatchObject({
+      ready: false,
+      initialized: true,
+      hasPlatformSetup: true,
+      systemState: SystemState.READY,
+      conflicts: ['platform_already_initialized'],
+      blockingIssues: [
+        expect.objectContaining({ code: 'platform_already_initialized' }),
+      ],
+    });
+  });
+
+  it('reports a missing bootstrap key conflict without exposing secrets', async () => {
+    const { service, configService } = buildService();
+    configService.get.mockReturnValue('');
+
+    await expect(service.getPreflight()).resolves.toMatchObject({
+      ready: false,
+      bootstrapKeyConfigured: false,
+      bootstrapConfigured: false,
+      conflicts: ['bootstrap_key_missing'],
+      blockingIssues: [
+        expect.objectContaining({ code: 'bootstrap_key_missing' }),
+      ],
+    });
   });
 });

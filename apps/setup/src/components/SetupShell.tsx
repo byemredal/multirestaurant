@@ -3,6 +3,7 @@
 import { usePathname } from 'next/navigation';
 import type { ReactNode } from 'react';
 import { setupAppName } from '@/lib/config';
+import { useSetup } from '@/lib/setup-context';
 import { Logo } from '@lieferzonen/ui';
 import { defaultLogoDataUrl } from '@lieferzonen/assets';
 
@@ -49,6 +50,7 @@ const MARKER_BY_STATE: Record<StepState, string> = {
 
 export function SetupShell({ children }: { children: ReactNode }) {
   const pathname = usePathname();
+  const { draftRestored, draftDiscarded, reset } = useSetup();
   const current = activeIndex(pathname);
   // On the intro screen nothing is "in progress" yet.
   const stepNumber = current < 0 ? 0 : current + 1;
@@ -147,6 +149,34 @@ export function SetupShell({ children }: { children: ReactNode }) {
                       width: `${(stepNumber / SETUP_STEPS.length) * 100}%`,
                     }}
                   />
+                </div>
+              </div>
+            ) : null}
+            {draftRestored || draftDiscarded ? (
+              <div
+                className={[
+                  'mb-5 rounded border px-[13px] py-[11px] text-[12.5px] leading-[1.5]',
+                  draftRestored
+                    ? 'border-success-border bg-success-soft text-success'
+                    : 'border-line-strong bg-surface-muted text-ink-soft',
+                ].join(' ')}
+                role="status"
+              >
+                <div className="flex items-start justify-between gap-3 max-[520px]:flex-col">
+                  <span>
+                    {draftRestored
+                      ? 'Yarım kalan kurulum taslağı geri yüklendi. Güvenlik nedeniyle admin şifresi ve bootstrap anahtarı yeniden girilmelidir.'
+                      : 'Eski veya bozuk kurulum taslağı temizlendi. Baştan devam edebilirsiniz.'}
+                  </span>
+                  {draftRestored ? (
+                    <button
+                      type="button"
+                      className="shrink-0 text-[12px] font-semibold underline underline-offset-2"
+                      onClick={reset}
+                    >
+                      Taslağı temizle ve baştan başla
+                    </button>
+                  ) : null}
                 </div>
               </div>
             ) : null}

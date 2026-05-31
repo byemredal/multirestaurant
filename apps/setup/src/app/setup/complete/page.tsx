@@ -19,45 +19,67 @@ import {
 
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
+const UNKNOWN_SETUP_ERROR =
+  'Kurulum sırasında beklenmeyen bir sorun oluştu.';
+
 const ERROR_COPY: Record<string, string> = {
   api_unreachable:
     'Arka uç API\'sine ulaşılamadı. Çalışır durumda olduğundan emin olun ve tekrar deneyin.',
   invalid_bootstrap_key:
-    'Bootstrap anahtarı reddedildi. Anahtarı kontrol edin ve tekrar deneyin.',
+    'Bootstrap anahtarı hatalı. Lütfen deployment ortamındaki BOOTSTRAP_KEY değerini kontrol edin.',
   bootstrap_key_not_configured:
     'Kurulum yapılamıyor: sunucuda hiçbir BOOTSTRAP_KEY yapılandırılmamış.',
   setup_disabled:
     'Kurulum devre dışı bırakıldı: platform zaten başlatılmış veya kurulum kilitlenmiş olabilir.',
+  platform_already_initialized:
+    'Platform zaten kurulmuş. Setup tekrar çalıştırılamaz.',
   already_initialized:
-    'Platform zaten başlatılmış görünüyor. Kurulum tamamlanmış olabilir.',
+    'Platform zaten kurulmuş. Setup tekrar çalıştırılamaz.',
+  setup_in_progress:
+    'Platform kurulumu şu anda devam ediyor. Lütfen biraz sonra tekrar deneyin.',
   initialization_in_progress:
-    'Başlatma işlemi zaten devam ediyor olabilir. Birkaç dakika bekleyin ve tekrar deneyin.',
+    'Platform kurulumu şu anda devam ediyor. Lütfen biraz sonra tekrar deneyin.',
   invalid_input:
     'Girdi doğrulanamadı. Lütfen sağladığınız bilgileri gözden geçirin ve tekrar deneyin.',
   rate_limited: 'Çok fazla başarısız deneme oldu. Lütfen birkaç dakika bekleyin ve tekrar deneyin.',
+  super_admin_exists_before_setup:
+    'Setup tamamlanmadan önce bir süper admin hesabı bulundu. Bu durum seed veya yarım kurulumdan kaynaklanabilir.',
   super_admin_exists:
-    'Bir süper yönetici hesabı zaten mevcut (büyük olasılıkla seed/demo verisinden). Kurulum tamamlanamıyor.',
+    'Setup tamamlanmadan önce bir süper admin hesabı bulundu. Bu durum seed veya yarım kurulumdan kaynaklanabilir.',
+  country_pack_conflict:
+    'Seçilen ülke paketi mevcut kurulumla uyuşmuyor.',
+  no_country_packs:
+    'Seçilen ülke paketi mevcut kurulumla uyuşmuyor.',
   preflight_failed: 'Kurulum ön kontrolü yapılamadı. Lütfen tekrar deneyin.',
-  initialize_failed: 'Platform başlatılamadı. Lütfen sağladığınız bilgileri gözden geçirin ve tekrar deneyin.',
+  initialize_failed: UNKNOWN_SETUP_ERROR,
+  unknown: UNKNOWN_SETUP_ERROR,
 };
 
 /** User-facing copy for each preflight conflict code. */
 const CONFLICT_COPY: Record<string, string> = {
+  platform_already_initialized:
+    'Platform zaten kurulmuş. Setup tekrar çalıştırılamaz.',
   already_initialized:
-    'Platform zaten kurulmuş görünüyor. Yönetici paneline giriş yapabilirsiniz.',
+    'Platform zaten kurulmuş. Setup tekrar çalıştırılamaz.',
+  setup_in_progress:
+    'Platform kurulumu şu anda devam ediyor. Lütfen biraz sonra tekrar deneyin.',
   initialization_in_progress:
-    'Başlatma şu anda devam ediyor. Birkaç dakika sonra tekrar deneyin.',
+    'Platform kurulumu şu anda devam ediyor. Lütfen biraz sonra tekrar deneyin.',
+  super_admin_exists_before_setup:
+    'Setup tamamlanmadan önce bir süper admin hesabı bulundu. Bu durum seed veya yarım kurulumdan kaynaklanabilir.',
   super_admin_exists:
-    'Bir süper yönetici hesabı zaten mevcut (büyük olasılıkla seed/demo verisinden). ' +
-    'Bu yüzden kurulum tamamlanamıyor; veritabanını sıfırlayın ya da mevcut hesapla giriş yapın.',
+    'Setup tamamlanmadan önce bir süper admin hesabı bulundu. Bu durum seed veya yarım kurulumdan kaynaklanabilir.',
   bootstrap_key_missing:
     'Sunucuda BOOTSTRAP_KEY yapılandırılmamış. Kuruluma devam etmeden önce ortam değişkenini ayarlayın.',
+  country_pack_conflict:
+    'Seçilen ülke paketi mevcut kurulumla uyuşmuyor.',
   no_country_packs:
-    'Hiç ülke paketi yüklenemedi. Kurulum yapılandırması eksik görünüyor.',
+    'Seçilen ülke paketi mevcut kurulumla uyuşmuyor.',
+  unknown: UNKNOWN_SETUP_ERROR,
 };
 
 function conflictCopy(code: string): string {
-  return CONFLICT_COPY[code] ?? `Çözülmemiş kurulum çakışması: ${code}.`;
+  return CONFLICT_COPY[code] ?? CONFLICT_COPY.unknown;
 }
 
 function countryName(code: string): string {
@@ -276,7 +298,9 @@ export default function CompleteStepPage() {
           ))}
         </ul>
         <div className="mt-7 flex justify-between gap-3 max-[520px]:flex-col-reverse">
-          {preflight.conflicts.includes('already_initialized') ? (
+          {preflight.conflicts.some((code) =>
+            ['already_initialized', 'platform_already_initialized'].includes(code),
+          ) ? (
             <a
               className={setupButtonClass({ variant: 'primary' })}
               href={adminLoginUrl}
