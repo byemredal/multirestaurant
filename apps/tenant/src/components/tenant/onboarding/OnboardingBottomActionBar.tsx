@@ -21,7 +21,7 @@ export function OnboardingBottomActionBar({
 }: OnboardingBottomActionBarProps) {
   return (
     <div className="sticky bottom-0 -mx-5 mt-10 border-t border-ink-100 bg-white/95 px-5 py-4 backdrop-blur sm:static sm:mx-0 sm:border-0 sm:bg-transparent sm:px-0 sm:pb-0">
-      <div className="mx-auto flex w-full max-w-[320px] flex-col items-stretch gap-2.5">
+      <div className="ml-auto flex w-full flex-col items-stretch gap-2.5 sm:max-w-[360px]">
         <Button
           type="button"
           onClick={onPrimary}

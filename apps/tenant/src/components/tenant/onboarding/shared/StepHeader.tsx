@@ -32,12 +32,12 @@ export function StepHeader({
           : 'bg-ink-50 text-ink-500 ring-1 ring-ink-200';
 
   return (
-    <div className="mb-9 text-center">
+    <div className="mb-8 text-left">
       <h2 className="text-[27px] font-semibold leading-tight text-ink-900 sm:text-[32px]">
         {title}
       </h2>
-      <p className="mx-auto mt-3 max-w-[580px] text-[14px] leading-6 text-ink-500">{description}</p>
-      <div className="mt-5 inline-flex flex-wrap items-center justify-center gap-3 text-[11px] text-ink-400">
+      <p className="mt-3 max-w-[680px] text-[14px] leading-6 text-ink-500">{description}</p>
+      <div className="mt-5 inline-flex flex-wrap items-center gap-3 text-[11px] text-ink-400">
         <span className={`rounded-[4px] px-2.5 py-1 font-medium ${tone}`}>
           {STEP_STATUS_LABELS[status] ?? status}
         </span>

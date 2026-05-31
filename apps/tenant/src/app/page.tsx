@@ -539,7 +539,7 @@ export default function TenantEntryPage() {
 
         {/* ── Form + steps split ───────────────────────────────────────── */}
         <section className="bg-ink-50">
-          <div className="mx-auto grid max-w-[1280px] gap-10 px-4 py-20 sm:px-6 lg:grid-cols-[1fr_minmax(0,540px)] lg:gap-12 lg:px-8">
+          <div className="mx-auto grid max-w-[1360px] gap-8 px-4 py-16 sm:px-6 lg:grid-cols-[minmax(320px,0.85fr)_minmax(0,640px)] lg:gap-10 lg:px-8 lg:py-20">
             {/* Left: how to start */}
             <div className="flex flex-col">
               <p className="text-[12px] font-semibold uppercase tracking-[0.18em] text-primary-700">
@@ -553,7 +553,23 @@ export default function TenantEntryPage() {
                 operasyona kesintisiz akış.
               </p>
 
-              <div className="relative mt-10 aspect-[4/3] w-full overflow-hidden rounded-3xl bg-ink-100">
+              <div className="mt-8 rounded-[8px] border border-ink-200 bg-white p-5 shadow-card">
+                <PlatformLogo apiBaseUrl={apiBaseUrl} height={38} />
+                <p className="mt-4 text-[14px] leading-6 text-ink-600">
+                  {platformName} ekibi, basvuru boyunca telefon dogrulama, belge kontrolu ve
+                  restoran aktivasyonunu ayni onboarding akisi icinde toplar.
+                </p>
+                <div className="mt-5 grid gap-3 text-[13px] text-ink-700">
+                  {['Devam linki otomatik olusur', 'Belgeler daha sonra guvenli sekilde yuklenir', 'Onaydan sonra sifre kurulumu acilir'].map((item) => (
+                    <div key={item} className="flex items-center gap-2">
+                      <DotCheck />
+                      <span>{item}</span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+
+              <div className="relative mt-6 aspect-[4/3] w-full overflow-hidden rounded-[8px] bg-ink-100">
                 <Image
                   src={IMG_STEPS}
                   alt="Aydınlık restoran iç mekanında müşteri ve şef"
@@ -586,7 +602,7 @@ export default function TenantEntryPage() {
             {/* Right: registration form */}
             <div
               id="tenant-register-form"
-              className="rounded-3xl border border-ink-200 bg-white p-6 shadow-card sm:p-8"
+              className="rounded-[8px] border border-ink-200 bg-white p-4 shadow-card sm:p-6"
             >
               <div className="flex items-center gap-2">
                 <span className="h-2 w-2 rounded-full bg-primary" />

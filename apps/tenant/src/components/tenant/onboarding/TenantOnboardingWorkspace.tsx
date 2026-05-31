@@ -297,9 +297,9 @@ export default function TenantOnboardingWorkspace({
   if (!workspace && (loading || resolvedSession?.redirectStep)) {
     return (
       <div className="min-h-screen bg-[#f3f5f8] p-3 sm:p-6 lg:p-10">
-        <section className="box-border mx-auto min-h-[calc(100vh-1.5rem)] max-w-[1280px] overflow-hidden rounded-[8px] border border-[#e6eaf0] bg-white sm:min-h-[calc(100vh-3rem)] lg:min-h-[calc(100vh-5rem)]">
+        <section className="box-border mx-auto min-h-[calc(100vh-1.5rem)] max-w-[1440px] overflow-hidden rounded-[8px] border border-[#e6eaf0] bg-white sm:min-h-[calc(100vh-3rem)] lg:min-h-[calc(100vh-5rem)]">
           <header className="flex h-[72px] items-center border-b border-[#e6eaf0] px-6 sm:px-10">
-            <PlatformLogo apiBaseUrl={apiBaseUrl} height={28} />
+            <PlatformLogo apiBaseUrl={apiBaseUrl} height={34} />
           </header>
           <div className="flex min-h-[420px] items-center justify-center">
             <span className="h-7 w-7 animate-spin rounded-full border-2 border-primary border-t-transparent" />
@@ -315,7 +315,7 @@ export default function TenantOnboardingWorkspace({
       <div className="min-h-screen bg-[#f3f5f8] p-3 sm:p-6 lg:p-10">
         <section className="mx-auto max-w-[560px] overflow-hidden rounded-[8px] border border-[#e6eaf0] bg-white">
           <header className="flex h-[72px] items-center border-b border-[#e6eaf0] px-6 sm:px-10">
-            <PlatformLogo apiBaseUrl={apiBaseUrl} height={28} />
+            <PlatformLogo apiBaseUrl={apiBaseUrl} height={34} />
           </header>
           <div className="px-6 py-10 text-center sm:px-10 sm:py-12">
             <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-full bg-warning-50 text-[22px] font-bold text-warning-700">
@@ -356,9 +356,9 @@ export default function TenantOnboardingWorkspace({
 
   return (
     <div className="min-h-screen bg-[#f3f5f8] p-3 sm:p-6 lg:p-10">
-      <section className="box-border mx-auto flex min-h-[calc(100vh-1.5rem)] w-full max-w-[1280px] flex-col overflow-hidden rounded-[8px] border border-[#e6eaf0] bg-white shadow-[0_20px_55px_rgba(15,23,42,0.06)] sm:min-h-[calc(100vh-3rem)] lg:min-h-[calc(100vh-5rem)]">
+      <section className="box-border mx-auto flex min-h-[calc(100vh-1.5rem)] w-full max-w-[1440px] flex-col overflow-hidden rounded-[8px] border border-[#e6eaf0] bg-white shadow-[0_20px_55px_rgba(15,23,42,0.06)] sm:min-h-[calc(100vh-3rem)] lg:min-h-[calc(100vh-5rem)]">
         <header className="flex h-[72px] min-w-0 shrink-0 items-center justify-between gap-4 border-b border-[#e6eaf0] px-5 sm:px-10 lg:px-12">
-          <PlatformLogo apiBaseUrl={apiBaseUrl} height={28} />
+          <PlatformLogo apiBaseUrl={apiBaseUrl} height={34} />
           <div
             aria-label="Seçili dil"
             className="inline-flex h-10 shrink-0 items-center gap-2 rounded-[4px] border border-[#dfe4ea] bg-white px-3 text-[13px] font-medium text-ink-700"
@@ -368,7 +368,7 @@ export default function TenantOnboardingWorkspace({
           </div>
         </header>
 
-        <div className="flex min-w-0 flex-1 flex-col overflow-hidden lg:grid lg:grid-cols-[minmax(0,1fr)_320px]">
+        <div className="flex min-w-0 flex-1 flex-col overflow-hidden lg:grid lg:grid-cols-[minmax(0,1fr)_360px]">
           <div className="min-w-0 overflow-hidden border-b border-[#e6eaf0] px-5 py-4 lg:hidden">
             <div className="grid gap-3 sm:grid-cols-2">
               {progressGroups.map((group) => (
@@ -414,7 +414,7 @@ export default function TenantOnboardingWorkspace({
           </div>
 
           <main className="order-2 min-w-0 overflow-hidden px-5 py-8 sm:px-10 sm:py-10 lg:order-1 lg:px-12 lg:py-14 xl:px-20">
-            <div className={`mx-auto box-border w-full [&_input]:box-border [&_select]:box-border [&_textarea]:box-border ${widerContentStep ? 'max-w-[820px]' : 'max-w-[650px]'}`}>
+            <div className={`mx-auto box-border w-full [&_input]:box-border [&_select]:box-border [&_textarea]:box-border ${widerContentStep ? 'max-w-[960px]' : 'max-w-[760px]'}`}>
               <TenantContinuationBanner stateToken={workspace.stateToken} stepKey={activeStep} />
 
               {workspace.application.status === 'revision_required' && (

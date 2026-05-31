@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useSearchParams } from 'next/navigation';
-import { Button, Card, FileDropzone, Input } from '@lieferzonen/ui';
+import { Button, Card } from '@lieferzonen/ui';
 import {
   getTenantOnboardingConsents,
   uploadTenantOnboardingDocumentByStateToken,
@@ -16,6 +16,11 @@ import { OnboardingBottomActionBar } from './OnboardingBottomActionBar';
 import { getDocumentsVerificationCopy } from './onboarding-country-pack';
 import { StepHeader } from './shared/StepHeader';
 import { useOnboardingActionGuard } from './hooks/useOnboardingActionGuard';
+import {
+  PartnerFileDropzone,
+  PartnerInlineAlert,
+  PartnerTextField,
+} from './shared/PartnerFormPrimitives';
 
 type DocumentsVerificationStepProps = {
   resolvedSession: TenantOnboardingResolvedSession | null;
@@ -151,9 +156,7 @@ export function DocumentsVerificationStep({
       />
 
       <div className="grid gap-5">
-        <div className="rounded-[8px] border border-primary-100 bg-primary-50 px-4 py-4 text-[13px] leading-6 text-primary-700">
-          {copy.countryNote}
-        </div>
+        <PartnerInlineAlert tone="info">{copy.countryNote}</PartnerInlineAlert>
 
         <section className="rounded-[8px] border border-ink-200 bg-white p-4">
           <div className="flex flex-wrap items-center justify-between gap-3">
@@ -229,7 +232,7 @@ export function DocumentsVerificationStep({
             </label>
             <label className="block">
               <span className="mb-2 block text-[13px] font-semibold text-ink-700">Varsa geçerlilik bitiş tarihi</span>
-              <Input
+              <PartnerTextField
                 type="date"
                 value={expiresAt}
                 onChange={(event) => setExpiresAt(event.target.value)}
@@ -237,12 +240,14 @@ export function DocumentsVerificationStep({
               />
             </label>
           </div>
-          <FileDropzone
+          <PartnerFileDropzone
             accept=".pdf,.jpg,.jpeg,.png"
             maxSizeMb={10}
             file={file}
             onFile={setFile}
+            onClear={() => setFile(null)}
             disabled={uploading}
+            uploading={uploading}
             className="mt-4"
           />
           <div className="mt-4 flex justify-end">
