@@ -51,6 +51,16 @@ describe('SetupService legal placeholder production gate', () => {
 
   it('keeps development setup usable with explicitly marked placeholder text', async () => {
     process.env.NODE_ENV = 'development';
+    delete process.env.ALLOW_PLACEHOLDER_LEGAL_CONTENT;
+    const { service, setupStore } = buildService();
+
+    await service.initialize(dto);
+    expect(setupStore.initialize).toHaveBeenCalledTimes(1);
+  });
+
+  it('allows explicitly acknowledged placeholder legal content for local production bootstrap', async () => {
+    process.env.NODE_ENV = 'production';
+    process.env.ALLOW_PLACEHOLDER_LEGAL_CONTENT = 'true';
     const { service, setupStore } = buildService();
 
     await service.initialize(dto);
@@ -59,6 +69,7 @@ describe('SetupService legal placeholder production gate', () => {
 
   it('no longer passes a legacy legalDocuments payload to setup initialization (Slice 7B)', async () => {
     process.env.NODE_ENV = 'development';
+    delete process.env.ALLOW_PLACEHOLDER_LEGAL_CONTENT;
     const { service, setupStore } = buildService();
 
     await service.initialize(dto);

@@ -29,6 +29,8 @@ name: lieferzonen-prod
 
 services:
   postgres:
+    ports:
+      - "15432:5432" # REMOVED in prod — internal network only
     environment:
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}
     restart: unless-stopped
@@ -109,6 +111,7 @@ services:
       STRIPE_PUBLISHABLE_KEY: ${STRIPE_PUBLISHABLE_KEY:-}
       STRIPE_WEBHOOK_SECRET: ${STRIPE_WEBHOOK_SECRET:-}
       WEB_APP_BASE_URL: ${WEB_APP_BASE_URL:?WEB_APP_BASE_URL is required}
+      ALLOW_PLACEHOLDER_LEGAL_CONTENT: ${ALLOW_PLACEHOLDER_LEGAL_CONTENT:-false}
     depends_on:
       builder:
         condition: service_completed_successfully

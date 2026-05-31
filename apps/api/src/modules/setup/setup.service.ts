@@ -165,8 +165,11 @@ export class SetupService {
       const primaryCountry = dto.primaryCountry.toUpperCase();
       const pack = getCountryPack(primaryCountry);
       const countryDefaults = resolveCountryDefaults(primaryCountry);
+      const allowPlaceholderLegalContent =
+        process.env.ALLOW_PLACEHOLDER_LEGAL_CONTENT === 'true';
       if (
         process.env.NODE_ENV === 'production' &&
+        !allowPlaceholderLegalContent &&
         pack.legalDocuments.some((document) =>
           /placeholder|taslak|non-production|production de/i.test(
             `${document.placeholderTitle} ${document.placeholderBody}`,
