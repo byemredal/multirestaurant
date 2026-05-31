@@ -223,6 +223,31 @@ describe('TenantStaffService', () => {
       ).rejects.toThrow(/do not belong to this tenant/);
     });
 
+    it('update: accepts a same-tenant defaultStoreId + store assignments', async () => {
+      const { service, staffAuthStore } = makeService({ storeOwnership: 'all-mine' });
+      await service.update(tenantId, invitedStaff.id, {
+        defaultStoreId: 'b0000000-0000-4000-8000-000000000001',
+        stores: [
+          { storeId: 'b0000000-0000-4000-8000-000000000001', role: 'cashier' },
+        ],
+      });
+      expect(staffAuthStore.update).toHaveBeenCalledWith(
+        invitedStaff.id,
+        expect.objectContaining({
+          defaultStoreId: 'b0000000-0000-4000-8000-000000000001',
+        }),
+      );
+      expect(staffAuthStore.replaceMemberships).toHaveBeenCalledWith(
+        invitedStaff.id,
+        tenantId,
+        expect.arrayContaining([
+          expect.objectContaining({
+            storeId: 'b0000000-0000-4000-8000-000000000001',
+          }),
+        ]),
+      );
+    });
+
     it('deactivate: sets isActive=false + suspended', async () => {
       const { service, staffAuthStore } = makeService();
       await service.deactivate(tenantId, invitedStaff.id);

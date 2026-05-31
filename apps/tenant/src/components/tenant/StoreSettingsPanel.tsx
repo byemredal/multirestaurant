@@ -39,6 +39,7 @@ type GeneralForm = {
   logoUrl: string;
   bannerUrl: string;
   currencyCode: string;
+  acceptingOrders: boolean;
 };
 
 type TaxForm = {
@@ -106,6 +107,7 @@ function emptyGeneralForm(): GeneralForm {
     logoUrl: '',
     bannerUrl: '',
     currencyCode: '',
+    acceptingOrders: true,
   };
 }
 
@@ -333,6 +335,7 @@ export default function StoreSettingsPanel({
       logoUrl,
       bannerUrl,
       currencyCode: setting.currencyCode || platformCurrency,
+      acceptingOrders: setting.acceptingOrders ?? true,
     });
     setGeneralSaveState('idle');
   }
@@ -366,6 +369,7 @@ export default function StoreSettingsPanel({
         primaryLanguage: generalForm.primaryLanguage.trim() || 'tr',
         serviceMode: generalForm.serviceMode,
         currencyCode: generalForm.currencyCode.trim() || platformCurrency,
+        acceptingOrders: generalForm.acceptingOrders,
         advancedOptionsJson: {
           themeKey: generalForm.themeKey.trim() || 'classic-light',
           logoUrl: generalForm.logoUrl.trim() || null,
@@ -610,6 +614,21 @@ export default function StoreSettingsPanel({
               idleLabel="Operasyonu kaydet"
             />
             <div className="border-t border-[#f0e9dc] pt-3">
+              <div className="mb-3">
+                <Checkbox
+                  label="Sipariş kabulü"
+                  checked={generalForm.acceptingOrders}
+                  onChange={(event) =>
+                    setGeneralForm((current) => ({
+                      ...current,
+                      acceptingOrders: event.target.checked,
+                    }))
+                  }
+                />
+                <p className="mt-1 text-[11.5px] text-[#a8a29e]">
+                  Kapalıyken restoran listelenebilir ancak siparişe uygun gösterilmez.
+                </p>
+              </div>
               <p className="mb-2 text-[12px] font-semibold uppercase tracking-[0.06em] text-[#a8a29e]">
                 Vitrin
               </p>

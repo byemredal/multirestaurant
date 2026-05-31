@@ -120,6 +120,9 @@ export class StoresService {
       status: StoreStatus.DRAFT,
       onboardingStatus: StoreOnboardingStatus.PROFILE_PENDING,
       isActive: true,
+      // DB column defaults to TRUE (the INSERT omits it); mirror that here so the
+      // returned entity matches the persisted row.
+      acceptingOrders: true,
       addressLine1: dto.addressLine1?.trim() || null,
       addressLine2: dto.addressLine2?.trim() || null,
       city: dto.city?.trim() || null,
@@ -480,20 +483,25 @@ export class StoresService {
     const stores = (await this.databaseService
       .prepare(
         `SELECT r.*,
-                COUNT(DISTINCT dz."id") AS "deliveryZoneCount",
+                COUNT(DISTINCT sa."id") AS "serviceAreaCount",
                 COUNT(DISTINCT roh."id") AS "openHourCount",
-                MIN(dz."deliveryFee") AS "deliveryFee",
-                MIN(dz."minimumOrderAmount") AS "minimumOrderAmount",
-                MIN(dz."estimatedDeliveryMinutes") AS "estimatedDeliveryMinutes"
+                MIN(sa."deliveryFee") AS "deliveryFee",
+                MIN(sa."minimumOrderAmount") AS "minimumOrderAmount",
+                MIN(sa."estimatedDeliveryMinutes") AS "estimatedDeliveryMinutes"
          FROM "Store" r
-         LEFT JOIN "StoreDeliveryZone" dz
-           ON dz."storeId" = r."id"
+         -- Canonical coverage: active StoreServiceArea rows, matched against
+         -- StoreCoveragePostalCode when a postal-code filter is supplied. This
+         -- is the same source of truth /discover uses (see CoverageService).
+         LEFT JOIN "StoreServiceArea" sa
+           ON sa."storeId" = r."id"
+          AND sa."isActive" = TRUE
           AND (
             $postalCode::text IS NULL
             OR EXISTS (
               SELECT 1
-              FROM jsonb_array_elements_text(dz."postalCodes"::jsonb) AS postal_code(value)
-              WHERE postal_code.value = $postalCode::text
+              FROM "StoreCoveragePostalCode" cpc
+              WHERE cpc."serviceAreaId" = sa."id"
+                AND cpc."postalCode" = $postalCode::text
             )
           )
          LEFT JOIN "StoreOpeningHour" roh
@@ -531,15 +539,15 @@ export class StoresService {
          HAVING (
              $postalCode::text IS NULL
              OR $mode <> 'delivery'
-             OR COUNT(DISTINCT dz."id") > 0
+             OR COUNT(DISTINCT sa."id") > 0
            )
            AND (
              $freeDelivery = FALSE
-             OR COALESCE(MIN(dz."deliveryFee"), 0) = 0
+             OR COALESCE(MIN(sa."deliveryFee"), 0) = 0
            )
            AND (
              $maxMinimumOrder::numeric IS NULL
-             OR COALESCE(MIN(dz."minimumOrderAmount"), 0) <= $maxMinimumOrder::numeric
+             OR COALESCE(MIN(sa."minimumOrderAmount"), 0) <= $maxMinimumOrder::numeric
            )
            AND (
              $openNow = FALSE
@@ -588,12 +596,15 @@ export class StoresService {
     const store = (await this.databaseService
       .prepare(
         `SELECT r.*,
-                COUNT(DISTINCT dz."id") AS "deliveryZoneCount",
-                MIN(dz."deliveryFee") AS "deliveryFee",
-                MIN(dz."minimumOrderAmount") AS "minimumOrderAmount",
-                MIN(dz."estimatedDeliveryMinutes") AS "estimatedDeliveryMinutes"
+                COUNT(DISTINCT sa."id") AS "serviceAreaCount",
+                MIN(sa."deliveryFee") AS "deliveryFee",
+                MIN(sa."minimumOrderAmount") AS "minimumOrderAmount",
+                MIN(sa."estimatedDeliveryMinutes") AS "estimatedDeliveryMinutes"
          FROM "Store" r
-         LEFT JOIN "StoreDeliveryZone" dz ON dz."storeId" = r."id"
+         -- Canonical coverage: active StoreServiceArea rows (same source as
+         -- /discover). Legacy StoreDeliveryZone is no longer read here.
+         LEFT JOIN "StoreServiceArea" sa
+           ON sa."storeId" = r."id" AND sa."isActive" = TRUE
          WHERE r."id" = $id AND r."status" = $status AND r."isActive" = TRUE
          GROUP BY r."id"
          LIMIT 1`,
@@ -876,6 +887,38 @@ export class StoresService {
   }
 
   /**
+   * Minimal, ownership-checked setter for the operational `acceptingOrders`
+   * switch (MR-DB-HARDENING-01 Slice 1B). The `ownerTenantId` predicate in the
+   * UPDATE is the cross-tenant guard: a row owned by a different tenant simply
+   * does not match, so the method returns `null` and the caller surfaces a
+   * not-found. Returns the refreshed owned store on success.
+   */
+  async updateAcceptingOrders(
+    storeId: string,
+    ownerTenantId: string,
+    acceptingOrders: boolean,
+  ): Promise<Store | null> {
+    const result = await this.databaseService
+      .prepare(
+        `UPDATE "Store"
+         SET "acceptingOrders" = $acceptingOrders, "updatedAt" = $updatedAt
+         WHERE "id" = $id AND "ownerTenantId" = $ownerTenantId`,
+      )
+      .run({
+        $acceptingOrders: acceptingOrders,
+        $updatedAt: new Date().toISOString(),
+        $id: storeId,
+        $ownerTenantId: ownerTenantId,
+      });
+
+    if ((result.rowCount ?? 0) === 0) {
+      return null;
+    }
+
+    return this.getOwnedStore(storeId, ownerTenantId);
+  }
+
+  /**
    * Lightweight orderability check. A store is orderable when it is
    * published (`status = active`) and operationally switched on (`isActive`).
    */
@@ -1104,6 +1147,7 @@ export class StoresService {
       status: store.status as StoreStatus,
       onboardingStatus: store.onboardingStatus as StoreOnboardingStatus,
       isActive: Boolean(store.isActive),
+      acceptingOrders: Boolean(store.acceptingOrders),
       addressLine1: store.addressLine1,
       addressLine2: store.addressLine2,
       city: store.city,
@@ -1231,14 +1275,20 @@ export class StoresService {
     normalizedPostalCode: string | null,
     currency: string,
   ) {
-    const supportsDelivery = Number(store.deliveryZoneCount ?? 0) > 0;
+    // A store that is not accepting orders is never surfaced as orderable/open,
+    // mirroring /discover's `not_accepting_orders` availability semantics.
+    const acceptingOrders = Boolean(store.acceptingOrders);
+    const supportsDelivery =
+      acceptingOrders && Number(store.serviceAreaCount ?? 0) > 0;
     const supportsCollection =
+      acceptingOrders &&
       Boolean(store.postalCode) &&
       (normalizedPostalCode === null ||
         store.postalCode === normalizedPostalCode);
 
     return {
       ...this.mapStore(store),
+      acceptingOrders,
       supportsDelivery,
       supportsCollection,
       deliveryFee:
@@ -1279,12 +1329,13 @@ interface StoreRow {
   latitude: number | null;
   longitude: number | null;
   phoneNumber: string | null;
+  acceptingOrders: boolean | number;
   createdAt: string;
   updatedAt: string;
 }
 
 interface StoreListRow extends StoreRow {
-  deliveryZoneCount?: number;
+  serviceAreaCount?: number;
   openHourCount?: number;
   deliveryFee?: number | null;
   minimumOrderAmount?: number | null;

@@ -42,6 +42,13 @@ export class PublicStoreDto {
   @ApiProperty({ example: 'ready_for_review' })
   onboardingStatus: string;
 
+  @ApiProperty({
+    example: true,
+    description:
+      'Whether the store is currently accepting orders. When false, the store is not surfaced as orderable/open (supportsDelivery and supportsCollection are forced to false).',
+  })
+  acceptingOrders: boolean;
+
   @ApiProperty({ example: true })
   supportsDelivery: boolean;
 

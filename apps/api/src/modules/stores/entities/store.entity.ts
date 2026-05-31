@@ -53,6 +53,12 @@ export interface Store {
   status: StoreStatus;
   onboardingStatus: StoreOnboardingStatus;
   isActive: boolean;
+  /**
+   * Operational order-acceptance switch. When false the store stays listable
+   * (browse) but the public storefront does not surface it as orderable/open.
+   * See MR-DB-HARDENING-01 Slice 1 (public read path) / Slice 1B (this setter).
+   */
+  acceptingOrders: boolean;
   addressLine1: string | null;
   addressLine2: string | null;
   city: string | null;

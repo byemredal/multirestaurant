@@ -69,8 +69,11 @@ export class StoreSettingsService {
   }
 
   async getStoreSetting(storeId: string, tenantId: string) {
-    await this.ensureOwnedStore(storeId, tenantId);
-    return this.store.getOrCreateStoreSetting(storeId);
+    const store = await this.ensureOwnedStore(storeId, tenantId);
+    const setting = await this.store.getOrCreateStoreSetting(storeId);
+    // Additive: surface the operational order-acceptance switch alongside the
+    // general settings record without changing its existing shape.
+    return { ...setting, acceptingOrders: store.acceptingOrders };
   }
 
   async upsertStoreSetting(
@@ -78,14 +81,31 @@ export class StoreSettingsService {
     tenantId: string,
     dto: UpdateStoreSettingDto,
   ) {
-    await this.ensureOwnedStore(storeId, tenantId);
+    const store = await this.ensureOwnedStore(storeId, tenantId);
     const existing = await this.store.getOrCreateStoreSetting(storeId);
 
-    return this.store.upsertStoreSetting(storeId, {
+    const setting = await this.store.upsertStoreSetting(storeId, {
       defaultCurrencyId: existing.defaultCurrencyId,
       defaultLanguageId: existing.defaultLanguageId,
       advancedOptionsJson: dto.advancedOptionsJson ?? existing.advancedOptionsJson,
     });
+
+    // The operational switch lives on the Store row itself; update it through
+    // the ownership-checked stores setter only when the caller supplied it.
+    let acceptingOrders = store.acceptingOrders;
+    if (dto.acceptingOrders !== undefined) {
+      const updated = await this.storesService.updateAcceptingOrders(
+        storeId,
+        tenantId,
+        dto.acceptingOrders,
+      );
+      if (!updated) {
+        throw new NotFoundException('Store could not be found for this tenant.');
+      }
+      acceptingOrders = updated.acceptingOrders;
+    }
+
+    return { ...setting, acceptingOrders };
   }
 
   async upsertStoreLocalization(

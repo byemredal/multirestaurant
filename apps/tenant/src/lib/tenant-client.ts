@@ -101,6 +101,12 @@ export type TenantStoreSetting = {
     | 'delivery_and_pickup'
     | 'reservation_only';
   advancedOptionsJson: Record<string, unknown>;
+  /**
+   * Operational order-acceptance switch (Store.acceptingOrders). When false the
+   * store stays listable but the public storefront does not show it as
+   * orderable/open. Surfaced/updated through the general settings endpoint.
+   */
+  acceptingOrders: boolean;
   createdAt: string;
   updatedAt: string;
 };
@@ -172,7 +178,11 @@ export function updateTenantStoreSettings(
   input: Partial<
     Pick<
       TenantStoreSetting,
-      'primaryLanguage' | 'currencyCode' | 'serviceMode' | 'advancedOptionsJson'
+      | 'primaryLanguage'
+      | 'currencyCode'
+      | 'serviceMode'
+      | 'advancedOptionsJson'
+      | 'acceptingOrders'
     >
   >,
 ) {
