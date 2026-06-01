@@ -1051,9 +1051,9 @@ function DeliveryZonesSection({
   const countryCode = pack?.country ?? '';
   const postalHint =
     countryCode === 'TR'
-      ? '5 haneli posta kodları, ör. 34758, 34000'
+      ? 'TR için 5 haneli posta kodları; virgül, boşluk veya yeni satırla ayırın. Ör. 34758, 34000'
       : countryCode === 'CH'
-        ? '4 haneli posta kodları, ör. 8003, 8004'
+        ? 'CH için 4 haneli posta kodları; virgül, boşluk veya yeni satırla ayırın. Ör. 8003, 8004'
         : 'Posta kodlarını virgül veya yeni satırla ayırın.';
 
   const [zones, setZones] = useState<TenantDeliveryZone[]>([]);
@@ -1173,7 +1173,7 @@ function DeliveryZonesSection({
   return (
     <SectionCard
       title="Teslimat bölgeleri"
-      description="Aynı teslimat ücreti, süre ve minimum siparişi paylaşan posta kodlarını bölge olarak gruplayın."
+      description={`Aynı teslimat ücreti, süre ve minimum siparişi paylaşan posta kodlarını bölge olarak gruplayın. Ülke platform ülkesine sabittir${countryCode ? ` (${countryCode})` : ''}.`}
       toolbar={
         !draft && !loading ? (
           <Button variant="ghost" onClick={openCreate}>

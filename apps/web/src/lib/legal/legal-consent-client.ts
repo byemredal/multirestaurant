@@ -1,4 +1,5 @@
 import { apiClient } from '@/lib/api/api-client';
+import { webAuthedFetch } from '@/lib/api/authed-fetch';
 import { apiBaseUrl } from '@/lib/config';
 
 const API_BASE_URL = apiBaseUrl;
@@ -231,15 +232,13 @@ export async function createOrderLegalAcceptance(input: {
   distanceSalesContractVersionId: string;
   preInformationFormVersionId: string;
 }): Promise<void> {
-  const result = await apiClient({
+  const result = await webAuthedFetch('/checkout/legal-acceptance', {
     method: 'POST',
-    url: `${API_BASE_URL}/checkout/legal-acceptance`,
-    token: input.token,
-    body: {
+    body: JSON.stringify({
       orderId: input.orderId,
       distanceSalesContractVersionId: input.distanceSalesContractVersionId,
       preInformationFormVersionId: input.preInformationFormVersionId,
-    },
+    }),
   });
   if (!result.ok) {
     throw new Error(

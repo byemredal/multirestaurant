@@ -29,6 +29,9 @@ function getSeedPhone(workspace: TenantOnboardingWorkspace) {
 
 function formatSendError(error: unknown) {
   if (error instanceof PhoneCodeDeliveryError) {
+    if (error.code === 'otp_provider_unavailable') {
+      return 'SMS gönderimi şu anda yapılandırılmamış. Lütfen sistem yöneticisiyle iletişime geçin.';
+    }
     return 'Doğrulama kodu şu anda gönderilemiyor. Lütfen daha sonra tekrar deneyin veya destek ekibiyle iletişime geçin.';
   }
   const message = error instanceof Error ? error.message : 'Kod gönderilemedi.';
@@ -142,7 +145,7 @@ export function PhoneVerificationStep({
             disabled={sending || workspace.phoneVerification?.verified}
           />
           <span className="mt-2 block text-[12px] leading-5 text-ink-500">
-            SMS entegrasyonu bağlanana kadar kod geliştirme amaçlı mevcut e-posta/log yöntemiyle üretilir.
+            Kod gönderimi yalnızca yapılandırılmış doğrulama sağlayıcısı hazır olduğunda çalışır.
           </span>
         </label>
       </div>

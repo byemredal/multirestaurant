@@ -6,8 +6,7 @@ import Link from 'next/link';
 import HomeHeader from '@/components/shell/HomeHeader';
 import { useCart, type CartServiceType } from '@/lib/cart/cart-context';
 import { readAuthSession } from '@/lib/storage/auth-session';
-import { apiClient } from '@/lib/api/api-client';
-import { apiBaseUrl } from '@/lib/config';
+import { isAuthExpiredError, webAuthedFetch } from '@/lib/api/authed-fetch';
 import { createStripeCheckoutSession } from '@/lib/payments/payment-client';
 import {
   createOrderLegalAcceptance,
@@ -15,8 +14,6 @@ import {
   pickOrderAcceptanceVersionIds,
   type LegalDocumentBundle,
 } from '@/lib/legal/legal-consent-client';
-
-const BASE_URL = apiBaseUrl;
 
 type BlockingIssue = {
   code: string;
@@ -55,6 +52,43 @@ type ReadinessResult = {
   missingLegalDocuments?: string[];
   commerce?: ReadinessCommerce | null;
 };
+
+function getResponseMessage(data: unknown, fallback: string): string {
+  if (data && typeof data === 'object') {
+    const raw = data as { error?: { message?: unknown }; message?: unknown };
+    if (typeof raw.error?.message === 'string' && raw.error.message) {
+      return raw.error.message;
+    }
+    if (typeof raw.message === 'string' && raw.message) {
+      return raw.message;
+    }
+  }
+  return fallback;
+}
+
+async function fetchCheckoutReadiness(): Promise<ReadinessResult> {
+  const response = await webAuthedFetch('/orders/checkout-readiness', {
+    method: 'POST',
+  });
+  if (!response.ok) {
+    throw new Error('checkout_readiness_failed');
+  }
+  return (await response.json()) as ReadinessResult;
+}
+
+async function createOrderFromCart(): Promise<{ order: { id: string } }> {
+  const response = await webAuthedFetch('/orders', {
+    method: 'POST',
+    body: JSON.stringify({}),
+  });
+  const payload = await response.json().catch(() => null);
+  if (!response.ok) {
+    throw new Error(
+      getResponseMessage(payload, 'Sipariş oluşturulamadı. Lütfen tekrar deneyin.'),
+    );
+  }
+  return payload as { order: { id: string } };
+}
 
 function BackIcon() {
   return (
@@ -156,29 +190,20 @@ export default function CheckoutPage() {
   useEffect(() => {
     if (!isAuthenticated || cart.items.length === 0) return;
 
-    const session = readAuthSession();
-    if (!session) return;
-
     setReadinessLoading(true);
     setReadinessError(null);
 
-    apiClient({
-      method: 'POST',
-      url: `${BASE_URL}/orders/checkout-readiness`,
-      token: session.accessToken,
-    })
-      .then((res) => {
-        if (res.ok) {
-          const result = res.data as ReadinessResult;
-          setReadiness(result);
-          if (result.commerce?.deliveryDistanceKm != null) {
-            setDistanceInput(String(result.commerce.deliveryDistanceKm));
-          }
-        } else {
-          setReadinessError('Sepet durumu kontrol edilemedi.');
+    fetchCheckoutReadiness()
+      .then((result) => {
+        setReadiness(result);
+        if (result.commerce?.deliveryDistanceKm != null) {
+          setDistanceInput(String(result.commerce.deliveryDistanceKm));
         }
       })
-      .catch(() => setReadinessError('Bağlantı hatası. Lütfen tekrar deneyin.'))
+      .catch((error) => {
+        if (isAuthExpiredError(error)) return;
+        setReadinessError('Sepet durumu kontrol edilemedi. Lütfen tekrar deneyin.');
+      })
       .finally(() => setReadinessLoading(false));
   }, [
     isAuthenticated,
@@ -209,25 +234,19 @@ export default function CheckoutPage() {
     // 1. Create the order — snapshotted from the active cart. Service type,
     //    delivery distance and payment method are resolved server-side from
     //    the synced cart, so no order body is needed here.
-    const res = await apiClient({
-      method: 'POST',
-      url: `${BASE_URL}/orders`,
-      token: session.accessToken,
-      body: {},
-    });
-
-    if (!res.ok) {
-      const raw = res.data as { error?: { message?: string }; message?: string } | null;
-      const msg =
-        (typeof raw?.error?.message === 'string' && raw.error.message) ||
-        (typeof raw?.message === 'string' && raw.message) ||
-        'Sipariş oluşturulamadı. Lütfen tekrar deneyin.';
-      setSubmitError(msg);
+    let data: { order: { id: string } };
+    try {
+      data = await createOrderFromCart();
+    } catch (orderError) {
+      if (isAuthExpiredError(orderError)) return;
+      setSubmitError(
+        orderError instanceof Error
+          ? orderError.message
+          : 'Sipariş oluşturulamadı. Lütfen tekrar deneyin.',
+      );
       setSubmitting(false);
       return;
     }
-
-    const data = res.data as { order: { id: string } };
     const orderId = data.order.id;
 
     // 2. Record OrderLegalAcceptance. Required before the order can move past
@@ -241,7 +260,8 @@ export default function CheckoutPage() {
         preInformationFormVersionId:
           acceptanceVersionIds.preInformationFormVersionId,
       });
-    } catch {
+    } catch (legalError) {
+      if (isAuthExpiredError(legalError)) return;
       setSubmitError(
         'Sipariş oluşturuldu ancak yasal onay kaydedilemedi. Lütfen sipariş sayfasından tekrar deneyin.',
       );
@@ -254,7 +274,15 @@ export default function CheckoutPage() {
     clearCart();
 
     // 4. Open a Stripe Checkout session and redirect to the hosted page.
-    const payment = await createStripeCheckoutSession(session.accessToken, orderId);
+    let payment;
+    try {
+      payment = await createStripeCheckoutSession(session.accessToken, orderId);
+    } catch (paymentError) {
+      if (isAuthExpiredError(paymentError)) return;
+      setSubmitError('Ödeme başlatılamadı. Lütfen tekrar deneyin.');
+      setSubmitting(false);
+      return;
+    }
     if (payment.ok) {
       window.location.href = payment.url;
       return;

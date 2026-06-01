@@ -24,6 +24,9 @@ type OtpVerificationStepProps = {
 
 function formatResendError(error: unknown) {
   if (error instanceof PhoneCodeDeliveryError) {
+    if (error.code === 'otp_provider_unavailable') {
+      return 'SMS gönderimi şu anda yapılandırılmamış. Lütfen sistem yöneticisiyle iletişime geçin.';
+    }
     return 'Doğrulama kodu şu anda gönderilemiyor. Lütfen daha sonra tekrar deneyin.';
   }
   return error instanceof Error ? error.message : 'Kod yeniden gönderilemedi.';

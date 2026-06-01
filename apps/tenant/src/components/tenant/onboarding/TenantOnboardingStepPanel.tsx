@@ -154,6 +154,12 @@ function sanitizeOptional(v: string | null | undefined): string | undefined {
 function formatPhoneVerificationError(message: string) {
   const normalized = message.toLowerCase();
   if (
+    normalized.includes('otp_provider_unavailable') ||
+    normalized.includes('tenant_onboarding_phone_send_failed_503')
+  ) {
+    return 'SMS gönderimi şu anda yapılandırılmamış. Lütfen sistem yöneticisiyle iletişime geçin.';
+  }
+  if (
     normalized.includes('invalid phone verification code') ||
     normalized.includes('tenant_onboarding_phone_verify_failed_400')
   ) {
@@ -341,7 +347,8 @@ export function TenantOnboardingStepPanel({
         setPhoneCode(challenge.debugCode);
       }
     } catch (error) {
-      setPhoneVerificationError(error instanceof Error ? error.message : 'Kod gönderilemedi.');
+      const message = error instanceof Error ? error.message : 'Kod gönderilemedi.';
+      setPhoneVerificationError(formatPhoneVerificationError(message));
     } finally {
       setPhoneVerificationLoading(false);
     }
@@ -431,7 +438,7 @@ export function TenantOnboardingStepPanel({
                 ) : null}
               </div>
             ) : (
-              'SMS sağlayıcısı bağlanana kadar kod e-posta log aktarımı üzerinden üretilir. Arayüz gerçek doğrulama akışına hazırdır.'
+              'Kod gönderimi yalnızca yapılandırılmış doğrulama sağlayıcısı hazır olduğunda çalışır.'
             )}
           </div>
 
