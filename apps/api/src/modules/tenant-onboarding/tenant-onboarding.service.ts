@@ -140,6 +140,12 @@ const TERMINAL_CLOSED_STATUSES = new Set<TenantOnboardingApplicationStatus>([
   'suspended',
 ]);
 
+const DOCUMENT_UPLOAD_BLOCKING_STATUSES: ReadonlySet<TenantDocument['status']> = new Set([
+  'rejected',
+  'revision_requested',
+  'expired',
+]);
+
 @Injectable()
 export class TenantOnboardingService {
   private readonly logger = new Logger(TenantOnboardingService.name);
@@ -1798,7 +1804,13 @@ export class TenantOnboardingService {
     return {
       documentRequirements: {
         definitions: catalog.documents,
-        validationPolicy: catalog.documentValidationPolicy,
+        validationPolicy: {
+          ...catalog.documentValidationPolicy,
+          minimumRequiredDocuments: catalog.documents.filter((definition) => definition.required && !definition.guidanceOnly).length,
+          note: catalog.documents.some((definition) => definition.required && !definition.guidanceOnly)
+            ? 'Gondermeden once tum zorunlu belge tipleri icin guncel belge yukleyin.'
+            : 'Bu ulke paketi icin basvuruyu bloke eden zorunlu belge yok.',
+        },
       },
       consentDefinitions: catalog.consents,
       acceptedConsents,
@@ -2301,6 +2313,8 @@ export class TenantOnboardingService {
 
   async uploadDocument(tenantAccountId: string, dto: Dto.UploadTenantDocumentDto) {
     const application = await this.ensureEditableApplication(tenantAccountId);
+    const type = this.normalizeDocumentType(dto.type);
+    const isRequired = await this.resolveDocumentUploadIsRequired(type, dto.isRequired);
     const asset = await this.fileStorageService.registerTenantUpload({
       ownerTenantId: tenantAccountId,
       originalFileName: dto.fileName,
@@ -2308,14 +2322,14 @@ export class TenantOnboardingService {
       sizeBytes: dto.sizeBytes,
       publicUrl: dto.publicUrl,
     });
-    await this.store.markDocumentsNotCurrent(application.id, dto.type);
-    const version = (await this.store.getLatestDocumentVersion(application.id, dto.type)) + 1;
+    await this.store.markDocumentsNotCurrent(application.id, type);
+    const version = (await this.store.getLatestDocumentVersion(application.id, type)) + 1;
     const document = await this.store.createDocument({
       applicationId: application.id,
       fileAssetId: asset.id,
-      type: dto.type,
+      type,
       status: 'pending',
-      isRequired: dto.isRequired ?? true,
+      isRequired,
       version,
       isCurrent: true,
       uploadedAt: new Date(),
@@ -2344,6 +2358,8 @@ export class TenantOnboardingService {
     dto: Dto.UploadTenantDocumentFileDto,
   ) {
     const application = await this.ensureEditableApplication(tenantAccountId);
+    const type = this.normalizeDocumentType(dto.type);
+    const isRequired = await this.resolveDocumentUploadIsRequired(type, dto.isRequired);
     const asset = await this.fileStorageService.registerTenantUpload({
       ownerTenantId: tenantAccountId,
       originalFileName: file.originalname,
@@ -2351,14 +2367,14 @@ export class TenantOnboardingService {
       sizeBytes: file.size,
       publicUrl: file.path,
     });
-    await this.store.markDocumentsNotCurrent(application.id, dto.type);
-    const version = (await this.store.getLatestDocumentVersion(application.id, dto.type)) + 1;
+    await this.store.markDocumentsNotCurrent(application.id, type);
+    const version = (await this.store.getLatestDocumentVersion(application.id, type)) + 1;
     const document = await this.store.createDocument({
       applicationId: application.id,
       fileAssetId: asset.id,
-      type: dto.type,
+      type,
       status: 'pending',
-      isRequired: dto.isRequired ?? true,
+      isRequired,
       version,
       isCurrent: true,
       uploadedAt: new Date(),
@@ -2386,6 +2402,62 @@ export class TenantOnboardingService {
     const extension = extname(file.originalname).toLowerCase();
     if (!allowedExtensions?.includes(extension)) {
       throw new BadRequestException('Unsupported document file type. Allowed formats: PDF, JPG, JPEG, PNG.');
+    }
+  }
+
+  private normalizeDocumentType(type: string) {
+    const normalized = type.trim();
+    if (!normalized) {
+      throw new BadRequestException('Document type is required.');
+    }
+    return normalized;
+  }
+
+  private async resolveDocumentUploadIsRequired(type: string, fallback?: boolean) {
+    const activePack = await this.resolveActiveCountryPack();
+    const catalog = await this.resolveComplianceCatalog(activePack.country, activePack.language);
+    const matchingRequirements = catalog.documents.filter((definition) => definition.type === type);
+    if (matchingRequirements.length === 0) {
+      return fallback ?? true;
+    }
+    return matchingRequirements.some((definition) => definition.required && !definition.guidanceOnly);
+  }
+
+  private async getBlockingDocumentRequirementTypes() {
+    const activePack = await this.resolveActiveCountryPack();
+    const catalog = await this.resolveComplianceCatalog(activePack.country, activePack.language);
+    return Array.from(
+      new Set(
+        catalog.documents
+          .filter((definition) => definition.required && !definition.guidanceOnly)
+          .map((definition) => definition.type),
+      ),
+    );
+  }
+
+  private assertRequiredDocumentTypesSatisfied(
+    documents: TenantDocument[],
+    requiredTypes: string[],
+    options?: { requireApproved?: boolean },
+  ) {
+    const missingDocumentTypes = requiredTypes.filter((type) => {
+      const document = documents.find((entry) => entry.isCurrent && entry.type === type);
+      if (!document) {
+        return true;
+      }
+      if (options?.requireApproved) {
+        return document.status !== 'approved';
+      }
+      return DOCUMENT_UPLOAD_BLOCKING_STATUSES.has(document.status);
+    });
+
+    if (missingDocumentTypes.length > 0) {
+      throw new BadRequestException({
+        message: options?.requireApproved
+          ? 'Tum zorunlu belge tipleri onaylanmadan basvuru onaylanamaz.'
+          : 'Tum zorunlu belge tipleri icin guncel belge yuklenmelidir.',
+        missingDocumentTypes,
+      });
     }
   }
 
@@ -2749,9 +2821,15 @@ export class TenantOnboardingService {
   async approveApplication(applicationId: string, adminId: string, note?: { internalNote?: string; tenantVisibleNote?: string }) {
     const application = await this.requireApplication(applicationId);
     this.assertTransition(application.status, 'approved');
-    const currentRequiredDocuments = (await this.store.listDocuments(applicationId)).filter((document) => document.isCurrent && document.isRequired);
-    if (currentRequiredDocuments.some((document) => document.status !== 'approved')) {
-      throw new BadRequestException('All required current documents must be approved before approving the application.');
+    const documents = await this.store.listDocuments(applicationId);
+    const requiredTypes = await this.getBlockingDocumentRequirementTypes();
+    if (requiredTypes.length > 0) {
+      this.assertRequiredDocumentTypesSatisfied(documents, requiredTypes, { requireApproved: true });
+    } else {
+      const currentRequiredDocuments = documents.filter((document) => document.isCurrent && document.isRequired);
+      if (currentRequiredDocuments.some((document) => document.status !== 'approved')) {
+        throw new BadRequestException('All required current documents must be approved before approving the application.');
+      }
     }
     const updated = await this.store.updateApplicationStatus(application.id, {
       status: 'approved',
@@ -3193,11 +3271,20 @@ export class TenantOnboardingService {
       }
       case 'documents': {
         const documents = await this.store.listDocuments(applicationId);
+        const requiredTypes = await this.getBlockingDocumentRequirementTypes();
+        if (requiredTypes.length > 0) {
+          this.assertRequiredDocumentTypesSatisfied(documents, requiredTypes);
+          return;
+        }
         const currentRequiredDocuments = documents.filter((document) => document.isCurrent && document.isRequired);
         if (currentRequiredDocuments.length === 0) {
-          throw new BadRequestException('Belge adımını tamamlamadan önce en az bir zorunlu belge yüklenmelidir.');
+          return;
         }
-        if (currentRequiredDocuments.some((document) => ['rejected', 'revision_requested', 'expired'].includes(document.status))) {
+        if (
+          currentRequiredDocuments.some((document) =>
+            DOCUMENT_UPLOAD_BLOCKING_STATUSES.has(document.status),
+          )
+        ) {
           throw new BadRequestException('Belge adımı tamamlanmadan önce güncel zorunlu belgeler yeniden yüklenmelidir.');
         }
         return;
@@ -3279,19 +3366,28 @@ export class TenantOnboardingService {
   }
 
   private async assertReadyForSubmission(applicationId: string) {
-    const [steps, documents] = await Promise.all([
+    const [steps, documents, requiredDocumentTypes] = await Promise.all([
       this.store.listStepProgress(applicationId),
       this.store.listDocuments(applicationId),
+      this.getBlockingDocumentRequirementTypes(),
     ]);
     const incomplete = tenantOnboardingStepKeys
-      .filter((key) => key !== 'final_review')
+      .filter((key) => key !== 'final_review' && !(key === 'documents' && requiredDocumentTypes.length === 0))
       .some((key) => steps.find((step) => step.stepKey === key)?.status !== 'completed');
     if (incomplete) {
       throw new BadRequestException('Göndermeden önce tüm zorunlu başvuru adımları tamamlanmalıdır.');
     }
-    const currentRequiredDocuments = documents.filter((document) => document.isCurrent && document.isRequired);
-    if (currentRequiredDocuments.length === 0) {
-      throw new BadRequestException('Göndermeden önce en az bir güncel zorunlu belge yüklenmelidir.');
+    if (requiredDocumentTypes.length > 0) {
+      this.assertRequiredDocumentTypesSatisfied(documents, requiredDocumentTypes);
+    } else {
+      const currentRequiredDocuments = documents.filter((document) => document.isCurrent && document.isRequired);
+      if (
+        currentRequiredDocuments.some((document) =>
+          DOCUMENT_UPLOAD_BLOCKING_STATUSES.has(document.status),
+        )
+      ) {
+        throw new BadRequestException('Gondermeden once guncel zorunlu belgeler yeniden yuklenmelidir.');
+      }
     }
     const activePack = await this.resolveActiveCountryPack();
     const catalog = await this.resolveComplianceCatalog(

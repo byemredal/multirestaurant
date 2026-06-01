@@ -8,6 +8,7 @@ import {
   uploadTenantOnboardingDocumentByStateToken,
   type TenantOnboardingComplianceResult,
   type TenantOnboardingDocument,
+  type TenantOnboardingDocumentRequirement,
   type TenantOnboardingResolvedSession,
   type TenantOnboardingWorkspace,
 } from '@/lib/tenant-onboarding-client';
@@ -29,13 +30,33 @@ type DocumentsVerificationStepProps = {
   onNavigate: (url: string) => void;
 };
 
-const DOCUMENT_STATUS_COPY: Record<TenantOnboardingDocument['status'], { label: string; className: string }> = {
-  pending: { label: 'Yüklendi / inceleme bekliyor', className: 'bg-primary-50 text-primary-700' },
-  approved: { label: 'Onaylandı', className: 'bg-success-50 text-success-700' },
-  rejected: { label: 'Reddedildi', className: 'bg-danger-50 text-danger-700' },
-  revision_requested: { label: 'Yeniden yüklenmeli', className: 'bg-amber-50 text-amber-700' },
-  expired: { label: 'Süresi doldu', className: 'bg-amber-50 text-amber-700' },
+type UploadSlotState = {
+  file: File | null;
+  expiresAt: string;
+  uploading: boolean;
+  error: string | null;
 };
+
+const EMPTY_SLOT_STATE: UploadSlotState = {
+  file: null,
+  expiresAt: '',
+  uploading: false,
+  error: null,
+};
+
+const DOCUMENT_STATUS_COPY: Record<TenantOnboardingDocument['status'], { label: string; className: string }> = {
+  pending: { label: 'Yuklendi / inceleme bekliyor', className: 'bg-primary-50 text-primary-700' },
+  approved: { label: 'Onaylandi', className: 'bg-success-50 text-success-700' },
+  rejected: { label: 'Reddedildi', className: 'bg-danger-50 text-danger-700' },
+  revision_requested: { label: 'Yeniden yuklenmeli', className: 'bg-amber-50 text-amber-700' },
+  expired: { label: 'Suresi doldu', className: 'bg-amber-50 text-amber-700' },
+};
+
+const BLOCKING_DOCUMENT_STATUSES: ReadonlySet<TenantOnboardingDocument['status']> = new Set<TenantOnboardingDocument['status']>([
+  'rejected',
+  'revision_requested',
+  'expired',
+]);
 
 function currentDocuments(workspace: TenantOnboardingWorkspace) {
   return (
@@ -43,12 +64,41 @@ function currentDocuments(workspace: TenantOnboardingWorkspace) {
   ).filter((document) => document.isCurrent);
 }
 
-function requiredDocumentsSatisfied(documents: TenantOnboardingDocument[]) {
-  return documents.some(
-    (document) =>
-      document.isRequired &&
-      !['rejected', 'revision_requested', 'expired'].includes(document.status),
+function isBlockingRequirement(definition: TenantOnboardingDocumentRequirement) {
+  return definition.required && !definition.guidanceOnly;
+}
+
+function documentIsUsable(document: TenantOnboardingDocument | undefined) {
+  return Boolean(document && !BLOCKING_DOCUMENT_STATUSES.has(document.status));
+}
+
+function findDocumentForType(documents: TenantOnboardingDocument[], type: string) {
+  return documents.find((document) => document.type === type);
+}
+
+function requiredDocumentsSatisfied(
+  documents: TenantOnboardingDocument[],
+  definitions: TenantOnboardingDocumentRequirement[],
+) {
+  const requiredDefinitions = definitions.filter(isBlockingRequirement);
+  if (requiredDefinitions.length === 0) {
+    return true;
+  }
+
+  return requiredDefinitions.every((definition) =>
+    documentIsUsable(findDocumentForType(documents, definition.type)),
   );
+}
+
+function acceptedFormatsFor(definition: TenantOnboardingDocumentRequirement) {
+  const formats = definition.acceptedFormats.length > 0
+    ? definition.acceptedFormats
+    : ['pdf', 'jpg', 'jpeg', 'png'];
+  return formats.map((format) => `.${format.replace(/^\./, '').toLowerCase()}`).join(',');
+}
+
+function slotKeyFor(definition: TenantOnboardingDocumentRequirement) {
+  return definition.type;
 }
 
 export function DocumentsVerificationStep({
@@ -59,10 +109,7 @@ export function DocumentsVerificationStep({
 }: DocumentsVerificationStepProps) {
   const searchParams = useSearchParams();
   const returnToReview = searchParams.get('returnTo') === 'review';
-  const [file, setFile] = useState<File | null>(null);
-  const [documentType, setDocumentType] = useState<string>('');
-  const [expiresAt, setExpiresAt] = useState('');
-  const [uploading, setUploading] = useState(false);
+  const [uploadSlots, setUploadSlots] = useState<Record<string, UploadSlotState>>({});
   const [returningToReview, setReturningToReview] = useState(false);
   const [loadingRequirements, setLoadingRequirements] = useState(true);
   const [requirements, setRequirements] = useState<TenantOnboardingComplianceResult | null>(null);
@@ -74,9 +121,13 @@ export function DocumentsVerificationStep({
     [resolvedSession?.countryPack],
   );
   const documents = useMemo(() => currentDocuments(workspace), [workspace]);
-  const documentsSatisfied = useMemo(() => requiredDocumentsSatisfied(documents), [documents]);
   const status = workspace.steps.find((step) => step.stepKey === 'documents')?.status ?? 'in_progress';
   const documentDefinitions = requirements?.documentRequirements?.definitions ?? [];
+  const documentsSatisfied = useMemo(
+    () => requiredDocumentsSatisfied(documents, documentDefinitions),
+    [documents, documentDefinitions],
+  );
+  const hasAnyUploadingSlot = Object.values(uploadSlots).some((slot) => slot.uploading);
 
   useEffect(() => {
     const requestSequence = requestSequenceRef.current + 1;
@@ -90,14 +141,10 @@ export function DocumentsVerificationStep({
           return;
         }
         setRequirements(result);
-        const firstType = result.documentRequirements?.definitions[0]?.type;
-        if (firstType) {
-          setDocumentType((current) => current || firstType);
-        }
       })
       .catch((caught: unknown) => {
         if (requestSequence === requestSequenceRef.current) {
-          setError(caught instanceof Error ? caught.message : 'Belge gereksinimleri yüklenemedi.');
+          setError(caught instanceof Error ? caught.message : 'Belge gereksinimleri yuklenemedi.');
         }
       })
       .finally(() => {
@@ -107,33 +154,48 @@ export function DocumentsVerificationStep({
       });
   }, [workspace.stateToken]);
 
-  async function uploadDocument() {
-    if (!file) {
-      setError('Yüklemeden önce bir PDF veya görsel belge seçin.');
+  function updateSlot(type: string, input: Partial<UploadSlotState>) {
+    setUploadSlots((current) => ({
+      ...current,
+      [type]: {
+        ...(current[type] ?? EMPTY_SLOT_STATE),
+        ...input,
+      },
+    }));
+  }
+
+  async function uploadDocument(definition: TenantOnboardingDocumentRequirement) {
+    const type = slotKeyFor(definition);
+    const slot = uploadSlots[type] ?? EMPTY_SLOT_STATE;
+    if (!slot.file) {
+      updateSlot(type, { error: 'Yuklemeden once bir PDF veya gorsel belge secin.' });
       return;
     }
 
     await runOnce(async () => {
       let navigating = false;
-      setUploading(true);
+      updateSlot(type, { uploading: true, error: null });
       setError(null);
       try {
-        const result = await uploadTenantOnboardingDocumentByStateToken(workspace.stateToken, file, {
-          type: documentType,
-          isRequired: true,
-          expiresAt: expiresAt || undefined,
+        const result = await uploadTenantOnboardingDocumentByStateToken(workspace.stateToken, slot.file, {
+          type: definition.type,
+          isRequired: isBlockingRequirement(definition),
+          expiresAt: slot.expiresAt || undefined,
         });
         onWorkspaceResolved(result.workspace);
-        setFile(null);
+        updateSlot(type, { file: null, uploading: false, error: null });
         if (returnToReview) {
           navigating = true;
           onNavigate(getTenantOnboardingStepUrl(workspace.stateToken, 'review'));
         }
       } catch (caught) {
-        setError(caught instanceof Error ? caught.message : 'Belge yüklenemedi.');
+        updateSlot(type, {
+          uploading: false,
+          error: caught instanceof Error ? caught.message : 'Belge yuklenemedi.',
+        });
       } finally {
-        if (!navigating) {
-          setUploading(false);
+        if (navigating) {
+          updateSlot(type, { uploading: true });
         }
       }
     });
@@ -169,43 +231,12 @@ export function DocumentsVerificationStep({
             <span className={`rounded-full px-2.5 py-1 text-[11px] font-semibold ${
               documentsSatisfied ? 'bg-success-50 text-success-700' : 'bg-amber-50 text-amber-700'
             }`}>
-              {documentsSatisfied ? 'Tamamlandı' : 'Eksik'}
+              {documentsSatisfied ? 'Tamamlandi' : 'Eksik'}
             </span>
           </div>
           <p className="mt-3 rounded-[8px] bg-ink-50 px-3 py-2 text-[12px] leading-5 text-ink-600">
             {copy.reviewNote}
           </p>
-        </section>
-
-        <section className="rounded-[8px] border border-ink-200 bg-white p-4">
-          <h3 className="text-[15px] font-bold text-ink-900">Ülke paketine göre belge rehberi</h3>
-          <p className="mt-2 text-[12px] leading-5 text-ink-500">
-            Bu taslak kategoriler yalnızca yükleme seçimine rehberlik eder. Henüz ülkeye özgü nihai belge kümesi olarak uygulanmaz.
-          </p>
-          {loadingRequirements ? (
-            <p className="mt-4 text-[13px] text-ink-500">Belge rehberi yükleniyor...</p>
-          ) : (
-            <div className="mt-4 grid gap-3">
-              {documentDefinitions.map((definition) => {
-                const uploaded = documents.some((document) => document.type === definition.type);
-                return (
-                  <div key={definition.type} className="rounded-[8px] border border-ink-100 bg-ink-50 px-4 py-3">
-                    <div className="flex flex-wrap items-start justify-between gap-3">
-                      <div>
-                        <p className="text-[13px] font-semibold text-ink-800">{definition.label}</p>
-                        <p className="mt-1 text-[12px] text-ink-500">{definition.description}</p>
-                      </div>
-                      <span className={`rounded-full px-2.5 py-1 text-[11px] font-semibold ${
-                        uploaded ? 'bg-success-50 text-success-700' : 'bg-ink-100 text-ink-600'
-                      }`}>
-                        {uploaded ? 'Yüklendi' : 'Rehber'}
-                      </span>
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
-          )}
         </section>
 
         {error ? (
@@ -215,81 +246,95 @@ export function DocumentsVerificationStep({
         ) : null}
 
         <section className="rounded-[8px] border border-ink-200 bg-white p-4">
-          <h3 className="text-[15px] font-bold text-ink-900">Belge yükleyin</h3>
-          <div className="mt-4 grid gap-4 sm:grid-cols-2">
-            <label className="block">
-              <span className="mb-2 block text-[13px] font-semibold text-ink-700">Belge kategorisi</span>
-              <select
-                value={documentType}
-                onChange={(event) => setDocumentType(event.target.value)}
-                disabled={uploading}
-                className="h-11 w-full rounded-[8px] border border-ink-200 bg-white px-3 text-[14px] text-ink-800 outline-none focus:border-primary"
-              >
-                {documentDefinitions.map((option) => (
-                  <option key={option.type} value={option.type}>{option.label}</option>
-                ))}
-              </select>
-            </label>
-            <label className="block">
-              <span className="mb-2 block text-[13px] font-semibold text-ink-700">Varsa geçerlilik bitiş tarihi</span>
-              <PartnerTextField
-                type="date"
-                value={expiresAt}
-                onChange={(event) => setExpiresAt(event.target.value)}
-                disabled={uploading}
-              />
-            </label>
-          </div>
-          <PartnerFileDropzone
-            accept=".pdf,.jpg,.jpeg,.png"
-            maxSizeMb={10}
-            file={file}
-            onFile={setFile}
-            onClear={() => setFile(null)}
-            disabled={uploading}
-            uploading={uploading}
-            className="mt-4"
-          />
-          <div className="mt-4 flex justify-end">
-            <Button
-              type="button"
-              onClick={() => void uploadDocument()}
-              disabled={uploading || loadingRequirements || !documentType || !file || Boolean(resolvedSession?.redirectStep)}
-              className="rounded-[8px] bg-primary px-5 py-2.5 text-[14px] font-semibold text-white disabled:opacity-60"
-            >
-              {uploading ? 'Yükleniyor...' : 'Belgeyi yükle'}
-            </Button>
-          </div>
-        </section>
-
-        <section className="rounded-[8px] border border-ink-200 bg-white p-4">
-          <h3 className="text-[15px] font-bold text-ink-900">Güncel yüklenen belgeler</h3>
-          {documents.length === 0 ? (
+          <h3 className="text-[15px] font-bold text-ink-900">Belge yukleyin</h3>
+          {loadingRequirements ? (
+            <p className="mt-4 text-[13px] text-ink-500">Belge gereksinimleri yukleniyor...</p>
+          ) : documentDefinitions.length === 0 ? (
             <p className="mt-4 rounded-[8px] border border-dashed border-ink-200 bg-ink-50 px-4 py-4 text-[13px] text-ink-500">
-              Henüz güncel bir belge yüklenmedi.
+              Bu ulke paketi icin belge gereksinimi bulunmuyor.
             </p>
           ) : (
-            <div className="mt-4 grid gap-3">
-              {documents.map((document) => {
-                const statusCopy = DOCUMENT_STATUS_COPY[document.status];
+            <div className="mt-4 grid gap-4">
+              {documentDefinitions.map((definition, index) => {
+                const type = slotKeyFor(definition);
+                const slot = uploadSlots[type] ?? EMPTY_SLOT_STATE;
+                const uploaded = findDocumentForType(documents, definition.type);
+                const statusCopy = uploaded ? DOCUMENT_STATUS_COPY[uploaded.status] : null;
+                const required = isBlockingRequirement(definition);
+
                 return (
-                  <div key={document.id} className="rounded-[8px] border border-ink-100 bg-ink-50 px-4 py-3">
+                  <div key={`${type}:${index}`} className="rounded-[8px] border border-ink-200 bg-white p-4">
                     <div className="flex flex-wrap items-start justify-between gap-3">
-                      <div>
-                        <p className="text-[14px] font-semibold text-ink-800">{document.type}</p>
-                        <p className="mt-1 text-[12px] text-ink-500">
-                          Sürüm {document.version} - yüklenme tarihi {new Date(document.uploadedAt).toLocaleString('tr-TR')}
-                        </p>
+                      <div className="min-w-0">
+                        <p className="text-[14px] font-semibold text-ink-900">{definition.label}</p>
+                        <p className="mt-1 text-[12px] leading-5 text-ink-500">{definition.description}</p>
                       </div>
-                      <span className={`rounded-full px-2.5 py-1 text-[11px] font-semibold ${statusCopy.className}`}>
-                        {statusCopy.label}
-                      </span>
+                      <div className="flex flex-wrap gap-2">
+                        <span className={`rounded-full px-2.5 py-1 text-[11px] font-semibold ${
+                          required ? 'bg-amber-50 text-amber-700' : 'bg-ink-100 text-ink-600'
+                        }`}>
+                          {required ? 'Zorunlu' : 'Opsiyonel'}
+                        </span>
+                        {statusCopy ? (
+                          <span className={`rounded-full px-2.5 py-1 text-[11px] font-semibold ${statusCopy.className}`}>
+                            {statusCopy.label}
+                          </span>
+                        ) : null}
+                      </div>
                     </div>
-                    {document.rejectionReason ? (
-                      <p className="mt-3 rounded-[8px] bg-danger-50 px-3 py-2 text-[12px] text-danger-700">
-                        {document.rejectionReason}
+
+                    {uploaded ? (
+                      <div className="mt-3 rounded-[8px] bg-ink-50 px-3 py-2 text-[12px] leading-5 text-ink-600">
+                        <span className="font-semibold text-ink-800">Guncel belge:</span>{' '}
+                        {uploaded.type} - surum {uploaded.version} - {new Date(uploaded.uploadedAt).toLocaleString('tr-TR')}
+                        {uploaded.rejectionReason ? (
+                          <p className="mt-2 rounded-[8px] bg-danger-50 px-3 py-2 text-danger-700">
+                            {uploaded.rejectionReason}
+                          </p>
+                        ) : null}
+                      </div>
+                    ) : required ? (
+                      <p className="mt-3 rounded-[8px] bg-amber-50 px-3 py-2 text-[12px] text-amber-700">
+                        Bu belge tipi yuklenmeden basvuru gonderilemez.
                       </p>
                     ) : null}
+
+                    {slot.error ? (
+                      <div className="mt-3 rounded-[8px] border border-danger-200 bg-danger-50 px-3 py-2 text-[12px] text-danger-600">
+                        {slot.error}
+                      </div>
+                    ) : null}
+
+                    <div className="mt-4 grid gap-4 sm:grid-cols-[minmax(0,1fr)_220px]">
+                      <PartnerFileDropzone
+                        accept={acceptedFormatsFor(definition)}
+                        maxSizeMb={10}
+                        file={slot.file}
+                        onFile={(file) => updateSlot(type, { file, error: null })}
+                        onClear={() => updateSlot(type, { file: null })}
+                        disabled={slot.uploading || Boolean(resolvedSession?.redirectStep)}
+                        uploading={slot.uploading}
+                      />
+                      <div className="grid content-start gap-3">
+                        <label className="block">
+                          <span className="mb-2 block text-[13px] font-semibold text-ink-700">Varsa gecerlilik bitis tarihi</span>
+                          <PartnerTextField
+                            type="date"
+                            value={slot.expiresAt}
+                            onChange={(event) => updateSlot(type, { expiresAt: event.target.value })}
+                            disabled={slot.uploading || Boolean(resolvedSession?.redirectStep)}
+                          />
+                        </label>
+                        <Button
+                          type="button"
+                          onClick={() => void uploadDocument(definition)}
+                          disabled={slot.uploading || loadingRequirements || !slot.file || Boolean(resolvedSession?.redirectStep)}
+                          className="rounded-[8px] bg-primary px-5 py-2.5 text-[14px] font-semibold text-white disabled:opacity-60"
+                        >
+                          {slot.uploading ? 'Yukleniyor...' : uploaded ? 'Belgeyi degistir' : 'Belgeyi yukle'}
+                        </Button>
+                      </div>
+                    </div>
                   </div>
                 );
               })}
@@ -299,9 +344,9 @@ export function DocumentsVerificationStep({
 
         {documentsSatisfied && !returnToReview ? (
           <OnboardingBottomActionBar
-            primaryLabel="Kontrole dön"
+            primaryLabel="Kontrole don"
             onPrimary={returnToReviewPage}
-            primaryDisabled={uploading || returningToReview || Boolean(resolvedSession?.redirectStep)}
+            primaryDisabled={hasAnyUploadingSlot || returningToReview || Boolean(resolvedSession?.redirectStep)}
             primaryLoading={returningToReview}
           />
         ) : null}
