@@ -145,8 +145,8 @@ export class DiscoverRestaurantsDto {
   category?: string;
 
   @ApiPropertyOptional({
-    description: 'Comma-separated cuisine slugs; matches stores tagged with ANY.',
-    example: 'kebab,pizza',
+    description: 'Comma-separated cuisine IDs; legacy cuisine slugs are accepted too. Matches stores tagged with ANY.',
+    example: '1057,1082',
   })
   @Transform(({ value }) =>
     Array.isArray(value)

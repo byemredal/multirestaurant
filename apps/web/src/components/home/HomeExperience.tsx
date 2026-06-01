@@ -14,7 +14,7 @@
  */
 
 import { useEffect, useMemo, useState } from 'react';
-import { useRouter } from 'next/navigation';
+import { usePathname, useRouter, useSearchParams } from 'next/navigation';
 
 import { CookieConsentBar } from '@/components/cookie-consent-bar';
 import HomeHeader from '@/components/shell/HomeHeader';
@@ -31,6 +31,13 @@ import {
   type DiscoveryFilters,
   type DiscoveryState,
 } from '@/lib/discovery/discovery-types';
+import {
+  discoveryFiltersEqual,
+  hasActiveDiscoveryFilters,
+  parseDiscoveryFiltersFromSearchParams,
+  sanitizeFiltersForMode,
+  writeDiscoveryFiltersToSearchParams,
+} from '@/lib/discovery/discovery-filter-url';
 import {
   buildDiscoveryPath,
   findRegionBySlug,
@@ -84,18 +91,51 @@ function HomeContent({
   routeCity: string | null;
 }) {
   const router = useRouter();
+  const pathname = usePathname();
+  const searchParams = useSearchParams();
   const { hydrated, addressState, location, isAuthenticated } =
     useAddressContext();
 
   const [mode, setMode] = useState<FulfillmentMode>(initialMode);
-  const [filters, setFilters] = useState<DiscoveryFilters>(
-    DEFAULT_DISCOVERY_FILTERS,
+  const [filters, setFilters] = useState<DiscoveryFilters>(() =>
+    parseDiscoveryFiltersFromSearchParams(searchParams, initialMode),
   );
-  const [budgetId, setBudgetId] = useState('all');
   const [switcherOpen, setSwitcherOpen] = useState(false);
   const [filtersOpen, setFiltersOpen] = useState(false);
 
   const discovery = useDiscovery(filters);
+
+  useEffect(() => {
+    setMode(initialMode);
+  }, [initialMode]);
+
+  useEffect(() => {
+    const nextFilters = parseDiscoveryFiltersFromSearchParams(searchParams, initialMode);
+    setFilters((current) =>
+      discoveryFiltersEqual(current, nextFilters) ? current : nextFilters,
+    );
+  }, [initialMode, searchParams]);
+
+  useEffect(() => {
+    if (!routePostalCode) return;
+    const sanitized = sanitizeFiltersForMode(filters, mode);
+    if (!discoveryFiltersEqual(sanitized, filters)) {
+      setFilters(sanitized);
+      return;
+    }
+    const nextSearchParams = writeDiscoveryFiltersToSearchParams(
+      searchParams,
+      sanitized,
+      mode,
+    );
+    const currentQuery = searchParams.toString();
+    const nextQuery = nextSearchParams.toString();
+    if (currentQuery !== nextQuery) {
+      router.replace(nextQuery ? `${pathname}?${nextQuery}` : pathname, {
+        scroll: false,
+      });
+    }
+  }, [filters, mode, pathname, routePostalCode, router, searchParams]);
 
   // Authenticated users landing on `/` are routed to their default address.
   useEffect(() => {
@@ -125,22 +165,28 @@ function HomeContent({
   const [query, setQuery] = useState('');
   const [searchResults, setSearchResults] = useState<RegionSearchResult[]>([]);
   const [searchLoading, setSearchLoading] = useState(false);
+  const [searchError, setSearchError] = useState<string | null>(null);
 
   useEffect(() => {
     const needle = query.trim();
     if (!needle) {
       setSearchResults([]);
       setSearchLoading(false);
+      setSearchError(null);
       return;
     }
     const controller = new AbortController();
     const timer = window.setTimeout(async () => {
       setSearchLoading(true);
+      setSearchError(null);
       try {
         const response = await fetch(
           `/api/location-search?q=${encodeURIComponent(needle)}`,
           { signal: controller.signal },
         );
+        if (!response.ok) {
+          throw new Error('location_search_failed');
+        }
         const payload = (await response.json()) as {
           results?: RegionSearchResult[];
         };
@@ -148,6 +194,7 @@ function HomeContent({
       } catch (error) {
         if (!(error instanceof DOMException && error.name === 'AbortError')) {
           setSearchResults([]);
+          setSearchError('Konum araması şu anda çalışmıyor. Lütfen tekrar dene.');
         }
       } finally {
         setSearchLoading(false);
@@ -170,28 +217,34 @@ function HomeContent({
   };
 
   const updateFilters = (patch: Partial<DiscoveryFilters>) => {
-    setFilters((current) => ({ ...current, ...patch }));
+    setFilters((current) => sanitizeFiltersForMode({ ...current, ...patch }, mode));
   };
 
   const onBudgetChange = (id: string) => {
-    setBudgetId(id);
     const option = BUDGET_OPTIONS.find((item) => item.id === id);
     updateFilters({ maxMinimumOrder: option?.value ?? null });
   };
 
   const resetFilters = () => {
-    setFilters(DEFAULT_DISCOVERY_FILTERS);
-    setBudgetId('all');
+    setFilters(sanitizeFiltersForMode(DEFAULT_DISCOVERY_FILTERS, mode));
   };
 
   const changeMode = (next: FulfillmentMode) => {
     if (isNavigating) return;
     setMode(next);
+    setFilters((current) => sanitizeFiltersForMode(current, next));
     const postalCode = location?.postalCode ?? routePostalCode;
     if (postalCode) {
       setIsNavigating(true);
+      const nextFilters = sanitizeFiltersForMode(filters, next);
+      const nextSearchParams = writeDiscoveryFiltersToSearchParams(
+        searchParams,
+        nextFilters,
+        next,
+      );
+      const query = nextSearchParams.toString();
       router.push(
-        buildDiscoveryPath(next, postalCode, location?.city ?? routeCity),
+        `${buildDiscoveryPath(next, postalCode, location?.city ?? routeCity)}${query ? `?${query}` : ''}`,
       );
     }
   };
@@ -206,6 +259,7 @@ function HomeContent({
             query={query}
             onQueryChange={setQuery}
             searchLoading={searchLoading}
+            searchError={searchError}
             searchResults={searchResults}
             onSelectRegion={handleSelectRegion}
             navigating={isNavigating}
@@ -358,7 +412,7 @@ function HomeContent({
                               updateFilters({
                                 cuisines: active
                                   ? filters.cuisines.filter(
-                                      (slug) => slug !== facet.id,
+                                      (id) => id !== facet.id,
                                     )
                                   : [...filters.cuisines, facet.id],
                               })
@@ -388,14 +442,16 @@ function HomeContent({
                       type="button"
                       onClick={() => onBudgetChange(option.id)}
                       className={`flex w-full items-center gap-2.5 rounded-xl px-3 py-2 text-[14px] transition ${
-                        budgetId === option.id
-                          ? 'bg-primary-50 font-semibold text-primary-700'
+                          (filters.maxMinimumOrder === option.value ||
+                            (filters.maxMinimumOrder === null && option.value === null))
+                            ? 'bg-primary-50 font-semibold text-primary-700'
                           : 'text-ink-900 hover:bg-ink-50'
                       }`}
                     >
                       <span
                         className={`h-3.5 w-3.5 shrink-0 rounded-full border-2 ${
-                          budgetId === option.id
+                          (filters.maxMinimumOrder === option.value ||
+                            (filters.maxMinimumOrder === null && option.value === null))
                             ? 'border-primary bg-primary'
                             : 'border-ink-300'
                         }`}
@@ -467,6 +523,8 @@ function HomeContent({
                 error={discovery.error}
                 onRetry={discovery.refresh}
                 onChangeAddress={() => setSwitcherOpen(true)}
+                hasActiveFilters={hasActiveDiscoveryFilters(filters)}
+                onClearFilters={resetFilters}
               />
             </div>
           </div>

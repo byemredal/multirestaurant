@@ -1,8 +1,8 @@
 'use client';
 
 /**
- * Discovery restaurant list — renders every DISCOVERY_* state explicitly:
- * loading skeletons, error+retry, empty/no-coverage, and the ready grid.
+ * Discovery restaurant list: loading skeletons, error+retry, empty/no-coverage,
+ * filtered-empty, and ready grid.
  */
 
 import RestaurantCard from './RestaurantCard';
@@ -17,6 +17,8 @@ interface RestaurantListProps {
   error: string | null;
   onRetry: () => void;
   onChangeAddress: () => void;
+  hasActiveFilters?: boolean;
+  onClearFilters?: () => void;
 }
 
 const CARD_ACCENTS = [
@@ -34,6 +36,8 @@ export default function RestaurantList({
   error,
   onRetry,
   onChangeAddress,
+  hasActiveFilters = false,
+  onClearFilters,
 }: RestaurantListProps) {
   if (state === 'DISCOVERY_LOADING') {
     return (
@@ -52,10 +56,10 @@ export default function RestaurantList({
     return (
       <div className="rounded-3xl border border-danger-100 bg-white p-10 text-center shadow-card">
         <h3 className="text-[17px] font-bold text-ink-900">
-          Restoranlar yüklenemedi
+          Restoranlar yuklenemedi
         </h3>
         <p className="mx-auto mt-2 max-w-[420px] text-[14px] text-ink-500">
-          {error ?? 'Beklenmeyen bir hata oluştu.'}
+          {error ?? 'Beklenmeyen bir hata olustu.'}
         </p>
         <button
           type="button"
@@ -75,18 +79,19 @@ export default function RestaurantList({
           <PinOffIcon />
         </span>
         <h3 className="mt-4 text-[18px] font-bold text-ink-900">
-          Bu bölgeye teslimat yok
+          {hasActiveFilters ? 'Bu filtrelerle restoran bulunamadi' : 'Bu bolgeye teslimat yok'}
         </h3>
         <p className="mx-auto mt-2 max-w-[440px] text-[14px] leading-relaxed text-ink-500">
-          Seçtiğin konuma şu anda hizmet veren restoran bulunmuyor. Farklı bir
-          posta kodu veya adres dene.
+          {hasActiveFilters
+            ? 'Sectigin filtrelerle eslesen restoran yok. Filtreleri temizleyip tekrar deneyebilirsin.'
+            : 'Sectigin konuma su anda hizmet veren restoran bulunmuyor. Farkli bir posta kodu veya adres dene.'}
         </p>
         <button
           type="button"
-          onClick={onChangeAddress}
+          onClick={hasActiveFilters && onClearFilters ? onClearFilters : onChangeAddress}
           className="mt-5 inline-flex h-11 items-center rounded-full bg-primary px-6 text-[14px] font-semibold text-white transition hover:bg-primary-600"
         >
-          Adresi değiştir
+          {hasActiveFilters ? 'Filtreleri temizle' : 'Adresi degistir'}
         </button>
       </div>
     );
@@ -106,7 +111,6 @@ export default function RestaurantList({
     );
   }
 
-  // DISCOVERY_IDLE — the homepage hero owns this case.
   return null;
 }
 

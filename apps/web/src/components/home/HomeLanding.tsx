@@ -96,6 +96,7 @@ type Props = {
   query: string;
   onQueryChange: (next: string) => void;
   searchLoading: boolean;
+  searchError?: string | null;
   searchResults: RegionSearchResult[];
   onSelectRegion: (region: RegionSearchResult) => void;
   navigating?: boolean;
@@ -105,6 +106,7 @@ export default function HomeLanding({
   query,
   onQueryChange,
   searchLoading,
+  searchError = null,
   searchResults,
   onSelectRegion,
   navigating = false,
@@ -155,7 +157,7 @@ export default function HomeLanding({
   return (
     <div className="bg-white text-ink-900">
       {/* ── HERO ───────────────────────────────────────────────────────── */}
-      <section className="relative overflow-hidden">
+      <section className="relative overflow-visible">
         <div className="absolute inset-0 bg-gradient-to-b from-primary-50/60 via-white to-white" />
 
         <div className="relative mx-auto grid max-w-[1280px] gap-12 px-4 pb-14 pt-10 sm:px-6 lg:grid-cols-[1.05fr_1fr] lg:gap-14 lg:px-8 lg:pb-24 lg:pt-16">
@@ -180,7 +182,7 @@ export default function HomeLanding({
             </p>
 
             {/* ── Search box (UX-improved) ───────────────────────────── */}
-            <div className="relative mt-9 max-w-[560px]">
+            <div className="relative z-30 mt-9 max-w-[560px]">
               <label htmlFor={inputId} className="sr-only">
                 Adres veya posta kodu
               </label>
@@ -197,7 +199,7 @@ export default function HomeLanding({
                 <input
                   ref={inputRef}
                   id={inputId}
-                  type="search"
+                  type="text"
                   inputMode="search"
                   enterKeyHint="search"
                   role="combobox"
@@ -227,7 +229,7 @@ export default function HomeLanding({
                     <span aria-hidden className="mr-1 inline-block h-4 w-4 animate-spin rounded-full border-2 border-ink-200 border-t-primary" />
                   ) : null}
 
-                  {query ? (
+                  {query && !searchLoading ? (
                     <button
                       type="button"
                       aria-label="Aramayı temizle"
@@ -263,11 +265,17 @@ export default function HomeLanding({
               </div>
 
               {/* listbox */}
+              {searchError ? (
+                <p className="mt-2 rounded-2xl border border-danger-100 bg-danger-50 px-4 py-3 text-[13px] text-danger-700">
+                  {searchError}
+                </p>
+              ) : null}
+
               {showDropdown ? (
                 <div
                   id={listboxId}
                   role="listbox"
-                  className="absolute left-0 right-0 top-[calc(100%+8px)] z-20 overflow-hidden rounded-3xl border border-ink-100 bg-white shadow-pop"
+                  className="absolute left-0 right-0 top-[calc(100%+8px)] z-50 overflow-hidden rounded-3xl border border-ink-100 bg-white shadow-pop"
                 >
                   {searchLoading && limited.length === 0 ? (
                     <div className="px-5 py-4 text-[14px] text-ink-500">Aranıyor…</div>

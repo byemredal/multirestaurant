@@ -23,6 +23,7 @@ interface LocationInputProps {
   provider?: LocationSearchProvider;
   placeholder?: string;
   autoFocus?: boolean;
+  initialValue?: string;
   /** Disable the field while a selection is being processed. */
   busy?: boolean;
 }
@@ -34,17 +35,24 @@ export default function LocationInput({
   provider = defaultLocationProvider,
   placeholder = 'Posta kodu veya adres — örn. 6300 Zug',
   autoFocus = false,
+  initialValue = '',
   busy = false,
 }: LocationInputProps) {
   const inputId = useId();
   const listboxId = useId();
   const inputRef = useRef<HTMLInputElement>(null);
 
-  const [query, setQuery] = useState('');
+  const [query, setQuery] = useState(initialValue);
   const [suggestions, setSuggestions] = useState<LocationSuggestion[]>([]);
   const [loading, setLoading] = useState(false);
   const [open, setOpen] = useState(false);
   const [activeIndex, setActiveIndex] = useState(-1);
+
+  useEffect(() => {
+    if (!open) {
+      setQuery(initialValue);
+    }
+  }, [initialValue, open]);
 
   // Debounced provider search.
   useEffect(() => {
@@ -85,6 +93,13 @@ export default function LocationInput({
     setOpen(false);
     setSuggestions([]);
     onSelect(suggestion);
+  };
+
+  const clear = () => {
+    setQuery('');
+    setSuggestions([]);
+    setOpen(false);
+    inputRef.current?.focus();
   };
 
   const showDropdown = open && query.trim().length > 0;
@@ -131,7 +146,7 @@ export default function LocationInput({
         <input
           ref={inputRef}
           id={inputId}
-          type="search"
+          type="text"
           inputMode="search"
           autoComplete="off"
           spellCheck={false}
@@ -161,13 +176,24 @@ export default function LocationInput({
             className="mr-2 inline-block h-4 w-4 animate-spin rounded-full border-2 border-ink-200 border-t-primary"
           />
         )}
+        {query && !loading && !busy ? (
+          <button
+            type="button"
+            aria-label="Aramayı temizle"
+            onMouseDown={(event) => event.preventDefault()}
+            onClick={clear}
+            className="mr-1 inline-flex h-8 w-8 items-center justify-center rounded-full text-ink-500 transition hover:bg-ink-100 hover:text-ink-800"
+          >
+            <XIcon />
+          </button>
+        ) : null}
       </div>
 
       {showDropdown && (
         <div
           id={listboxId}
           role="listbox"
-          className="absolute left-0 right-0 top-[calc(100%+8px)] z-30 overflow-hidden rounded-2xl border border-ink-100 bg-white shadow-pop"
+          className="absolute left-0 right-0 top-[calc(100%+8px)] z-[70] overflow-hidden rounded-2xl border border-ink-100 bg-white shadow-pop"
         >
           {loading && suggestions.length === 0 ? (
             <p className="px-5 py-4 text-[14px] text-ink-500">Aranıyor…</p>
@@ -233,6 +259,23 @@ function PinIcon() {
     >
       <path d="M12 21s-6-4.35-6-10a6 6 0 1 1 12 0c0 5.65-6 10-6 10Z" />
       <circle cx="12" cy="11" r="2.5" />
+    </svg>
+  );
+}
+
+function XIcon() {
+  return (
+    <svg
+      aria-hidden="true"
+      className="h-3.5 w-3.5"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+    >
+      <path d="M18 6L6 18M6 6l12 12" />
     </svg>
   );
 }

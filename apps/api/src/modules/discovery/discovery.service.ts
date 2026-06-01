@@ -20,6 +20,7 @@ const SESSION_TTL_DAYS = 30;
 const DEFAULT_RESULT_LIMIT = 50;
 
 export interface StoreCuisineLite {
+  id: string;
   slug: string;
   name: string;
   emoji: string | null;
@@ -373,7 +374,7 @@ export class DiscoveryService {
     if (storeIds.length === 0) return {};
     const rows = (await this.databaseService
       .prepare(
-        `SELECT sc."storeId" AS "storeId", c."slug", c."name", c."emoji"
+        `SELECT sc."storeId" AS "storeId", c."id", c."slug", c."name", c."emoji"
          FROM "StoreCuisine" sc
          JOIN "Cuisine" c ON c."id" = sc."cuisineId"
          WHERE sc."storeId" = ANY($storeIds::uuid[]) AND c."isActive" = TRUE
@@ -381,6 +382,7 @@ export class DiscoveryService {
       )
       .all({ $storeIds: storeIds })) as Array<{
       storeId: string;
+      id: string;
       slug: string;
       name: string;
       emoji: string | null;
@@ -389,6 +391,7 @@ export class DiscoveryService {
     const result: Record<string, StoreCuisineLite[]> = {};
     for (const row of rows) {
       (result[row.storeId] ??= []).push({
+        id: row.id,
         slug: row.slug,
         name: row.name,
         emoji: row.emoji,
@@ -466,7 +469,7 @@ export class DiscoveryService {
     dto: DiscoverRestaurantsDto,
   ): ComposedEntry[] {
     const category = dto.category?.trim().toLowerCase() || null;
-    const cuisineSet = new Set((dto.cuisines ?? []).map((slug) => slug.toLowerCase()));
+    const cuisineSet = new Set((dto.cuisines ?? []).map((value) => value.toLowerCase()));
 
     return entries.filter((entry) => {
       const { coverage, availability, category: storeCategory, cuisines } =
@@ -482,7 +485,10 @@ export class DiscoveryService {
       if (category && storeCategory.toLowerCase() !== category) return false;
       if (
         cuisineSet.size > 0 &&
-        !cuisines.some((cuisine) => cuisineSet.has(cuisine.slug.toLowerCase()))
+        !cuisines.some((cuisine) =>
+          cuisineSet.has(cuisine.id.toLowerCase()) ||
+          cuisineSet.has(cuisine.slug.toLowerCase()),
+        )
       ) {
         return false;
       }
@@ -510,7 +516,7 @@ export class DiscoveryService {
         });
 
       for (const cuisine of entry.payload.cuisines) {
-        const cuisineKey = cuisine.slug.toLowerCase();
+        const cuisineKey = cuisine.id.toLowerCase();
         const bucket = cuisines.get(cuisineKey);
         if (bucket) bucket.count += 1;
         else

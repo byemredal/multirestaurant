@@ -112,7 +112,7 @@ interface BackendRestaurant {
   };
   reviewSummary: { averageRating: number | null; totalReviews: number };
   ranking: { position: number };
-  cuisines?: Array<{ slug: string; name: string; emoji: string | null }>;
+  cuisines?: Array<{ id?: string; slug: string; name: string; emoji: string | null }>;
 }
 
 // ─── Mappers ─────────────────────────────────────────────────────────────────
@@ -194,7 +194,12 @@ function toRestaurant(raw: BackendRestaurant): DiscoveryRestaurant {
       average: raw.reviewSummary.averageRating,
       count: raw.reviewSummary.totalReviews,
     },
-    cuisines: raw.cuisines ?? [],
+    cuisines: (raw.cuisines ?? []).map((cuisine) => ({
+      id: cuisine.id ?? cuisine.slug,
+      slug: cuisine.slug,
+      name: cuisine.name,
+      emoji: cuisine.emoji,
+    })),
     rankPosition: raw.ranking.position,
   };
 }

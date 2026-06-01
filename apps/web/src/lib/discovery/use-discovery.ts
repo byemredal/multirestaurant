@@ -1,14 +1,8 @@
 'use client';
 
 /**
- * Customer discovery — restaurant discovery hook.
- *
- * Owns the DISCOVERY-side state machine. Reads the active location from
- * `DiscoveryProvider` and fetches backend-driven results — it never filters or
- * ranks restaurants locally; filters are passed through as query params.
- *
- * Discovery states: DISCOVERY_IDLE · DISCOVERY_LOADING · DISCOVERY_EMPTY
- *                   DISCOVERY_READY · DISCOVERY_ERROR
+ * Customer discovery restaurant hook. It owns the DISCOVERY-side state machine
+ * and keeps loading distinct from empty/error states.
  */
 
 import { useCallback, useEffect, useState } from 'react';
@@ -24,6 +18,7 @@ import type {
 } from './discovery-types';
 
 const EMPTY_FACETS: DiscoveryFacets = { categories: [], cuisines: [] };
+const MIN_LOADING_MS = 180;
 
 export interface UseDiscoveryResult {
   state: DiscoveryState;
@@ -31,7 +26,6 @@ export interface UseDiscoveryResult {
   facets: DiscoveryFacets;
   meta: DiscoveryMeta | null;
   error: string | null;
-  /** Force a re-fetch for the current location + filters. */
   refresh: () => void;
 }
 
@@ -47,8 +41,14 @@ export function useDiscovery(filters: DiscoveryFilters): UseDiscoveryResult {
 
   const refresh = useCallback(() => setReloadTick((tick) => tick + 1), []);
 
-  const { openNow, freeDelivery, maxMinimumOrder, category, sort } = filters;
-  // Arrays need a stable primitive key for the effect dependency list.
+  const {
+    openNow,
+    freeDelivery,
+    maxMinimumOrder,
+    category,
+    sort,
+    deliveryProvider,
+  } = filters;
   const cuisinesKey = filters.cuisines.join(',');
 
   useEffect(() => {
@@ -64,8 +64,25 @@ export function useDiscovery(filters: DiscoveryFilters): UseDiscoveryResult {
     }
 
     const controller = new AbortController();
+    const startedAt = Date.now();
+    let settled = false;
     setState('DISCOVERY_LOADING');
     setError(null);
+
+    const finish = (callback: () => void) => {
+      const run = () => {
+        if (!controller.signal.aborted && !settled) {
+          settled = true;
+          callback();
+        }
+      };
+      const remaining = MIN_LOADING_MS - (Date.now() - startedAt);
+      if (remaining > 0) {
+        window.setTimeout(run, remaining);
+      } else {
+        run();
+      }
+    };
 
     discoverRestaurants({
       location,
@@ -74,6 +91,7 @@ export function useDiscovery(filters: DiscoveryFilters): UseDiscoveryResult {
         openNow,
         freeDelivery,
         maxMinimumOrder,
+        deliveryProvider,
         category,
         cuisines: cuisinesKey ? cuisinesKey.split(',') : [],
         sort,
@@ -81,23 +99,27 @@ export function useDiscovery(filters: DiscoveryFilters): UseDiscoveryResult {
       signal: controller.signal,
     })
       .then((result) => {
-        setRestaurants(result.restaurants);
-        setFacets(result.facets);
-        setMeta(result.meta);
-        setState(
-          result.restaurants.length === 0
-            ? 'DISCOVERY_EMPTY'
-            : 'DISCOVERY_READY',
-        );
+        finish(() => {
+          setRestaurants(result.restaurants);
+          setFacets(result.facets);
+          setMeta(result.meta);
+          setState(
+            result.restaurants.length === 0
+              ? 'DISCOVERY_EMPTY'
+              : 'DISCOVERY_READY',
+          );
+        });
       })
       .catch((cause: unknown) => {
         if (cause instanceof DOMException && cause.name === 'AbortError') {
           return;
         }
-        setRestaurants([]);
-        setMeta(null);
-        setError('Restoranlar şu anda yüklenemiyor. Lütfen tekrar deneyin.');
-        setState('DISCOVERY_ERROR');
+        finish(() => {
+          setRestaurants([]);
+          setMeta(null);
+          setError('Restoranlar su anda yuklenemiyor. Lutfen tekrar deneyin.');
+          setState('DISCOVERY_ERROR');
+        });
       });
 
     return () => controller.abort();
@@ -109,6 +131,7 @@ export function useDiscovery(filters: DiscoveryFilters): UseDiscoveryResult {
     freeDelivery,
     maxMinimumOrder,
     category,
+    deliveryProvider,
     cuisinesKey,
     sort,
     reloadTick,

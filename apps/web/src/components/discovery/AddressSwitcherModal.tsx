@@ -7,6 +7,7 @@
  * address state of its own.
  */
 
+import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 
 import LocationInput from './LocationInput';
@@ -30,12 +31,21 @@ export default function AddressSwitcherModal({
 }: AddressSwitcherModalProps) {
   const router = useRouter();
   const { savedAddresses, isAuthenticated, location } = useAddressContext();
+  const [navigating, setNavigating] = useState(false);
+
+  useEffect(() => {
+    if (!open) {
+      setNavigating(false);
+    }
+  }, [open]);
 
   if (!open) return null;
 
   const navigate = (postalCode: string, city: string | null) => {
-    onClose();
+    if (navigating) return;
+    setNavigating(true);
     router.push(buildDiscoveryPath(mode, postalCode, city));
+    onClose();
   };
 
   const handleSuggestion = (suggestion: LocationSuggestion) => {
@@ -51,7 +61,7 @@ export default function AddressSwitcherModal({
       onMouseDown={onClose}
     >
       <div
-        className="w-full max-w-[520px] overflow-hidden rounded-3xl bg-white shadow-pop"
+        className="w-full max-w-[520px] overflow-visible rounded-3xl bg-white shadow-pop"
         onMouseDown={(event) => event.stopPropagation()}
       >
         <div className="flex items-center justify-between px-6 pt-6">
@@ -72,6 +82,8 @@ export default function AddressSwitcherModal({
           <LocationInput
             onSelect={handleSuggestion}
             autoFocus
+            busy={navigating}
+            initialValue={location?.formattedAddress ?? ''}
             placeholder="Posta kodu veya adres ara"
           />
         </div>

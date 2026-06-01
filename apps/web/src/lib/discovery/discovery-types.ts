@@ -92,6 +92,7 @@ export interface RestaurantCoverage {
 }
 
 export interface DiscoveryCuisine {
+  id: string;
   slug: string;
   name: string;
   emoji: string | null;
@@ -151,9 +152,15 @@ export interface DiscoveryFilters {
   openNow: boolean;
   freeDelivery: boolean;
   maxMinimumOrder: number | null;
+  /**
+   * URL-backed delivery-provider filter. The current backend discovery contract
+   * does not expose provider matching yet, so this is stored/cleared in the UI
+   * and intentionally not sent to the API until that contract exists.
+   */
+  deliveryProvider: 'platform_delivery' | 'restaurant_delivery' | null;
   /** Store category / merchant type; null = all. */
   category: string | null;
-  /** Cuisine slugs; empty = all. */
+  /** Cuisine IDs; legacy slugs are still accepted by the API. */
   cuisines: string[];
   sort: DiscoverySort;
 }
@@ -162,6 +169,7 @@ export const DEFAULT_DISCOVERY_FILTERS: DiscoveryFilters = {
   openNow: false,
   freeDelivery: false,
   maxMinimumOrder: null,
+  deliveryProvider: null,
   category: null,
   cuisines: [],
   sort: 'best_match',
