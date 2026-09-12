@@ -1,4 +1,4 @@
-# Lieferzonen — Multi-Store Marketplace / SaaS Platform
+# Multi-Store Marketplace / SaaS Platform
 
 Lieferzonen; multi store bir sipariş platformudur. Müşteriler konum bazlı
 store keşfedip sipariş verir, store sahipleri (partner) kendi
